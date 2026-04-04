@@ -1,2 +1,122 @@
-# NeZha
-Parallelize your AI coding agents. Claude Code + Codex, running together.
+<p align="center">
+  <img src="docs/images/logo.png" alt="Nezha Logo" width="150" />
+</p>
+
+<h1 align="center">Nezha: Master of Multitasking & Concurrent Programming</h1>
+
+<p align="center">
+  Your True Agent-First Lightweight Concurrent VibeCoding Productivity Tool
+</p>
+
+<p align="center">
+  Multi-project Workspace · Fast Switching Between VibeCoding Tasks · Real-time Terminal · Session Auto-discovery · Native Git Integration · Lightweight Code Editor
+</p>
+<p align="center">
+  <a href="https://github.com/hanshuaikang/nezha/actions/workflows/checks.yml"><img alt="Checks" src="https://img.shields.io/github/actions/workflow/status/hanshuaikang/nezha/checks.yml?label=checks"></a>
+  <a href="https://github.com/hanshuaikang/nezha/releases"><img alt="Release" src="https://img.shields.io/github/v/release/hanshuaikang/nezha"></a>
+  <a href="https://github.com/hanshuaikang/nezha/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hanshuaikang/nezha"></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/index.png" alt="Nezha Product Showcase" width="80%" />
+</p>
+
+Nezha is a desktop application purpose-built for AI programming scenarios. It integrates multi-project management, task lifecycle tracking, a native terminal experience, session playback, code browsing, and a complete Git workflow into a single unified interface. Say goodbye to constantly toggling between terminals, editors, Git clients, and session logs. With just a few clicks, you can instantly switch contexts between different projects or tasks. Moreover, with an installation package size of just 7MB, Nezha completely eliminates the bulkiness associated with traditional IDEs.
+
+[**中文文档 (Chinese Documentation)**](./README_ZH.md)
+
+## Why Nezha?
+
+Traditional IDEs and editors like VS Code are fundamentally designed with the human developer at the center. In the era of manual programming, features such as plugin ecosystems, refactoring tools, and variable autocomplete existed to enhance individual coding efficiency. However, as AI takes over more of the actual code generation, the act of programming is becoming increasingly parallelized—a paradigm shift that was previously unimaginable. Yet, human attention remains limited. How to rapidly track and manage tasks across multiple projects concurrently is precisely the challenge Nezha solves.
+
+Nezha is engineered with an **Agent-First** philosophy. It features a built-in terminal that directly integrates native Claude Code and Codex. Building upon this foundation, it incorporates a comprehensive task system, Git integration, a terminal emulator, and a code editor. For everyday tasks, you no longer need to launch a heavy IDE; you can achieve a closed-loop workflow—from task delegation and code review to final code submission—all without interrupting your ongoing work in other projects.
+
+## Installation
+
+Before using Nezha, ensure that you have installed Claude Code / Codex. 
+
+Upon the first installation on macOS, you might encounter the following security prompt: *"“NeZha” is damaged and can’t be opened. You should move it to the Trash."* This occurs because the installation package is unsigned. You can easily resolve this by executing the following command in your terminal:
+
+```bash
+xattr -rd com.apple.quarantine /Applications/nezha.app
+```
+
+## Core Features
+
+- **Centralized Multi-Tasking**: Manage multiple projects and VibeCoding tasks simultaneously within a single interface. The virtual terminal runs native Claude Code / Codex, providing real-time output and interactive experience that rivals a local terminal.
+- **Intelligent Session Management**: Automatically detects and associates Claude Code / Codex sessions. The system intelligently alerts users when tasks require manual confirmation or input.
+- **Visualized Session History**: Intuitively view the detailed interaction history between you and Claude Code / Codex directly within the UI. You can seamlessly resume interrupted tasks at any time.
+- **Native Git & Code Editing**: Features native Git integration with AI-assisted Git commit message generation. The built-in lightweight code and Markdown editors provide syntax highlighting for all major programming languages.
+- **Usage Analytics**: Provides weekly statistics on Token consumption and tool invocations, helping you quantify agent efficiency and track operational costs.
+
+## 🌟 Feature Overview
+
+### 🗂️ Multi-Project Workspace
+
+> **One-click context switching between VibeCoding tasks across multiple projects.**
+
+- ✨ **Quick Switch**: Use the left-hand project navigation bar to seamlessly toggle between multiple codebases with a single click, while your terminals remain actively running in the background.
+- 🔄 **Real-Time Synchronization**: Task statuses are synchronized in real-time across all projects. Projects containing sessions that await user confirmation are explicitly highlighted with a yellow indicator.
+- 🚀 **Multi-Agent Support**: Run multiple Claude Code / Codex instances simultaneously. Each instance can independently manage its own set of tasks.
+
+<p align="center">
+  <img src="docs/images/workspace.png" alt="Workspace" width="48%" />
+  <img src="docs/images/switch-project.png" alt="Switch Project" width="48%" />
+</p>
+
+### 📊 Full Task Lifecycle Visualization
+
+> **Comprehensive tracking for active and pending tasks.**
+
+- 🎯 **Transparent Statuses**: Track tasks seamlessly from creation and execution to waiting for input and final completion.
+- ⏪ **Session Playback & Recovery**: Upon task completion, the corresponding session records are automatically visualized. Supports task resumption at any time.
+- 🧠 **Personalized Configuration**: The task input interface supports rich interactions including `@` mentions, image pasting, Pre-Prompts, and more.
+
+<p align="center">
+  <img src="docs/images/task.png" alt="Task View" width="90%" />
+</p>
+
+### 📝 Built-in Code & Markdown Editors
+
+> **A lightweight yet uncompromising coding experience.**
+
+- 📁 **Clear Structure**: A complete file tree browsing experience with rapid directory expansion and collapse.
+- 🎨 **Status Highlighting**: Real-time Git status annotations ensure file changes are identifiable at a glance.
+- 💅 **Professional Highlighting**: Professional-grade syntax highlighting and editing capabilities powered by Shiki and CodeMirror.
+
+<p align="center">
+  <img src="docs/images/code.png" alt="Code Browsing" width="48%" />
+  <img src="docs/images/markdown.png" alt="Markdown Editor" width="48%" />
+</p>
+
+### 🌳 Git Integration
+
+> **Built-in Git integration for branch management, code commits, and AI message generation.**
+
+- 📦 **Git Diff View**: Intuitively review staged and unstaged modifications with comprehensive code highlighting.
+- 🕒 **Git Logs**: Easily navigate commit history and inspect detailed diffs for any given commit.
+- 🤖 **AI Git Messages**: Smart assistance for generating Commit Messages that adhere to your project's formatting standards.
+- 🚦 **Branch Management**: Full support for creating, switching, merging, and deleting branches, alongside branch history visualization.
+
+<p align="center">
+  <img src="docs/images/git.png" alt="Git Integration" width="90%" />
+</p>
+
+## 🗺️ Roadmap
+
+| <small>Module</small> | <small>Planned Feature</small> | <small>Status</small> |
+| --- | --- | :---: |
+| <small>**Cross-Platform**</small> | <small>Windows Support</small> | <small>⏳ Planned</small> |
+| | <small>Linux Support</small> | <small>⏳ Planned</small> |
+| <small>**Agent Config**</small> | <small>Visual Configuration Management</small> | <small>⏳ Planned</small> |
+| | <small>Multi-Account Management</small> | <small>⏳ Planned</small> |
+| <small>**Workflow**</small> | <small>New Code Review View</small> | <small>⏳ Planned</small> |
+| | <small>Git Worktree Support</small> | <small>⏳ Planned</small> |
+
+## 🙏 Acknowledgments
+
+The creation of Nezha was made possible by the following outstanding open-source projects. We extend our deepest gratitude to them:
+
+- [Tauri](https://github.com/tauri-apps/tauri) - Build smaller, faster, and more secure desktop applications with a web frontend.
+- [React](https://github.com/facebook/react) - The library for web and native user interfaces.
+- [xterm.js](https://github.com/xtermjs/xterm.js) - A terminal for the web.

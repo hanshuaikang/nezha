@@ -1,0 +1,205 @@
+use base64::Engine;
+use std::path::Path;
+
+#[derive(serde::Serialize)]
+pub(crate) struct FsEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+    extension: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImagePreviewData {
+    data_url: String,
+    mime_type: String,
+    byte_length: u64,
+}
+
+const IGNORED_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    ".next",
+    ".nuxt",
+    "dist",
+    "build",
+    "target",
+    "__pycache__",
+    ".cache",
+    "coverage",
+    ".turbo",
+    ".expo",
+    "out",
+    ".output",
+    ".venv",
+    "venv",
+    ".tox",
+];
+
+const MAX_IMAGE_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Validate that `target` is an absolute path within `allowed_root` (prevents directory traversal).
+fn validate_path_within(target: &str, allowed_root: &str) -> Result<std::path::PathBuf, String> {
+    let target = Path::new(target);
+    let root = Path::new(allowed_root);
+
+    if !target.is_absolute() {
+        return Err("Path must be absolute".to_string());
+    }
+
+    let canonical_target = target
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve path: {}", e))?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve root directory: {}", e))?;
+
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err("Path is outside the allowed directory".to_string());
+    }
+
+    Ok(canonical_target)
+}
+
+fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
+    validate_path_within(&path, &project_path)?;
+    let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let mut result: Vec<FsEntry> = entries
+        .flatten()
+        .filter(|entry| {
+            let p = entry.path();
+            if p.is_dir() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                !IGNORED_DIRS.contains(&name_str.as_ref())
+            } else {
+                true
+            }
+        })
+        .map(|entry| {
+            let p = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = p.is_dir();
+            let extension =
+                p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
+            FsEntry { name, path: p.to_string_lossy().into_owned(), is_dir, extension }
+        })
+        .collect();
+    result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn read_file_content(path: String, project_path: String) -> Result<String, String> {
+    validate_path_within(&path, &project_path)?;
+
+    use std::io::Read;
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if meta.len() > 2 * 1024 * 1024 {
+        return Err(format!(
+            "File too large ({:.1} MB)",
+            meta.len() as f64 / 1024.0 / 1024.0
+        ));
+    }
+    let mut buf = String::with_capacity(meta.len() as usize);
+    std::io::BufReader::new(file)
+        .read_to_string(&mut buf)
+        .map_err(|e| e.to_string())?;
+    Ok(buf)
+}
+
+#[tauri::command]
+pub async fn read_image_preview(path: String, project_path: String) -> Result<ImagePreviewData, String> {
+    let validated_path = validate_path_within(&path, &project_path)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
+
+        let mime_type = previewable_image_mime_type(&validated_path)
+            .ok_or_else(|| "Unsupported image format".to_string())?;
+
+        let file = std::fs::File::open(&validated_path).map_err(|e| e.to_string())?;
+        let meta = file.metadata().map_err(|e| e.to_string())?;
+        if meta.len() > MAX_IMAGE_PREVIEW_BYTES {
+            return Err(format!(
+                "Image too large ({:.1} MB)",
+                meta.len() as f64 / 1024.0 / 1024.0
+            ));
+        }
+
+        let mut bytes = Vec::with_capacity(meta.len() as usize);
+        std::io::BufReader::new(file)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+
+        Ok(ImagePreviewData {
+            data_url: format!(
+                "data:{};base64,{}",
+                mime_type,
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            ),
+            mime_type: mime_type.to_string(),
+            byte_length: meta.len(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn write_file_content(path: String, content: String, project_path: String) -> Result<(), String> {
+    validate_path_within(&path, &project_path)?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
+    let tracked = std::process::Command::new("git")
+        .args(["-c", "core.quotePath=false", "ls-files"])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let untracked = std::process::Command::new("git")
+        .args(["-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let mut files: Vec<String> = String::from_utf8_lossy(&tracked.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    let extra: Vec<String> = String::from_utf8_lossy(&untracked.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    files.extend(extra);
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
