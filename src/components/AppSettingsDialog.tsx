@@ -1,0 +1,621 @@
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { X, Pencil, Check, RefreshCw } from "lucide-react";
+import s from "../styles";
+import claudeLogo from "../assets/claude.svg";
+import chatgptLogo from "../assets/chatgpt.svg";
+
+// Reuse the same singleton highlighter as FileViewer
+import type { Highlighter } from "shiki";
+let _highlighterPromise: Promise<Highlighter> | null = null;
+function getHighlighter(): Promise<Highlighter> {
+  if (!_highlighterPromise) {
+    _highlighterPromise = import("shiki").then(({ createHighlighter }) =>
+      createHighlighter({ themes: ["github-dark", "github-light"], langs: ["json", "toml"] }),
+    );
+  }
+  return _highlighterPromise!;
+}
+
+type NavKey = "general" | "claude" | "codex";
+
+interface AppSettings {
+  claude_path: string;
+  codex_path: string;
+}
+
+interface AgentVersions {
+  claude_version: string;
+  codex_version: string;
+}
+
+type AgentKey = "claude" | "codex";
+
+const NAV_ITEMS: Array<{
+  key: NavKey;
+  label: string;
+  logo?: string;
+  filePath?: string;
+  lang?: string;
+}> = [
+  { key: "general", label: "General" },
+  {
+    key: "claude",
+    label: "Claude Code",
+    logo: claudeLogo,
+    filePath: "~/.claude/settings.json",
+    lang: "json",
+  },
+  {
+    key: "codex",
+    label: "Codex",
+    logo: chatgptLogo,
+    filePath: "~/.codex/config.toml",
+    lang: "toml",
+  },
+];
+
+// ── General Panel ─────────────────────────────────────────────────────────────
+
+function GeneralPanel() {
+  const [settings, setSettings] = useState<AppSettings>({ claude_path: "", codex_path: "" });
+  const [original, setOriginal] = useState<AppSettings>({ claude_path: "", codex_path: "" });
+  const [versions, setVersions] = useState<AgentVersions>({
+    claude_version: "",
+    codex_version: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [detectingPaths, setDetectingPaths] = useState(false);
+  const [refreshingVersions, setRefreshingVersions] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadVersions(nextSettings: AppSettings) {
+    setRefreshingVersions(true);
+    try {
+      const detected = await invoke<AgentVersions>("detect_agent_versions_for_settings", {
+        settings: nextSettings,
+      });
+      setVersions(detected);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRefreshingVersions(false);
+    }
+  }
+
+  useEffect(() => {
+    invoke<AppSettings>("load_app_settings")
+      .then(async (loadedSettings) => {
+        setSettings(loadedSettings);
+        setOriginal(loadedSettings);
+        await loadVersions(loadedSettings);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleDetect() {
+    setDetectingPaths(true);
+    setError(null);
+    try {
+      const detected = await invoke<AppSettings>("detect_agent_paths");
+      setSettings(detected);
+      await loadVersions(detected);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDetectingPaths(false);
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await invoke("save_app_settings", { settings });
+      setOriginal(settings);
+      await loadVersions(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const isDirty =
+    settings.claude_path !== original.claude_path || settings.codex_path !== original.codex_path;
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "7px 10px",
+    background: "var(--bg-input)",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 7,
+    color: "var(--text-primary)",
+    fontSize: 12.5,
+    fontFamily: "var(--font-mono)",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--text-secondary)",
+    marginBottom: 5,
+    display: "block",
+  };
+
+  const fieldStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    marginBottom: 18,
+  };
+
+  const hintStyle: React.CSSProperties = {
+    fontSize: 11,
+    color: "var(--text-hint)",
+    marginTop: 3,
+  };
+
+  return (
+    <>
+      <div
+        style={{
+          ...s.settingsBody,
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+          padding: "20px 20px 14px",
+        }}
+      >
+        {error && (
+          <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 14 }}>{error}</div>
+        )}
+
+        {loading ? (
+          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>Loading...</div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 18,
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Agent Installation Paths
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "5px 10px",
+                    background: "none",
+                    border: "1px solid var(--border-medium)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    cursor: detectingPaths ? "default" : "pointer",
+                    opacity: detectingPaths ? 0.6 : 1,
+                  }}
+                  onClick={handleDetect}
+                  disabled={detectingPaths}
+                >
+                  <RefreshCw size={12} className={detectingPaths ? "spin" : undefined} />
+                  {detectingPaths ? "Detecting..." : "Auto Detect"}
+                </button>
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "5px 10px",
+                    background: "none",
+                    border: "1px solid var(--border-medium)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    cursor: refreshingVersions ? "default" : "pointer",
+                    opacity: refreshingVersions ? 0.6 : 1,
+                  }}
+                  onClick={() => loadVersions(settings)}
+                  disabled={refreshingVersions}
+                >
+                  <RefreshCw size={12} className={refreshingVersions ? "spin" : undefined} />
+                  {refreshingVersions ? "Refreshing..." : "Refresh Versions"}
+                </button>
+              </div>
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Claude Code Path</label>
+              <input
+                style={inputStyle}
+                value={settings.claude_path}
+                onChange={(e) => setSettings((prev) => ({ ...prev, claude_path: e.target.value }))}
+                placeholder="/usr/local/bin/claude"
+                spellCheck={false}
+              />
+              <span style={hintStyle}>Leave empty to use claude from the system PATH.</span>
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Codex Path</label>
+              <input
+                style={inputStyle}
+                value={settings.codex_path}
+                onChange={(e) => setSettings((prev) => ({ ...prev, codex_path: e.target.value }))}
+                placeholder="/usr/local/bin/codex"
+                spellCheck={false}
+              />
+              <span style={hintStyle}>Leave empty to use codex from the system PATH.</span>
+            </div>
+
+            <div style={{ ...fieldStyle, marginBottom: 0 }}>
+              <label style={labelStyle}>Installed Versions</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+                    Claude Code
+                  </div>
+                  <input
+                    style={inputStyle}
+                    value={versions.claude_version}
+                    readOnly
+                    placeholder="Not detected"
+                    spellCheck={false}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+                    Codex
+                  </div>
+                  <input
+                    style={inputStyle}
+                    value={versions.codex_version}
+                    readOnly
+                    placeholder="Not detected"
+                    spellCheck={false}
+                  />
+                </div>
+              </div>
+              <span style={hintStyle}>
+                Versions are detected from the configured executable path or the system PATH.
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={s.settingsFooter}>
+        {saved && (
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              color: "var(--success, #34c759)",
+              marginRight: "auto",
+            }}
+          >
+            <Check size={12} /> Saved
+          </span>
+        )}
+        <button
+          style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ── Agent Config Panel ────────────────────────────────────────────────────────
+
+type FileState =
+  | { status: "loading" }
+  | { status: "missing" }
+  | { status: "loaded"; content: string };
+
+function AgentConfigPanel({
+  agentKey,
+  filePath,
+  lang,
+  isDark,
+}: {
+  agentKey: AgentKey;
+  filePath: string;
+  lang: string;
+  isDark: boolean;
+}) {
+  const [fileState, setFileState] = useState<FileState>({ status: "loading" });
+  const [original, setOriginal] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // Load file
+  useEffect(() => {
+    setFileState({ status: "loading" });
+    setEditing(false);
+    setHighlighted(null);
+    setError(null);
+    setSaved(false);
+    invoke<string | null>("read_agent_config_file", { agent: agentKey })
+      .then((c) => {
+        if (c === null) {
+          setFileState({ status: "missing" });
+        } else {
+          setFileState({ status: "loaded", content: c });
+          setOriginal(c);
+        }
+      })
+      .catch((e) => setError(String(e)));
+  }, [agentKey]);
+
+  // Re-highlight when content or theme changes
+  useEffect(() => {
+    if (fileState.status !== "loaded") return;
+    setHighlighted(null);
+    getHighlighter().then((hl) => {
+      const html = hl.codeToHtml(fileState.content, {
+        lang,
+        theme: isDark ? "github-dark" : "github-light",
+      });
+      setHighlighted(html);
+    });
+  }, [fileState, lang, isDark]);
+
+  async function handleSave() {
+    if (fileState.status !== "loaded") return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await invoke("write_agent_config_file", { agent: agentKey, content: fileState.content });
+      setOriginal(fileState.content);
+      setSaved(true);
+      setEditing(false);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCancel() {
+    setFileState({ status: "loaded", content: original });
+    setEditing(false);
+  }
+
+  const isDirty = fileState.status === "loaded" && fileState.content !== original;
+
+  return (
+    <>
+      <div
+        style={{
+          ...s.settingsBody,
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+          padding: "14px 20px",
+        }}
+      >
+        {/* File path + edit button row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "var(--text-hint)",
+              fontFamily: "var(--font-mono)",
+              background: "var(--bg-subtle)",
+              border: "1px solid var(--border-dim)",
+              borderRadius: 6,
+              padding: "4px 9px",
+            }}
+          >
+            {filePath}
+          </div>
+          {fileState.status === "loaded" && !editing && (
+            <button
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "4px 10px",
+                background: "none",
+                border: "1px solid var(--border-medium)",
+                borderRadius: 6,
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+              }}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil size={12} />
+              Edit
+            </button>
+          )}
+          {saved && (
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                color: "var(--success, #34c759)",
+              }}
+            >
+              <Check size={12} /> Saved
+            </span>
+          )}
+        </div>
+
+        {error && (
+          <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 10 }}>{error}</div>
+        )}
+
+        {fileState.status === "loading" && !error && (
+          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>Loading...</div>
+        )}
+
+        {fileState.status === "missing" && (
+          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>Config file not found</div>
+        )}
+
+        {fileState.status === "loaded" && !editing && (
+          <div
+            className="file-viewer-code"
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              borderRadius: 8,
+              border: "1px solid var(--border-dim)",
+              fontSize: 12.5,
+            }}
+            dangerouslySetInnerHTML={{ __html: highlighted ?? "" }}
+          />
+        )}
+
+        {fileState.status === "loaded" && editing && (
+          <textarea
+            autoFocus
+            style={{
+              ...s.modalTextarea,
+              flex: 1,
+              width: "100%",
+              minHeight: 300,
+              resize: "none",
+              boxSizing: "border-box",
+              caretColor: isDark ? "#F1F4FB" : "#171B24",
+            }}
+            value={fileState.content}
+            onChange={(e) => setFileState({ status: "loaded", content: e.target.value })}
+            spellCheck={false}
+          />
+        )}
+      </div>
+
+      {editing && (
+        <div style={s.settingsFooter}>
+          <button style={s.modalCancelBtn} onClick={handleCancel}>
+            Cancel
+          </button>
+          <button
+            style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Main Dialog ───────────────────────────────────────────────────────────────
+
+export function AppSettingsDialog({ onClose, isDark }: { onClose: () => void; isDark: boolean }) {
+  const [activeNav, setActiveNav] = useState<NavKey>("general");
+
+  function handleOverlayClick(e: React.MouseEvent) {
+    if (e.target === e.currentTarget) onClose();
+  }
+
+  const activeItem = NAV_ITEMS.find((n) => n.key === activeNav)!;
+
+  return (
+    <div style={s.modalOverlay} onClick={handleOverlayClick}>
+      <div style={s.modalBox}>
+        {/* Left nav */}
+        <div style={s.settingsNav}>
+          <div style={s.settingsNavTitle}>App Settings</div>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              style={{
+                ...s.settingsNavItem,
+                background: activeNav === item.key ? "var(--bg-hover)" : "none",
+                color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
+                fontWeight: activeNav === item.key ? 600 : 500,
+              }}
+              onClick={() => setActiveNav(item.key)}
+            >
+              {item.logo ? (
+                <img
+                  src={item.logo}
+                  style={{ width: 14, height: 14, opacity: item.key === "codex" ? 0.7 : 1 }}
+                />
+              ) : (
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 13,
+                  }}
+                >
+                  ⚙
+                </span>
+              )}
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Right content */}
+        <div style={s.settingsContent}>
+          <div style={s.settingsContentHeader}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {activeItem.logo ? (
+                <img
+                  src={activeItem.logo}
+                  style={{ width: 16, height: 16, opacity: activeItem.key === "codex" ? 0.7 : 1 }}
+                />
+              ) : (
+                <span style={{ fontSize: 15 }}>⚙</span>
+              )}
+              <span style={s.settingsContentTitle}>{activeItem.label}</span>
+            </div>
+            <button style={s.modalCloseBtn} onClick={onClose} title="Close">
+              <X size={16} strokeWidth={2} />
+            </button>
+          </div>
+
+          {activeNav === "general" ? (
+            <GeneralPanel key="general" />
+          ) : (
+            <AgentConfigPanel
+              key={activeNav}
+              agentKey={activeNav as AgentKey}
+              filePath={activeItem.filePath!}
+              lang={activeItem.lang!}
+              isDark={isDark}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
