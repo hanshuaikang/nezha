@@ -2,7 +2,7 @@
   "name": "nezha",
   "private": true,
   "version": "0.1.0",
-  "description": "Desktop task manager for AI coding agents",
+  "description": "An Agent-First Application For Vibe Coding",
   "author": "Hanshuaikang",
   "homepage": "https://github.com/hanshuaikang/nezha",
   "repository": {

@@ -984,8 +984,8 @@ fn find_codex_session_file(session_id: &str, project_path: &str) -> Option<PathB
 
 // ── /status-based session discovery ──────────────────────────────────────────
 
-/// Claude Code の `/status` 出力から Session ID を抽出する。
-/// 出力例: "Session ID: 1aee0948-e0f2-4ad1-b710-ba236fab378a"
+/// 从 Claude Code 的 `/status` 输出中提取 Session ID。
+/// 输出示例: "Session ID: 1aee0948-e0f2-4ad1-b710-ba236fab378a"
 fn extract_claude_status_session_id(output: &str) -> Option<String> {
     let clean = strip_ansi(output);
     // Use find() instead of line-by-line matching because Claude Code renders /status
@@ -1000,8 +1000,8 @@ fn extract_claude_status_session_id(output: &str) -> Option<String> {
     if is_uuid_like(&id) { Some(id) } else { None }
 }
 
-/// Codex の `/status` 出力から Session ID を抽出する。
-/// 出力例: "│  Session:                     019d247a-2a83-76f3-b5c6-e4a59955af3f  │"
+/// 从 Codex 的 `/status` 输出中提取 Session ID。
+/// 输出示例: "│  Session:                     019d247a-2a83-76f3-b5c6-e4a59955af3f  │"
 ///
 /// Codex renders /status using cursor-positioning escape sequences, which collapse
 /// multiple lines into one after ANSI stripping (same issue as Claude Code).
@@ -1023,7 +1023,7 @@ fn extract_codex_status_session_id(output: &str) -> Option<String> {
     if is_uuid_like(&id) { Some(id) } else { None }
 }
 
-/// セッションファイルが存在するまで最大 5 秒ポーリングする。
+/// 轮询最多 5 秒，直到会话文件出现。
 fn wait_for_session_file(session_id: &str, project_path: &str, is_codex: bool) -> Option<PathBuf> {
     for _ in 0..50 {
         let path = if is_codex {
@@ -1039,7 +1039,7 @@ fn wait_for_session_file(session_id: &str, project_path: &str, is_codex: bool) -
     None
 }
 
-/// セッション ID が確定した後にセッション情報を登録し、ファイル監視を開始する。
+/// 在 Session ID 确认后注册会话信息，并开始监视文件。
 pub(crate) fn register_and_watch_session(
     app: &AppHandle,
     task_id: &str,
@@ -1301,7 +1301,7 @@ fn run_status_session_watcher(
         }
 }
 
-/// `resume_task` 用: 既知の session_id からセッションファイルを探して監視を開始する。
+/// 供 `resume_task` 使用：根据已知的 session_id 查找会话文件并开始监视。
 pub(crate) fn spawn_resume_session_watcher(
     app: AppHandle,
     task_id: String,

@@ -2,10 +2,10 @@
   <img src="docs/images/logo.png" alt="Nezha Logo" width="150" />
 </p>
 
-<h1 align="center">Nezha: Master of Multitasking & Concurrent Programming</h1>
+<h1 align="center">Nezha: An Agent-First Application For Vibe Coding </h1>
 
 <p align="center">
-  Your True Agent-First Lightweight Concurrent VibeCoding Productivity Tool
+  Parallelize your AI coding agents. Claude Code + Codex, running together.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
   <img src="docs/images/index.png" alt="Nezha Product Showcase" width="80%" />
 </p>
 
-Nezha is a desktop application purpose-built for AI programming scenarios. It integrates multi-project management, task lifecycle tracking, a native terminal experience, session playback, code browsing, and a complete Git workflow into a single unified interface. Say goodbye to constantly toggling between terminals, editors, Git clients, and session logs. With just a few clicks, you can instantly switch contexts between different projects or tasks. Moreover, with an installation package size of just 7MB, Nezha completely eliminates the bulkiness associated with traditional IDEs.
+Nezha is an Agent-First Vibe Coding desktop application built for true parallel programming. It lets Claude Code and Codex run together across multiple projects, while unifying task lifecycle tracking, a native terminal experience, session playback, code browsing, and a complete Git workflow in one interface. Say goodbye to constantly toggling between terminals, editors, Git clients, and session logs. With just a few clicks, you can instantly switch contexts between different projects or tasks. Moreover, with an installation package size of just 7MB, Nezha completely eliminates the bulkiness associated with traditional IDEs.
 
 [**中文文档 (Chinese Documentation)**](./README_ZH.md)
 
@@ -29,7 +29,7 @@ Nezha is a desktop application purpose-built for AI programming scenarios. It in
 
 Traditional IDEs and editors like VS Code are fundamentally designed with the human developer at the center. In the era of manual programming, features such as plugin ecosystems, refactoring tools, and variable autocomplete existed to enhance individual coding efficiency. However, as AI takes over more of the actual code generation, the act of programming is becoming increasingly parallelized—a paradigm shift that was previously unimaginable. Yet, human attention remains limited. How to rapidly track and manage tasks across multiple projects concurrently is precisely the challenge Nezha solves.
 
-Nezha is engineered with an **Agent-First** philosophy. It features a built-in terminal that directly integrates native Claude Code and Codex. Building upon this foundation, it incorporates a comprehensive task system, Git integration, a terminal emulator, and a code editor. For everyday tasks, you no longer need to launch a heavy IDE; you can achieve a closed-loop workflow—from task delegation and code review to final code submission—all without interrupting your ongoing work in other projects.
+Nezha is engineered with an **Agent-First** philosophy. It features a built-in terminal that directly integrates native Claude Code and Codex, so your AI coding agents can work in parallel instead of waiting in sequence. Building upon this foundation, it incorporates a comprehensive task system, Git integration, a terminal emulator, and a code editor. For everyday tasks, you no longer need to launch a heavy IDE; you can achieve a closed-loop workflow—from task delegation and code review to final code submission—all without interrupting your ongoing work in other projects.
 
 ## Installation
 
