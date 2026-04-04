@@ -64,6 +64,7 @@ function FileIcon({
 }
 
 const ROW_HEIGHT = 22;
+const AUTO_REFRESH_MS = 2500;
 
 function flattenVisible(nodes: TreeNode[]): Array<{ node: TreeNode; depth: number }> {
   const result: Array<{ node: TreeNode; depth: number }> = [];
@@ -154,8 +155,93 @@ function TreeItem({
   );
 }
 
-function buildNodes(entries: FsEntry[]): TreeNode[] {
-  return entries.map((e) => ({ ...e, children: null, expanded: false }));
+function findNode(items: TreeNode[], path: string): TreeNode | null {
+  for (const item of items) {
+    if (item.path === path) return item;
+    if (item.children) {
+      const found = findNode(item.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function isSameEntry(a: FsEntry, b: FsEntry) {
+  return (
+    a.path === b.path &&
+    a.name === b.name &&
+    a.is_dir === b.is_dir &&
+    a.extension === b.extension
+  );
+}
+
+function updateNode(
+  items: TreeNode[],
+  path: string,
+  updater: (node: TreeNode) => TreeNode,
+): TreeNode[] {
+  let changed = false;
+  const nextItems = items.map((item) => {
+    if (item.path === path) {
+      const nextItem = updater(item);
+      if (nextItem !== item) changed = true;
+      return nextItem;
+    }
+
+    if (!item.children) return item;
+
+    const nextChildren = updateNode(item.children, path, updater);
+    if (nextChildren === item.children) return item;
+
+    changed = true;
+    return { ...item, children: nextChildren };
+  });
+
+  return changed ? nextItems : items;
+}
+
+async function loadTreeNodes(
+  path: string,
+  previousNodes: TreeNode[],
+  readEntries: (path: string) => Promise<FsEntry[] | null>,
+): Promise<TreeNode[] | null> {
+  const entries = await readEntries(path);
+  if (entries === null) return null;
+
+  const previousByPath = new Map(previousNodes.map((node) => [node.path, node]));
+  let changed = entries.length !== previousNodes.length;
+  const nextNodes: TreeNode[] = [];
+
+  for (const [index, entry] of entries.entries()) {
+    const previous = previousByPath.get(entry.path);
+    const expanded = previous?.expanded ?? false;
+    let children: TreeNode[] | null = null;
+
+    if (entry.is_dir) {
+      if (expanded) {
+        const nextChildren = await loadTreeNodes(entry.path, previous?.children ?? [], readEntries);
+        if (nextChildren === null) return null;
+        children = nextChildren;
+      } else {
+        children = previous?.children ?? null;
+      }
+    }
+
+    const previousAtIndex = previousNodes[index];
+    if (!previousAtIndex || previousAtIndex.path !== entry.path) {
+      changed = true;
+    }
+
+    if (previous && isSameEntry(previous, entry) && previous.children === children) {
+      nextNodes.push(previous);
+      continue;
+    }
+
+    changed = true;
+    nextNodes.push({ ...entry, expanded, children });
+  }
+
+  return changed ? nextNodes : previousNodes;
 }
 
 export function FileExplorer({
@@ -163,12 +249,14 @@ export function FileExplorer({
   projectName,
   onFileSelect,
   isDark: _isDark,
+  active = true,
   width = 240,
 }: {
   projectPath: string;
   projectName: string;
   onFileSelect: (path: string, name: string) => void;
   isDark: boolean;
+  active?: boolean;
   width?: number;
 }) {
   const [nodes, setNodes] = useState<TreeNode[]>([]);
@@ -192,26 +280,68 @@ export function FileExplorer({
     setCtxMenu(null);
   }, []);
 
-  const [refreshKey, setRefreshKey] = useState(0);
-
   const { safeInvoke, isCancelled } = useCancellableInvoke();
-
-  const refresh = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-  }, []);
+  const nodesRef = useRef<TreeNode[]>([]);
+  const refreshIdRef = useRef(0);
 
   useEffect(() => {
-    setLoading(true);
-    safeInvoke<FsEntry[]>("read_dir_entries", { path: projectPath, projectPath })
-      .then((entries) => {
-        if (entries === null) return; // Component unmounted
-        setNodes(buildNodes(entries));
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  const readEntries = useCallback(
+    (path: string) => safeInvoke<FsEntry[]>("read_dir_entries", { path, projectPath }),
+    [projectPath, safeInvoke],
+  );
+
+  const refresh = useCallback(
+    async (showLoading = false) => {
+      const refreshId = refreshIdRef.current + 1;
+      refreshIdRef.current = refreshId;
+      if (showLoading) setLoading(true);
+
+      try {
+        const nextNodes = await loadTreeNodes(projectPath, nodesRef.current, readEntries);
+        if (nextNodes === null || refreshId !== refreshIdRef.current) return;
+        if (nextNodes !== nodesRef.current) {
+          setNodes(nextNodes);
+        }
         setLoading(false);
-      })
-      .catch(() => {
-        if (!isCancelled()) setLoading(false);
-      });
-  }, [projectPath, refreshKey, safeInvoke, isCancelled]);
+      } catch {
+        if (!isCancelled() && refreshId === refreshIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [isCancelled, projectPath, readEntries],
+  );
+
+  useEffect(() => {
+    if (!active) return;
+    void refresh(true);
+  }, [active, projectPath, refresh]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void refresh();
+    };
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void refresh();
+    }, AUTO_REFRESH_MS);
+
+    window.addEventListener("focus", handleVisibilityRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", handleVisibilityRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
+  }, [active, refresh]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -232,42 +362,34 @@ export function FileExplorer({
   );
 
   const handleToggle = useCallback(
-    async (dirPath: string) => {
-      setNodes((prev) => {
-        function toggle(items: TreeNode[]): TreeNode[] {
-          return items.map((n) => {
-            if (n.path === dirPath) {
-              const newExpanded = !n.expanded;
-              if (newExpanded && n.children === null) {
-                // Load children async
-                safeInvoke<FsEntry[]>("read_dir_entries", { path: dirPath, projectPath })
-                  .then((entries) => {
-                    if (entries === null) return; // Component unmounted
-                    const nodes = buildNodes(entries);
-                    setNodes((p) => {
-                      function fill(items2: TreeNode[]): TreeNode[] {
-                        return items2.map((m) => {
-                          if (m.path === dirPath) return { ...m, children: nodes };
-                          if (m.children) return { ...m, children: fill(m.children) };
-                          return m;
-                        });
-                      }
-                      return fill(p);
-                    });
-                  })
-                  .catch(() => {});
-                return { ...n, expanded: true, children: [] };
-              }
-              return { ...n, expanded: newExpanded };
-            }
-            if (n.children) return { ...n, children: toggle(n.children) };
-            return n;
-          });
-        }
-        return toggle(prev);
-      });
+    (dirPath: string) => {
+      const current = findNode(nodesRef.current, dirPath);
+      const shouldExpand = !current?.expanded;
+
+      setNodes((prev) =>
+        updateNode(prev, dirPath, (node) => {
+          const nextChildren = shouldExpand ? (node.children ?? []) : node.children;
+          if (node.expanded === shouldExpand && node.children === nextChildren) {
+            return node;
+          }
+          return { ...node, expanded: shouldExpand, children: nextChildren };
+        }),
+      );
+
+      if (!shouldExpand) return;
+
+      void (async () => {
+        const currentChildren = findNode(nodesRef.current, dirPath)?.children ?? [];
+        const nextChildren = await loadTreeNodes(dirPath, currentChildren, readEntries);
+        if (nextChildren === null) return;
+        setNodes((prev) =>
+          updateNode(prev, dirPath, (node) =>
+            node.children === nextChildren ? node : { ...node, children: nextChildren },
+          ),
+        );
+      })();
     },
-    [projectPath, safeInvoke],
+    [readEntries],
   );
 
   const handleSelect = useCallback(
@@ -371,7 +493,7 @@ export function FileExplorer({
           Files
         </span>
         <button
-          onClick={refresh}
+          onClick={() => void refresh()}
           title="Refresh"
           style={{
             background: "none",

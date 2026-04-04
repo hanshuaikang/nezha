@@ -353,6 +353,7 @@ export function ProjectPage({
                 projectName={project.name}
                 onFileSelect={handleFileSelect}
                 isDark={isDark}
+                active={visible}
                 width={rightPanelWidth}
               />
             </ErrorBoundary>
