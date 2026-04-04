@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Pencil, Check, RefreshCw } from "lucide-react";
+import { X, Pencil, Check, RefreshCw, ExternalLink, Star } from "lucide-react";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
+import appLogo from "../assets/logo.png";
 
 // Reuse the same singleton highlighter as FileViewer
 import type { Highlighter } from "shiki";
@@ -17,7 +19,7 @@ function getHighlighter(): Promise<Highlighter> {
   return _highlighterPromise!;
 }
 
-type NavKey = "general" | "claude" | "codex";
+type NavKey = "general" | "about" | "claude" | "codex";
 
 interface AppSettings {
   claude_path: string;
@@ -31,6 +33,8 @@ interface AgentVersions {
 
 type AgentKey = "claude" | "codex";
 
+const GITHUB_REPO_URL = "https://github.com/hanshuaikang/nezha";
+
 const NAV_ITEMS: Array<{
   key: NavKey;
   label: string;
@@ -39,6 +43,7 @@ const NAV_ITEMS: Array<{
   lang?: string;
 }> = [
   { key: "general", label: "General" },
+  { key: "about", label: "About", logo: appLogo },
   {
     key: "claude",
     label: "Claude Code",
@@ -325,6 +330,114 @@ function GeneralPanel() {
   );
 }
 
+function AboutPanel() {
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    getVersion()
+      .then((version) => setAppVersion(version))
+      .catch(() => setAppVersion("Unknown"));
+  }, []);
+
+  return (
+    <div
+      style={{
+        ...s.settingsBody,
+        display: "flex",
+        flexDirection: "column",
+        padding: "20px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          padding: "18px",
+          borderRadius: 12,
+          border: "1px solid var(--border-dim)",
+          background: "var(--bg-subtle)",
+        }}
+      >
+        <img
+          src={appLogo}
+          alt="NeZha logo"
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 16,
+            flexShrink: 0,
+            objectFit: "cover",
+          }}
+        />
+
+        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>NeZha</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}>
+              Desktop task manager for AI coding agents
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>Version</div>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--text-primary)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {appVersion || "Loading..."}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>GitHub</div>
+              <a
+                href={GITHUB_REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: "var(--accent)",
+                  fontSize: 12.5,
+                  textDecoration: "none",
+                  wordBreak: "break-all",
+                }}
+              >
+                {GITHUB_REPO_URL}
+                <ExternalLink size={13} />
+              </a>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "color-mix(in srgb, var(--accent) 8%, transparent)",
+              color: "var(--text-secondary)",
+              fontSize: 12.5,
+              lineHeight: 1.5,
+            }}
+          >
+            <Star size={14} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              If you think NeZha is helpful, please consider starring this project on GitHub.
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Agent Config Panel ────────────────────────────────────────────────────────
 
 type FileState =
@@ -605,6 +718,8 @@ export function AppSettingsDialog({ onClose, isDark }: { onClose: () => void; is
 
           {activeNav === "general" ? (
             <GeneralPanel key="general" />
+          ) : activeNav === "about" ? (
+            <AboutPanel key="about" />
           ) : (
             <AgentConfigPanel
               key={activeNav}
