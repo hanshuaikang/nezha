@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Search, ChevronLeft, Plus, Trash2 } from "lucide-react";
-import type { Project, Task } from "../types";
+import type { Project, Task, ThemeMode } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -20,6 +20,9 @@ export function TaskPanel({
   onRunTodo,
   onBack,
   isDark,
+  themeMode,
+  systemPrefersDark,
+  onThemeModeChange,
   onToggleTheme,
 }: {
   project: Project;
@@ -34,6 +37,9 @@ export function TaskPanel({
   onRunTodo: (task: Task) => void;
   onBack: () => void;
   isDark: boolean;
+  themeMode: ThemeMode;
+  systemPrefersDark: boolean;
+  onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -107,7 +113,13 @@ export function TaskPanel({
         onRunTodo={onRunTodo}
       />
       <div style={s.taskPanelFooter}>
-        <SidebarFooterActions isDark={isDark} onToggleTheme={onToggleTheme} />
+        <SidebarFooterActions
+          isDark={isDark}
+          themeMode={themeMode}
+          systemPrefersDark={systemPrefersDark}
+          onThemeModeChange={onThemeModeChange}
+          onToggleTheme={onToggleTheme}
+        />
       </div>
     </div>
   );

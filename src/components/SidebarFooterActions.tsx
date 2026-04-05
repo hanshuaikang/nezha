@@ -1,13 +1,20 @@
 import { useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
+import type { ThemeMode } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
 import s from "../styles";
 
 export function SidebarFooterActions({
   isDark,
+  themeMode,
+  systemPrefersDark,
+  onThemeModeChange,
   onToggleTheme,
 }: {
   isDark: boolean;
+  themeMode: ThemeMode;
+  systemPrefersDark: boolean;
+  onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
 }) {
   const [showAppSettings, setShowAppSettings] = useState(false);
@@ -36,7 +43,13 @@ export function SidebarFooterActions({
       </div>
 
       {showAppSettings && (
-        <AppSettingsDialog isDark={isDark} onClose={() => setShowAppSettings(false)} />
+        <AppSettingsDialog
+          isDark={isDark}
+          themeMode={themeMode}
+          systemPrefersDark={systemPrefersDark}
+          onThemeModeChange={onThemeModeChange}
+          onClose={() => setShowAppSettings(false)}
+        />
       )}
     </>
   );
