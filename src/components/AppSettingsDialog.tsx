@@ -363,6 +363,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
           <button
             type="button"
             onClick={() => onThemeModeChange("system")}
+            aria-label="Follow system theme"
             aria-pressed={themeMode === "system"}
             style={{
               flexShrink: 0,
@@ -397,6 +398,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
           <button
             type="button"
             onClick={() => onThemeModeChange("system")}
+            aria-pressed={themeMode === "system"}
             style={{
               display: "flex",
               flexDirection: "column",
