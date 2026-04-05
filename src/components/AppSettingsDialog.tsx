@@ -413,7 +413,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
               Follow System
             </span>
             <span style={{ fontSize: 11.5, color: "var(--text-hint)", lineHeight: 1.45 }}>
-              Automatically uses the macOS appearance setting.
+              Automatically uses the system appearance setting.
             </span>
           </button>
         </div>
