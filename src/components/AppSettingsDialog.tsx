@@ -77,12 +77,48 @@ interface ThemePanelProps {
 }
 
 function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePanelProps) {
+  const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
   const selectedLabel =
     themeMode === "system"
       ? `Following system · ${systemPrefersDark ? "Dark" : "Light"}`
-      : themeMode === "dark"
-        ? "Dark"
-        : "Light";
+      : `Manual · ${themeMode === "dark" ? "Dark" : "Light"}`;
+
+  function handleSystemThemeToggle() {
+    onThemeModeChange(themeMode === "system" ? "light" : "system");
+  }
+
+  function handleManualThemeKeyDown(
+    mode: Extract<ThemeMode, "dark" | "light">,
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) {
+    const currentIndex = manualThemeModes.indexOf(mode);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[(currentIndex + 1) % manualThemeModes.length]);
+      return;
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[(currentIndex - 1 + manualThemeModes.length) % manualThemeModes.length]);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[0]);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[manualThemeModes.length - 1]);
+    }
+  }
 
   function renderThemeOption({
     mode,
@@ -105,6 +141,10 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
       <button
         type="button"
         onClick={() => onThemeModeChange(mode)}
+        onKeyDown={(event) => handleManualThemeKeyDown(mode, event)}
+        role="radio"
+        aria-checked={selected}
+        aria-label={`${title} theme`}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -347,7 +387,12 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
         padding: "20px",
       }}
     >
-      <div
+      <button
+        type="button"
+        onClick={handleSystemThemeToggle}
+        role="switch"
+        aria-checked={themeMode === "system"}
+        aria-label="Follow system theme"
         style={{
           display: "flex",
           alignItems: "center",
@@ -357,14 +402,12 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
           borderRadius: 12,
           border: `1px solid ${themeMode === "system" ? "var(--accent)" : "var(--border-dim)"}`,
           background: themeMode === "system" ? "var(--accent-subtle)" : "var(--bg-subtle)",
+          cursor: "pointer",
+          textAlign: "left",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          <button
-            type="button"
-            onClick={() => onThemeModeChange("system")}
-            aria-label="Follow system theme"
-            aria-pressed={themeMode === "system"}
+          <div
             style={{
               flexShrink: 0,
               width: 48,
@@ -375,7 +418,6 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
               background: themeMode === "system" ? "var(--accent)" : "var(--border-medium)",
               boxShadow:
                 themeMode === "system" ? "0 0 0 4px var(--accent-subtle)" : "inset 0 0 0 1px var(--border-dim)",
-              cursor: "pointer",
               transition: "background 0.12s, box-shadow 0.12s",
             }}
           >
@@ -394,30 +436,21 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
             >
               <Monitor size={12} />
             </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => onThemeModeChange("system")}
-            aria-pressed={themeMode === "system"}
+          </div>
+          <div
             style={{
               display: "flex",
               flexDirection: "column",
               gap: 3,
               minWidth: 0,
               padding: 0,
-              border: "none",
-              background: "none",
-              cursor: "pointer",
               textAlign: "left",
             }}
           >
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
               Follow System
             </span>
-            <span style={{ fontSize: 11.5, color: "var(--text-hint)", lineHeight: 1.45 }}>
-              Automatically uses the system appearance setting.
-            </span>
-          </button>
+          </div>
         </div>
         <div
           style={{
@@ -437,13 +470,17 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
           {themeMode === "system" && <Check size={13} color="var(--accent)" />}
           {selectedLabel}
         </div>
-      </div>
+      </button>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
           Manual Theme
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}
+          role="radiogroup"
+          aria-label="Manual theme"
+        >
           {renderThemeOption({
             mode: "dark",
             title: "Dark",
