@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { X, AlertCircle, Eye, PencilLine } from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
+import { X, AlertCircle, Eye, PencilLine, MoreHorizontal } from "lucide-react";
 import { getFileColor } from "../utils";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
@@ -30,6 +31,7 @@ import { kotlin } from "@codemirror/legacy-modes/mode/clike";
 import { r } from "@codemirror/legacy-modes/mode/r";
 import type { Extension } from "@codemirror/state";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
+import type { OpenFileTab } from "../hooks/useProjectPanels";
 
 function isMarkdownFile(fileName: string): boolean {
   const ext = fileName.split(".").pop()?.toLowerCase();
@@ -189,27 +191,24 @@ type ImagePreviewData = {
   byteLength: number;
 };
 
-export function FileViewer({
+function FilePreviewPane({
   filePath,
   fileName,
   projectPath,
-  onClose,
   isDark,
-  onRunMakeTarget: _onRunMakeTarget,
+  previewMode,
 }: {
   filePath: string;
   fileName: string;
   projectPath: string;
-  onClose: () => void;
   isDark: boolean;
-  onRunMakeTarget?: (target: string) => void;
+  previewMode: boolean;
 }) {
   const [content, setContent] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<ImagePreviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [previewMode, setPreviewMode] = useState(false);
   const isMarkdown = isMarkdownFile(fileName);
   const isPreviewableImage = isPreviewableImageFile(fileName);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -223,7 +222,6 @@ export function FileViewer({
     setImagePreview(null);
     setError(null);
     setSaveStatus("idle");
-    setPreviewMode(false);
 
     const loadFile = isPreviewableImage
       ? invoke<ImagePreviewData>("read_image_preview", { path: filePath, projectPath }).then((preview) => {
@@ -249,6 +247,14 @@ export function FileViewer({
     };
   }, [filePath, projectPath, isPreviewableImage]);
 
+  useEffect(
+    () => () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (savedResetRef.current) clearTimeout(savedResetRef.current);
+    },
+    [],
+  );
+
   const handleChange = (value: string) => {
     setContent(value);
 
@@ -268,8 +274,6 @@ export function FileViewer({
   };
 
   const extensions = useMemo(() => [getLanguageExtension(fileName), editorBaseTheme], [fileName]);
-
-  const fileColor = getFileColor(fileName);
 
   const saveLabel =
     saveStatus === "saving"
@@ -297,93 +301,6 @@ export function FileViewer({
         background: "var(--bg-panel)",
       }}
     >
-      {/* Tab/header bar */}
-      <div
-        style={{
-          height: 40,
-          display: "flex",
-          alignItems: "center",
-          borderBottom: "1px solid var(--border-dim)",
-          flexShrink: 0,
-          background: "var(--bg-sidebar)",
-          paddingLeft: 4,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            height: "100%",
-            padding: "0 10px 0 12px",
-            borderRight: "1px solid var(--border-dim)",
-            background: "var(--bg-panel)",
-            borderTop: "2px solid var(--accent)",
-            fontSize: 12.5,
-            fontWeight: 500,
-            color: "var(--text-primary)",
-          }}
-        >
-          <span
-            style={{
-              width: 5,
-              height: 14,
-              borderRadius: 2,
-              background: fileColor,
-              flexShrink: 0,
-              display: "inline-block",
-            }}
-          />
-          {fileName}
-          <button
-            onClick={onClose}
-            title="Close"
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "2px",
-              borderRadius: 3,
-              display: "flex",
-              alignItems: "center",
-              color: "var(--text-hint)",
-              marginLeft: 4,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-          >
-            <X size={12} />
-          </button>
-        </div>
-        {isMarkdown && (
-          <button
-            onClick={() => setPreviewMode((p) => !p)}
-            title={previewMode ? "Edit" : "Preview"}
-            style={{
-              marginLeft: "auto",
-              marginRight: 8,
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "3px 8px",
-              borderRadius: 4,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              color: previewMode ? "var(--accent)" : "var(--text-hint)",
-              fontSize: 11.5,
-              fontFamily: "var(--font-ui)",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-          >
-            {previewMode ? <PencilLine size={13} /> : <Eye size={13} />}
-            {previewMode ? "Edit" : "Preview"}
-          </button>
-        )}
-      </div>
-
-      {/* Content */}
       <div
         style={{
           flex: 1,
@@ -474,7 +391,6 @@ export function FileViewer({
           ) : null)}
       </div>
 
-      {/* Status bar */}
       <div
         style={{
           height: 22,
@@ -504,6 +420,306 @@ export function FileViewer({
             {statusLabel}
           </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+export function FileViewer({
+  tabs,
+  activeFilePath,
+  projectPath,
+  onSelectTab,
+  onCloseTab,
+  onCloseOtherTabs,
+  onCloseTabsToRight,
+  onCloseAllTabs,
+  isDark,
+  onRunMakeTarget: _onRunMakeTarget,
+}: {
+  tabs: OpenFileTab[];
+  activeFilePath: string | null;
+  projectPath: string;
+  onSelectTab: (path: string) => void;
+  onCloseTab: (path: string) => void;
+  onCloseOtherTabs: (path: string) => void;
+  onCloseTabsToRight: (path: string) => void;
+  onCloseAllTabs: () => void;
+  isDark: boolean;
+  onRunMakeTarget?: (target: string) => void;
+}) {
+  const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setPreviewModes((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const tab of tabs) {
+        if (prev[tab.path]) next[tab.path] = true;
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [tabs]);
+
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.path === activeFilePath) ?? tabs[tabs.length - 1] ?? null,
+    [tabs, activeFilePath],
+  );
+
+  if (!activeTab) return null;
+
+  const activePreviewMode = !!previewModes[activeTab.path];
+  const activeIsMarkdown = isMarkdownFile(activeTab.name);
+  const canCloseOtherTabs = tabs.length > 1;
+  const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
+  const canCloseTabsToRight = activeTabIndex !== -1 && activeTabIndex < tabs.length - 1;
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        minWidth: 0,
+        minHeight: 0,
+        background: "var(--bg-panel)",
+      }}
+    >
+      <div
+        style={{
+          height: 40,
+          display: "flex",
+          alignItems: "center",
+          borderBottom: "1px solid var(--border-dim)",
+          flexShrink: 0,
+          background: "var(--bg-sidebar)",
+          minWidth: 0,
+        }}
+      >
+        <div
+          className="file-viewer-tab-strip"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            height: "100%",
+            display: "flex",
+            alignItems: "stretch",
+            overflowX: "auto",
+            overflowY: "hidden",
+            paddingLeft: 4,
+          }}
+        >
+          {tabs.map((tab) => {
+            const isActive = tab.path === activeTab.path;
+            const fileColor = getFileColor(tab.name);
+            return (
+              <button
+                key={tab.path}
+                onClick={() => onSelectTab(tab.path)}
+                title={tab.path}
+                style={{
+                  height: "100%",
+                  minWidth: 0,
+                  maxWidth: 220,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "0 10px 0 12px",
+                  border: "none",
+                  borderRight: "1px solid var(--border-dim)",
+                  borderTop: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                  background: isActive ? "var(--bg-panel)" : "transparent",
+                  fontSize: 12.5,
+                  fontWeight: isActive ? 500 : 400,
+                  color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    width: 5,
+                    height: 14,
+                    borderRadius: 2,
+                    background: fileColor,
+                    flexShrink: 0,
+                    display: "inline-block",
+                  }}
+                />
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {tab.name}
+                </span>
+                <span
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCloseTab(tab.path);
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "2px",
+                    borderRadius: 3,
+                    display: "flex",
+                    alignItems: "center",
+                    color: "var(--text-hint)",
+                    marginLeft: 2,
+                  }}
+                  role="button"
+                  aria-label={`Close ${tab.name}`}
+                >
+                  <X size={12} />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            marginLeft: 8,
+            marginRight: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flexShrink: 0,
+          }}
+        >
+          {activeIsMarkdown && (
+            <button
+              onClick={() =>
+                setPreviewModes((prev) => ({
+                  ...prev,
+                  [activeTab.path]: !prev[activeTab.path],
+                }))
+              }
+              title={activePreviewMode ? "Edit" : "Preview"}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "3px 8px",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                color: activePreviewMode ? "var(--accent)" : "var(--text-hint)",
+                fontSize: 11.5,
+                fontFamily: "var(--font-ui)",
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+            >
+              {activePreviewMode ? <PencilLine size={13} /> : <Eye size={13} />}
+              {activePreviewMode ? "Edit" : "Preview"}
+            </button>
+          )}
+          <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+            <Popover.Trigger asChild>
+              <button
+                title="Tab actions"
+                aria-label="Tab actions"
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "4px",
+                  borderRadius: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  color: "var(--text-hint)",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+              >
+                <MoreHorizontal size={15} />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                sideOffset={6}
+                align="end"
+                onOpenAutoFocus={(event) => event.preventDefault()}
+                className="file-viewer-tab-menu"
+              >
+                <button
+                  type="button"
+                  disabled={!canCloseOtherTabs}
+                  onClick={() => {
+                    onCloseOtherTabs(activeTab.path);
+                    setMenuOpen(false);
+                  }}
+                  className="file-viewer-tab-menu-item"
+                >
+                  Close Other Tabs
+                </button>
+                <button
+                  type="button"
+                  disabled={!canCloseTabsToRight}
+                  onClick={() => {
+                    onCloseTabsToRight(activeTab.path);
+                    setMenuOpen(false);
+                  }}
+                  className="file-viewer-tab-menu-item"
+                >
+                  Close Tabs to the Right
+                </button>
+                <button
+                  type="button"
+                  disabled={tabs.length === 0}
+                  onClick={() => {
+                    onCloseAllTabs();
+                    setMenuOpen(false);
+                  }}
+                  className="file-viewer-tab-menu-item"
+                >
+                  Close All Tabs
+                </button>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        </div>
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          position: "relative",
+          minWidth: 0,
+          minHeight: 0,
+        }}
+      >
+        {tabs.map((tab) => {
+          const isActive = tab.path === activeTab.path;
+          return (
+            <div
+              key={tab.path}
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                visibility: isActive ? "visible" : "hidden",
+                pointerEvents: isActive ? "auto" : "none",
+              }}
+            >
+              <FilePreviewPane
+                filePath={tab.path}
+                fileName={tab.name}
+                projectPath={projectPath}
+                isDark={isDark}
+                previewMode={!!previewModes[tab.path]}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

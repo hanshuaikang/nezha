@@ -107,14 +107,19 @@ export function ProjectPage({
 }) {
   const {
     rightPanel,
-    openFile,
+    openFiles,
+    activeFilePath,
     openDiff,
     rightPanelWidth,
     terminalHeight,
-    setOpenFile,
     setOpenDiff,
     handleTogglePanel,
     handleFileSelect,
+    handleFileTabSelect,
+    handleFileTabClose,
+    handleCloseOtherFileTabs,
+    handleCloseTabsToRight,
+    handleCloseAllFileTabs,
     handleDiffFileSelect,
     handleCommitSelect,
     handleCommitFileClick,
@@ -250,16 +255,7 @@ export function ProjectPage({
               </div>
             )}
           >
-            {openFile ? (
-              <FileViewer
-                filePath={openFile.path}
-                fileName={openFile.name}
-                projectPath={project.path}
-                onClose={() => setOpenFile(null)}
-                isDark={isDark}
-                onRunMakeTarget={handleRunMakeTarget}
-              />
-            ) : openDiff ? (
+            {openDiff ? (
               openDiff.kind === "file" ? (
                 <GitDiffViewer
                   projectPath={project.path}
@@ -287,6 +283,19 @@ export function ProjectPage({
                   onClose={() => setOpenDiff(null)}
                 />
               )
+            ) : openFiles.length > 0 ? (
+              <FileViewer
+                tabs={openFiles}
+                activeFilePath={activeFilePath}
+                projectPath={project.path}
+                onSelectTab={handleFileTabSelect}
+                onCloseTab={handleFileTabClose}
+                onCloseOtherTabs={handleCloseOtherFileTabs}
+                onCloseTabsToRight={handleCloseTabsToRight}
+                onCloseAllTabs={handleCloseAllFileTabs}
+                isDark={isDark}
+                onRunMakeTarget={handleRunMakeTarget}
+              />
             ) : isNewTask || !selectedTask ? (
               <NewTaskView
                 project={project}
@@ -307,7 +316,7 @@ export function ProjectPage({
             .filter((t) => mountedTaskIds.has(t.id))
             .map((task) => {
               const isVisible =
-                !openFile &&
+                openFiles.length === 0 &&
                 !openDiff &&
                 !isNewTask &&
                 !!selectedTask &&

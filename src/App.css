@@ -329,6 +329,67 @@ body {
   background: var(--text-hint);
 }
 
+.file-viewer-tab-strip {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) transparent;
+}
+
+.file-viewer-tab-strip::-webkit-scrollbar {
+  height: 3px;
+}
+
+.file-viewer-tab-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-viewer-tab-strip::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 999px;
+}
+
+.file-viewer-tab-strip::-webkit-scrollbar-thumb:hover {
+  background: var(--text-hint);
+}
+
+.file-viewer-tab-menu {
+  min-width: 168px;
+  padding: 3px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: 7px;
+  box-shadow: var(--shadow-md);
+  z-index: 2000;
+}
+
+.file-viewer-tab-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.file-viewer-tab-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.file-viewer-tab-menu-item:disabled {
+  color: var(--text-hint);
+  cursor: default;
+}
+
+.file-viewer-tab-menu-item:disabled:hover {
+  background: transparent;
+}
+
 /* ── Session markdown prose ─────────────────────────────────────── */
 .session-prose {
   -webkit-user-select: text;
