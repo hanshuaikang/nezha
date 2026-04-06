@@ -42,6 +42,7 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
 - 在单一界面中同时管理多个项目与多个 vibecoding 任务，虚拟终端运行原生的 Claude Code / Codex, 提供接近本地终端的实时输出与交互体验.
 - 自动识别并关联 Claude Code / Codex 会话, 当任务需要手动确认时，自动提醒用户。
 - 可视化会话历史，你可以直接在页面上可视化查看你和 Claude Code / Codex 每一次的会话详情，并随时 Resume 任务。
+- 精选打磨的 UI 风格，兼顾信息密度与可读性，并内置白天/黑夜主题模式，长时间使用也更舒适。
 - 原生集成 Git, AI 生成 Git Message。 原生集成轻量级代码编辑器和Markdown编辑器，支持所有常见编程语言代码高亮。
 - 按周统计 Token 与工具调用，帮助量化智能体效率与成本。
 ## 🌟 功能概览
@@ -98,6 +99,13 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
   <img src="docs/images/git.png" alt="Git 集成" width="90%" />
 </p>
 
+### 🎨 精心打磨的 UI 风格，支持白天和黑夜模式
+
+<p align="center">
+  <img src="docs/images/theme-dark.png" alt="深色主题" width="48%" />
+  <img src="docs/images/theme-light.png" alt="浅色主题" width="48%" />
+</p>
+
  ## 后续计划
 | <small>模块</small> | <small>计划功能</small> | <small>状态</small> |
 | --- | --- | :---: |
@@ -117,4 +125,3 @@ Nezha 的诞生离不开以下优秀的开源项目，向它们致敬：
 - [Tauri](https://github.com/tauri-apps/tauri) - 构建更小、更快、更安全的桌面应用
 - [React](https://github.com/facebook/react) - 构建用户界面的 JavaScript 库
 - [xterm.js](https://github.com/xtermjs/xterm.js) - 强大的 Web 终端组件
-

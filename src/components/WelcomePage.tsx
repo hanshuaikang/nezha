@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, BarChart2 } from "lucide-react";
-import type { Project } from "../types";
+import type { Project, ThemeMode } from "../types";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
@@ -68,6 +68,9 @@ export function WelcomePage({
   onProjectClick,
   onDeleteProject,
   isDark,
+  themeMode,
+  systemPrefersDark,
+  onThemeModeChange,
   onToggleTheme,
 }: {
   projects: Project[];
@@ -75,6 +78,9 @@ export function WelcomePage({
   onProjectClick: (p: Project) => void;
   onDeleteProject: (projectId: string) => void;
   isDark: boolean;
+  themeMode: ThemeMode;
+  systemPrefersDark: boolean;
+  onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -121,7 +127,13 @@ export function WelcomePage({
           </nav>
 
           <div style={s.sidebarFooter}>
-            <SidebarFooterActions isDark={isDark} onToggleTheme={onToggleTheme} />
+            <SidebarFooterActions
+              isDark={isDark}
+              themeMode={themeMode}
+              systemPrefersDark={systemPrefersDark}
+              onThemeModeChange={onThemeModeChange}
+              onToggleTheme={onToggleTheme}
+            />
           </div>
         </div>
 

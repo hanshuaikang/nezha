@@ -7,6 +7,7 @@ export interface Project {
 }
 
 export type AgentType = "claude" | "codex";
+export type ThemeMode = "system" | "dark" | "light";
 export type PermissionMode = "ask" | "auto_edit" | "full_access";
 export type TaskStatus =
   | "todo"

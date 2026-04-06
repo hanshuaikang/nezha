@@ -1,7 +1,16 @@
 import { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Pencil, Check, RefreshCw, ExternalLink, Star } from "lucide-react";
+import {
+  X,
+  Pencil,
+  Check,
+  RefreshCw,
+  ExternalLink,
+  Star,
+  Monitor,
+} from "lucide-react";
+import type { ThemeMode } from "../types";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
@@ -19,7 +28,7 @@ function getHighlighter(): Promise<Highlighter> {
   return _highlighterPromise!;
 }
 
-type NavKey = "general" | "about" | "claude" | "codex";
+type NavKey = "general" | "theme" | "about" | "claude" | "codex";
 
 interface AppSettings {
   claude_path: string;
@@ -43,6 +52,7 @@ const NAV_ITEMS: Array<{
   lang?: string;
 }> = [
   { key: "general", label: "General" },
+  { key: "theme", label: "Theme" },
   { key: "about", label: "About", logo: appLogo },
   {
     key: "claude",
@@ -59,6 +69,439 @@ const NAV_ITEMS: Array<{
     lang: "toml",
   },
 ];
+
+interface ThemePanelProps {
+  themeMode: ThemeMode;
+  systemPrefersDark: boolean;
+  onThemeModeChange: (mode: ThemeMode) => void;
+}
+
+function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePanelProps) {
+  const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
+  const selectedLabel =
+    themeMode === "system"
+      ? `Following system · ${systemPrefersDark ? "Dark" : "Light"}`
+      : `Manual · ${themeMode === "dark" ? "Dark" : "Light"}`;
+
+  function handleSystemThemeToggle() {
+    onThemeModeChange(themeMode === "system" ? "light" : "system");
+  }
+
+  function handleManualThemeKeyDown(
+    mode: Extract<ThemeMode, "dark" | "light">,
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) {
+    const currentIndex = manualThemeModes.indexOf(mode);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[(currentIndex + 1) % manualThemeModes.length]);
+      return;
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[(currentIndex - 1 + manualThemeModes.length) % manualThemeModes.length]);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[0]);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      onThemeModeChange(manualThemeModes[manualThemeModes.length - 1]);
+    }
+  }
+
+  function renderThemeOption({
+    mode,
+    title,
+    description,
+    previewBackground,
+    previewBorder,
+    previewAccent,
+  }: {
+    mode: Extract<ThemeMode, "dark" | "light">;
+    title: string;
+    description: string;
+    previewBackground: string;
+    previewBorder: string;
+    previewAccent: string;
+  }) {
+    const selected = themeMode === mode;
+
+    return (
+      <button
+        type="button"
+        onClick={() => onThemeModeChange(mode)}
+        onKeyDown={(event) => handleManualThemeKeyDown(mode, event)}
+        role="radio"
+        aria-checked={selected}
+        aria-label={`${title} theme`}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "stretch",
+          gap: 10,
+          padding: 14,
+          borderRadius: 12,
+          border: `1px solid ${selected ? "var(--accent)" : "var(--border-medium)"}`,
+          background: selected ? "var(--accent-subtle)" : "var(--bg-subtle)",
+          cursor: "pointer",
+          textAlign: "left",
+          boxShadow: selected ? "0 0 0 1px var(--accent-subtle)" : "none",
+          transition: "border-color 0.12s, background 0.12s, box-shadow 0.12s",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            height: 106,
+            borderRadius: 10,
+            border: `1px solid ${previewBorder}`,
+            background: previewBackground,
+            padding: 8,
+            boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+            gap: 7,
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ display: "flex", gap: 5 }}>
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: previewAccent,
+                opacity: 0.9,
+              }}
+            />
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: previewAccent,
+                opacity: 0.65,
+              }}
+            />
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: previewAccent,
+                opacity: 0.4,
+              }}
+            />
+          </div>
+          <div
+            style={{
+              flex: 1,
+              display: "grid",
+              gridTemplateColumns: mode === "dark" ? "28px 1fr" : "24px 1fr",
+              gap: 7,
+            }}
+          >
+            <div
+              style={{
+                borderRadius: 7,
+                background:
+                  mode === "dark"
+                    ? "rgba(255,255,255,0.05)"
+                    : "rgba(23,27,36,0.06)",
+                border:
+                  mode === "dark"
+                    ? "1px solid rgba(255,255,255,0.06)"
+                    : "1px solid rgba(23,27,36,0.06)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                padding: "7px 5px",
+              }}
+            >
+              <span
+                style={{
+                  height: 5,
+                  borderRadius: 999,
+                  background: previewAccent,
+                  opacity: mode === "dark" ? 0.55 : 0.3,
+                }}
+              />
+              <span
+                style={{
+                  height: 5,
+                  borderRadius: 999,
+                  background: previewAccent,
+                  opacity: mode === "dark" ? 0.28 : 0.16,
+                }}
+              />
+              <span
+                style={{
+                  height: 5,
+                  borderRadius: 999,
+                  background: previewAccent,
+                  opacity: mode === "dark" ? 0.2 : 0.12,
+                }}
+              />
+            </div>
+            <div
+              style={{
+                borderRadius: 8,
+                background:
+                  mode === "dark"
+                    ? "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))"
+                    : "linear-gradient(180deg, rgba(23,27,36,0.1), rgba(23,27,36,0.04))",
+                border:
+                  mode === "dark"
+                    ? "1px solid rgba(255,255,255,0.08)"
+                    : "1px solid rgba(23,27,36,0.08)",
+                padding: 8,
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 34,
+                    height: 6,
+                    borderRadius: 999,
+                    background: previewAccent,
+                    opacity: mode === "dark" ? 0.75 : 0.2,
+                  }}
+                />
+                <span
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 4,
+                    background: mode === "dark" ? "rgba(255,255,255,0.12)" : "#ffffff",
+                    border:
+                      mode === "dark"
+                        ? "1px solid rgba(255,255,255,0.08)"
+                        : "1px solid rgba(23,27,36,0.08)",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.15fr 0.85fr",
+                  gap: 6,
+                  flex: 1,
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: 6,
+                    background: mode === "dark" ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.9)",
+                    border:
+                      mode === "dark"
+                        ? "1px solid rgba(255,255,255,0.06)"
+                        : "1px solid rgba(23,27,36,0.06)",
+                  }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span
+                    style={{
+                      height: 18,
+                      borderRadius: 6,
+                      background:
+                        mode === "dark"
+                          ? "rgba(255,255,255,0.09)"
+                          : "rgba(255,255,255,0.92)",
+                      border:
+                        mode === "dark"
+                          ? "1px solid rgba(255,255,255,0.06)"
+                          : "1px solid rgba(23,27,36,0.06)",
+                    }}
+                  />
+                  <span
+                    style={{
+                      flex: 1,
+                      borderRadius: 6,
+                      background:
+                        mode === "dark"
+                          ? "rgba(255,255,255,0.05)"
+                          : "rgba(255,255,255,0.82)",
+                      border:
+                        mode === "dark"
+                          ? "1px solid rgba(255,255,255,0.05)"
+                          : "1px solid rgba(23,27,36,0.05)",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+              {title}
+            </span>
+            {selected && <Check size={14} color="var(--accent)" />}
+          </div>
+          <span style={{ fontSize: 11.5, color: "var(--text-hint)", lineHeight: 1.45 }}>
+            {description}
+          </span>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        ...s.settingsBody,
+        display: "flex",
+        flexDirection: "column",
+        gap: 18,
+        padding: "20px",
+      }}
+    >
+      <button
+        type="button"
+        onClick={handleSystemThemeToggle}
+        role="switch"
+        aria-checked={themeMode === "system"}
+        aria-label="Follow system theme"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 14,
+          padding: "16px 18px",
+          borderRadius: 12,
+          border: `1px solid ${themeMode === "system" ? "var(--accent)" : "var(--border-dim)"}`,
+          background: themeMode === "system" ? "var(--accent-subtle)" : "var(--bg-subtle)",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <div
+            style={{
+              flexShrink: 0,
+              width: 48,
+              height: 28,
+              borderRadius: 999,
+              border: "none",
+              padding: 3,
+              background: themeMode === "system" ? "var(--accent)" : "var(--border-medium)",
+              boxShadow:
+                themeMode === "system" ? "0 0 0 4px var(--accent-subtle)" : "inset 0 0 0 1px var(--border-dim)",
+              transition: "background 0.12s, box-shadow 0.12s",
+            }}
+          >
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                display: "grid",
+                placeItems: "center",
+                background: "#fff",
+                color: themeMode === "system" ? "var(--accent)" : "var(--text-secondary)",
+                transform: themeMode === "system" ? "translateX(20px)" : "translateX(0)",
+                transition: "transform 0.12s ease",
+              }}
+            >
+              <Monitor size={12} />
+            </div>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 3,
+              minWidth: 0,
+              padding: 0,
+              textAlign: "left",
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+              Follow System
+            </span>
+          </div>
+        </div>
+        <div
+          style={{
+            flexShrink: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 10px",
+            borderRadius: 999,
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-medium)",
+            color: "var(--text-secondary)",
+            fontSize: 11.5,
+            fontWeight: 600,
+          }}
+        >
+          {themeMode === "system" && <Check size={13} color="var(--accent)" />}
+          {selectedLabel}
+        </div>
+      </button>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+          Manual Theme
+        </div>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}
+          role="radiogroup"
+          aria-label="Manual theme"
+        >
+          {renderThemeOption({
+            mode: "dark",
+            title: "Dark",
+            description: "Always use the dark interface.",
+            previewBackground: "#11151d",
+            previewBorder: "rgba(255,255,255,0.08)",
+            previewAccent: "#f1f4fb",
+          })}
+          {renderThemeOption({
+            mode: "light",
+            title: "Light",
+            description: "Always use the light interface.",
+            previewBackground: "#f5f7fb",
+            previewBorder: "rgba(23,27,36,0.08)",
+            previewAccent: "#171b24",
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── General Panel ─────────────────────────────────────────────────────────────
 
@@ -647,7 +1090,19 @@ function AgentConfigPanel({
 
 // ── Main Dialog ───────────────────────────────────────────────────────────────
 
-export function AppSettingsDialog({ onClose, isDark }: { onClose: () => void; isDark: boolean }) {
+export function AppSettingsDialog({
+  onClose,
+  isDark,
+  themeMode,
+  systemPrefersDark,
+  onThemeModeChange,
+}: {
+  onClose: () => void;
+  isDark: boolean;
+  themeMode: ThemeMode;
+  systemPrefersDark: boolean;
+  onThemeModeChange: (mode: ThemeMode) => void;
+}) {
   const [activeNav, setActiveNav] = useState<NavKey>("general");
 
   function handleOverlayClick(e: React.MouseEvent) {
@@ -678,6 +1133,8 @@ export function AppSettingsDialog({ onClose, isDark }: { onClose: () => void; is
                   src={item.logo}
                   style={{ width: 14, height: 14, opacity: item.key === "codex" ? 0.7 : 1 }}
                 />
+              ) : item.key === "theme" ? (
+                <Monitor size={14} strokeWidth={1.8} />
               ) : (
                 <span
                   style={{
@@ -706,6 +1163,8 @@ export function AppSettingsDialog({ onClose, isDark }: { onClose: () => void; is
                   src={activeItem.logo}
                   style={{ width: 16, height: 16, opacity: activeItem.key === "codex" ? 0.7 : 1 }}
                 />
+              ) : activeItem.key === "theme" ? (
+                <Monitor size={16} strokeWidth={1.8} color="var(--text-secondary)" />
               ) : (
                 <span style={{ fontSize: 15 }}>⚙</span>
               )}
@@ -718,6 +1177,13 @@ export function AppSettingsDialog({ onClose, isDark }: { onClose: () => void; is
 
           {activeNav === "general" ? (
             <GeneralPanel key="general" />
+          ) : activeNav === "theme" ? (
+            <ThemePanel
+              key="theme"
+              themeMode={themeMode}
+              systemPrefersDark={systemPrefersDark}
+              onThemeModeChange={onThemeModeChange}
+            />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />
           ) : (

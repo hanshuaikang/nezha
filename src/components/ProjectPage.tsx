@@ -1,5 +1,12 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import type { Project, Task, AgentType, PermissionMode, TaskStatus } from "../types";
+import type {
+  Project,
+  Task,
+  AgentType,
+  PermissionMode,
+  TaskStatus,
+  ThemeMode,
+} from "../types";
 import { TaskPanel } from "./TaskPanel";
 import { NewTaskView } from "./NewTaskView";
 import { RunningView } from "./RunningView";
@@ -47,6 +54,9 @@ export function ProjectPage({
   onSwitchProject,
   onOpen,
   isDark,
+  themeMode,
+  systemPrefersDark,
+  onThemeModeChange,
   onToggleTheme,
 }: {
   project: Project;
@@ -90,6 +100,9 @@ export function ProjectPage({
   onSwitchProject: (project: Project) => void;
   onOpen: () => void;
   isDark: boolean;
+  themeMode: ThemeMode;
+  systemPrefersDark: boolean;
+  onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
 }) {
   const {
@@ -196,6 +209,9 @@ export function ProjectPage({
         onRunTodo={onRunTodoTask}
         onBack={onBack}
         isDark={isDark}
+        themeMode={themeMode}
+        systemPrefersDark={systemPrefersDark}
+        onThemeModeChange={onThemeModeChange}
         onToggleTheme={onToggleTheme}
       />
       <div style={{ ...s.mainContent, flexDirection: "column" }}>

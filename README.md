@@ -46,6 +46,7 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
 - **Centralized Multi-Tasking**: Manage multiple projects and VibeCoding tasks simultaneously within a single interface. The virtual terminal runs native Claude Code / Codex, providing real-time output and interactive experience that rivals a local terminal.
 - **Intelligent Session Management**: Automatically detects and associates Claude Code / Codex sessions. The system intelligently alerts users when tasks require manual confirmation or input.
 - **Visualized Session History**: Intuitively view the detailed interaction history between you and Claude Code / Codex directly within the UI. You can seamlessly resume interrupted tasks at any time.
+- **Polished Interface Design**: A carefully crafted visual style balances information density with clarity, while built-in light and dark themes keep the workspace comfortable day and night.
 - **Native Git & Code Editing**: Features native Git integration with AI-assisted Git commit message generation. The built-in lightweight code and Markdown editors provide syntax highlighting for all major programming languages.
 - **Usage Analytics**: Provides weekly statistics on Token consumption and tool invocations, helping you quantify agent efficiency and track operational costs.
 
@@ -100,6 +101,13 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
 
 <p align="center">
   <img src="docs/images/git.png" alt="Git Integration" width="90%" />
+</p>
+
+### 🎨 Carefully Crafted UI Style with Light and Dark Modes
+
+<p align="center">
+  <img src="docs/images/theme-dark.png" alt="Dark Theme" width="48%" />
+  <img src="docs/images/theme-light.png" alt="Light Theme" width="48%" />
 </p>
 
 ## 🗺️ Roadmap
