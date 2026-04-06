@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Project, Task, TaskStatus, AgentType, PermissionMode } from "./types";
+import type { Project, Task, TaskStatus, AgentType, PermissionMode, ThemeMode } from "./types";
 import { isActiveTaskStatus } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
@@ -130,13 +130,21 @@ function createDefaultProjectViewState(): ProjectViewState {
   return { selectedTaskId: null, isNewTask: true };
 }
 
+function getSystemPrefersDark() {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function getInitialThemeMode(): ThemeMode {
+  const stored = localStorage.getItem("nezha:theme");
+  return stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+}
+
 function App() {
   const { showToast } = useToast();
 
-  const [isDark, setIsDark] = useState(() => {
-    const stored = localStorage.getItem("nezha:theme");
-    return stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
+  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
+  const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   // Mutable buffer map — written on every agent-output event without triggering re-renders.
@@ -245,9 +253,27 @@ function App() {
   }
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+
+    setSystemPrefersDark(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
-    localStorage.setItem("nezha:theme", isDark ? "dark" : "light");
-  }, [isDark]);
+    localStorage.setItem("nezha:theme", themeMode);
+  }, [isDark, themeMode]);
+
+  const handleToggleTheme = useCallback(() => {
+    setThemeMode((currentMode) => {
+      const currentlyDark =
+        currentMode === "system" ? systemPrefersDark : currentMode === "dark";
+      return currentlyDark ? "light" : "dark";
+    });
+  }, [systemPrefersDark]);
 
   useEffect(() => {
     async function init() {
@@ -805,7 +831,10 @@ function App() {
               onSwitchProject={handleProjectClick}
               onOpen={handleOpen}
               isDark={isDark}
-              onToggleTheme={() => setIsDark((d) => !d)}
+              themeMode={themeMode}
+              systemPrefersDark={systemPrefersDark}
+              onThemeModeChange={setThemeMode}
+              onToggleTheme={handleToggleTheme}
             />
           );
         })}
@@ -824,7 +853,10 @@ function App() {
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
             isDark={isDark}
-            onToggleTheme={() => setIsDark((d) => !d)}
+            themeMode={themeMode}
+            systemPrefersDark={systemPrefersDark}
+            onThemeModeChange={setThemeMode}
+            onToggleTheme={handleToggleTheme}
           />
         </div>
       )}
