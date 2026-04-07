@@ -110,6 +110,8 @@ export const layout = {
     borderRadius: 6,
     display: "flex",
     alignItems: "center",
+    position: "relative",
+    overflow: "visible",
     opacity: 0.5,
   },
   welcomePane: {

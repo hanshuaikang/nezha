@@ -38,6 +38,7 @@ notify = "6"
 toml = "0.8"
 libc = "0.2"
 parking_lot = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 uuid = { version = "1", features = ["v4"] }
 
 [profile.dev]

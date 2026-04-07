@@ -55,3 +55,23 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 export function isActiveTaskStatus(status: TaskStatus): boolean {
   return status === "pending" || status === "running" || status === "input_required";
 }
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+export interface NotificationItem {
+  id: string;
+  notifType: "update" | "announcement" | "warning" | string;
+  level: "info" | "warning" | "error" | string;
+  title: string;
+  body: string;
+  url: string | null;
+  createdAt: string;
+  popup: boolean;
+  isRead: boolean;
+}
+
+export interface NotificationResult {
+  notifications: NotificationItem[];
+  unreadCount: number;
+  hasUnreadPopup: boolean;
+}
