@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use chrono::Utc;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::storage::atomic_write;
@@ -14,6 +16,8 @@ const MAX_RESPONSE_BYTES: usize = 1024 * 1024; // 1MB limit
 const FETCH_INTERVAL_SECS: i64 = 3600; // 1 hour
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+static NOTIFICATION_STORE_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
 // ── Remote JSON types ────────────────────────────────────────────────────────
 
@@ -120,6 +124,21 @@ fn save_store(store: &NotificationStore) -> Result<(), String> {
     atomic_write(&path, &json)
 }
 
+fn notification_store_mutex() -> &'static Mutex<()> {
+    NOTIFICATION_STORE_MUTEX.get_or_init(|| Mutex::new(()))
+}
+
+fn update_store<T, F>(mutate: F) -> Result<T, String>
+where
+    F: FnOnce(&mut NotificationStore) -> Result<T, String>,
+{
+    let _guard = notification_store_mutex().lock();
+    let mut store = load_store();
+    let result = mutate(&mut store)?;
+    save_store(&store)?;
+    Ok(result)
+}
+
 // ── Utilities ────────────────────────────────────────────────────────────────
 
 fn should_fetch(store: &NotificationStore) -> bool {
@@ -137,6 +156,13 @@ fn should_fetch(store: &NotificationStore) -> bool {
             Err(_) => true,
         },
     }
+}
+
+fn apply_fetched_notifications(store: &mut NotificationStore, remote: Vec<RemoteNotification>) {
+    let remote_ids: HashSet<&str> = remote.iter().map(|n| n.id.as_str()).collect();
+    store.read_ids.retain(|id| remote_ids.contains(id.as_str()));
+    store.last_fetched_at = Some(Utc::now().to_rfc3339());
+    store.cached_notifications = Some(remote);
 }
 
 /// Strip control characters (except newline) and limit length to prevent
@@ -271,15 +297,15 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
     let notifications = if should_fetch(&store) {
         match fetch_remote().await {
             Ok(remote) => {
-                let remote_ids: HashSet<&str> = remote.iter().map(|n| n.id.as_str()).collect();
-                store.read_ids.retain(|id| remote_ids.contains(id.as_str()));
-                store.last_fetched_at = Some(Utc::now().to_rfc3339());
-                store.cached_notifications = Some(remote.clone());
-
-                let s = store.clone();
-                tokio::task::spawn_blocking(move || {
-                    let _ = save_store(&s);
-                });
+                let cached_remote = remote.clone();
+                store = tokio::task::spawn_blocking(move || {
+                    update_store(|store| {
+                        apply_fetched_notifications(store, cached_remote);
+                        Ok(store.clone())
+                    })
+                })
+                .await
+                .map_err(|e| e.to_string())??;
 
                 remote
             }
@@ -327,11 +353,12 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
 pub async fn mark_notification_read(id: String) -> Result<(), String> {
     let sanitized_id = sanitize_text(&id, 100);
     tokio::task::spawn_blocking(move || {
-        let mut store = load_store();
-        if !store.read_ids.contains(&sanitized_id) {
-            store.read_ids.push(sanitized_id);
-        }
-        save_store(&store)
+        update_store(|store| {
+            if !store.read_ids.contains(&sanitized_id) {
+                store.read_ids.push(sanitized_id);
+            }
+            Ok(())
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -340,16 +367,53 @@ pub async fn mark_notification_read(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn mark_all_notifications_read() -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let mut store = load_store();
-        if let Some(cached) = &store.cached_notifications {
-            for n in cached {
-                if !store.read_ids.contains(&n.id) {
-                    store.read_ids.push(n.id.clone());
+        update_store(|store| {
+            if let Some(cached) = store.cached_notifications.clone() {
+                for n in cached {
+                    if !store.read_ids.contains(&n.id) {
+                        store.read_ids.push(n.id);
+                    }
                 }
             }
-        }
-        save_store(&store)
+            Ok(())
+        })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notification(id: &str) -> RemoteNotification {
+        RemoteNotification {
+            id: id.to_string(),
+            notif_type: "info".to_string(),
+            level: "info".to_string(),
+            title: format!("title-{id}"),
+            body: format!("body-{id}"),
+            url: None,
+            created_at: "2026-01-01".to_string(),
+            expires_at: None,
+            popup: false,
+            min_app_version: None,
+            max_app_version: None,
+        }
+    }
+
+    #[test]
+    fn apply_fetched_notifications_keeps_only_existing_read_ids_in_remote() {
+        let mut store = NotificationStore {
+            read_ids: vec!["keep".to_string(), "drop".to_string()],
+            last_fetched_at: None,
+            cached_notifications: None,
+        };
+
+        apply_fetched_notifications(&mut store, vec![notification("keep"), notification("new")]);
+
+        assert_eq!(store.read_ids, vec!["keep".to_string()]);
+        assert_eq!(store.cached_notifications.unwrap().len(), 2);
+        assert!(store.last_fetched_at.is_some());
+    }
 }
