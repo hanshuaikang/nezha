@@ -13,6 +13,7 @@ import "./App.css";
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB per task (in-memory limit)
 const MAX_WRITE_CHARS_PER_BATCH = 64 * 1024;
 const MAX_BUFFER_CHUNKS = 256; // compact when chunks array exceeds this
+const DRAIN_FRAME_BUDGET = 128 * 1024; // 每帧最多处理 128KB，避免单帧写入时间过长
 
 // Chunk-based buffer: avoids O(n) string copies on every agent-output event.
 // totalLen = chars currently stored; droppedLen = chars evicted from the front.
@@ -81,18 +82,6 @@ function pushToBuffer(buf: TaskBuffer, data: string): void {
 
 function getBufferAbsLen(buf: TaskBuffer): number {
   return buf.totalLen + buf.droppedLen;
-}
-
-function scheduleMicrotask(fn: () => void): void {
-  if (typeof queueMicrotask === "function") {
-    queueMicrotask(fn);
-    return;
-  }
-  Promise.resolve().then(fn).catch((error) => {
-    setTimeout(() => {
-      throw error;
-    }, 0);
-  });
 }
 
 // Join chunks starting from an absolute offset (recorded at snapshot time).
@@ -186,7 +175,7 @@ function App() {
       return;
     }
     state.scheduled = true;
-    scheduleMicrotask(() => {
+    requestAnimationFrame(() => {
       const current = terminalWriteStateRef.current[taskId];
       if (!current || current.generation !== generation) {
         return;
@@ -307,33 +296,15 @@ function App() {
     // pointer events (selection drag) and GC.
     const pendingOutputs = new Map<string, string[]>();
     let rafId = 0;
-    // Track whether mouse is held down inside a terminal — when true, defer all
-    // output processing to keep mousemove (scrollbar drag / selection) smooth.
-    let terminalMouseDown = false;
-    const onTerminalMouseDown = (e: MouseEvent) => {
-      if ((e.target as HTMLElement)?.closest(".xterm")) {
-        terminalMouseDown = true;
-      }
-    };
-    const onTerminalMouseUp = () => {
-      if (!terminalMouseDown) return;
-      terminalMouseDown = false;
-      // Flush deferred outputs now that interaction ended
-      if (pendingOutputs.size > 0 && !rafId) {
-        rafId = requestAnimationFrame(drainPendingOutputs);
-      }
-    };
-    document.addEventListener("mousedown", onTerminalMouseDown, true);
-    document.addEventListener("mouseup", onTerminalMouseUp, true);
 
     function drainPendingOutputs() {
       rafId = 0;
-      // While user is dragging inside a terminal, defer processing entirely
-      // so mousemove events get uncontested main-thread time.
-      if (terminalMouseDown) {
+      // 有鼠标/键盘事件排队时，本帧让路，下帧再写入，避免 xterm 渲染阻塞输入处理
+      if ((navigator as unknown as { scheduling?: { isInputPending?: () => boolean } }).scheduling?.isInputPending?.()) {
         rafId = requestAnimationFrame(drainPendingOutputs);
         return;
       }
+      let bytesThisFrame = 0;
       for (const [taskId, chunks] of pendingOutputs) {
         const joined = chunks.length === 1 ? chunks[0] : chunks.join("");
 
@@ -361,8 +332,17 @@ function App() {
             return next;
           });
         }
+
+        pendingOutputs.delete(taskId);
+        bytesThisFrame += joined.length;
+        if (bytesThisFrame >= DRAIN_FRAME_BUDGET) {
+          break;
+        }
       }
-      pendingOutputs.clear();
+      // 超出帧预算的剩余数据留到下一帧处理，避免 mouseup 后积压数据一次性 flush 卡死
+      if (pendingOutputs.size > 0 && !rafId) {
+        rafId = requestAnimationFrame(drainPendingOutputs);
+      }
     }
 
     const p1 = listen<{ task_id: string; data: string }>("agent-output", (e) => {
@@ -396,8 +376,6 @@ function App() {
       p2.then((fn) => fn());
       p3.then((fn) => fn());
       if (rafId) cancelAnimationFrame(rafId);
-      document.removeEventListener("mousedown", onTerminalMouseDown, true);
-      document.removeEventListener("mouseup", onTerminalMouseUp, true);
     };
     // 事件监听器仅需在挂载时注册一次；回调通过 ref 模式保持最新引用，无需重新订阅
     // eslint-disable-next-line react-hooks/exhaustive-deps
