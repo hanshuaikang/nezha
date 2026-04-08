@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Bell, X, ExternalLink, Check, CheckCheck, Info, AlertTriangle, AlertCircle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { NotificationItem, NotificationResult } from "../types";
 import s from "../styles";
 
@@ -24,10 +25,10 @@ function NotificationEntry({
 }) {
   const [hov, setHov] = useState(false);
 
-  const handleClick = () => {
+  const handleClick = async () => {
     if (!item.isRead) onMarkRead(item.id);
     if (item.url) {
-      window.open(item.url, "_blank", "noopener,noreferrer");
+      await openUrl(item.url);
     }
   };
 
