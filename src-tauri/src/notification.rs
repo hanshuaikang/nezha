@@ -270,7 +270,6 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
     let notifications = if should_fetch(&store) {
         match fetch_remote().await {
             Ok(remote) => {
-                // Prune read_ids to only keep IDs still present remotely
                 let remote_ids: HashSet<&str> = remote.iter().map(|n| n.id.as_str()).collect();
                 store.read_ids.retain(|id| remote_ids.contains(id.as_str()));
                 store.last_fetched_at = Some(Utc::now().to_rfc3339());
