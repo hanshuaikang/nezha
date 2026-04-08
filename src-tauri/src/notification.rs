@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::storage::atomic_write;
+
 // ── Security: hardcoded allowed notification source ──────────────────────────
 
 const NOTIFICATIONS_URL: &str = "https://nezha.hanshutx.com/notifications.json";
@@ -115,8 +117,7 @@ fn save_store(store: &NotificationStore) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())?;
-    Ok(())
+    atomic_write(&path, &json)
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
