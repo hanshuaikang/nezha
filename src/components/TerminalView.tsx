@@ -148,12 +148,12 @@ export function TerminalView({
       });
     };
 
-    // --- 仅保留高水位流控，不因选区拖拽暂停写入 ---
     // 用对象持有状态，避免闭包捕获过期值
     const writeState = {
       pendingChunks: [] as Array<{ data: string; callback?: () => void }>,
       watermark: 0,       // 当前 xterm write queue 中的字节估算
       paused: false,      // 是否因高水位被暂停
+      selectionPaused: false, // 是否因选区拖拽暂停写入
     };
 
     /** 真正写入 xterm，写完后更新水位并检查是否可以 flush 下一条 */
@@ -171,7 +171,7 @@ export function TerminalView({
     }
 
     function enqueueChunk(data: string, callback?: () => void) {
-      if (writeState.paused || writeState.watermark >= HIGH_WATER) {
+      if (writeState.selectionPaused || writeState.paused || writeState.watermark >= HIGH_WATER) {
         if (writeState.watermark >= HIGH_WATER) writeState.paused = true;
         writeState.pendingChunks.push({ data, callback });
         return;
@@ -231,6 +231,22 @@ export function TerminalView({
 
     const disposeSmartCopy = attachSmartCopy(term);
     const disposeOnData = term.onData((data) => onInputRef.current(data));
+
+    // 选区期间暂停 term.write()，让 mousemove 事件获得完整的主线程时间片。
+    // mousedown 时暂停，mouseup 时恢复并 flush 积累的数据。
+    const handleSelectionStart = () => {
+      writeState.selectionPaused = true;
+    };
+    const handleSelectionEnd = () => {
+      if (!writeState.selectionPaused) return;
+      writeState.selectionPaused = false;
+      if (!writeState.paused) {
+        drainPending();
+      }
+    };
+    container.addEventListener("mousedown", handleSelectionStart);
+    document.addEventListener("mouseup", handleSelectionEnd);
+
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 0) focusTerminal();
     };
@@ -279,6 +295,8 @@ export function TerminalView({
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       container.removeEventListener("pointerdown", handlePointerDown as EventListener);
+      container.removeEventListener("mousedown", handleSelectionStart);
+      document.removeEventListener("mouseup", handleSelectionEnd);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
       term.dispose();

@@ -12,6 +12,7 @@ import "./App.css";
 
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB per task (in-memory limit)
 const MAX_WRITE_CHARS_PER_BATCH = 64 * 1024;
+const MAX_BUFFER_CHUNKS = 256; // compact when chunks array exceeds this
 
 // Chunk-based buffer: avoids O(n) string copies on every agent-output event.
 // totalLen = chars currently stored; droppedLen = chars evicted from the front.
@@ -68,6 +69,13 @@ function pushToBuffer(buf: TaskBuffer, data: string): void {
     const dropped = buf.chunks.shift()!;
     buf.totalLen -= dropped.length;
     buf.droppedLen += dropped.length;
+  }
+  // Compact: merge many small chunks into one to reduce array length and GC pressure.
+  // This prevents thousands of tiny strings from accumulating during long-running tasks.
+  if (buf.chunks.length > MAX_BUFFER_CHUNKS) {
+    const merged = buf.chunks.join("");
+    buf.chunks.length = 0;
+    buf.chunks.push(merged);
   }
 }
 
@@ -293,33 +301,80 @@ function App() {
 
   // Tauri event listeners
   useEffect(() => {
+    // RAF-batched agent-output processing: accumulate events from all tasks between
+    // frames and process them once per animation frame.  This prevents high-frequency
+    // events (3 tasks × ~60/s = 180/s) from monopolising the main thread and starving
+    // pointer events (selection drag) and GC.
+    const pendingOutputs = new Map<string, string[]>();
+    let rafId = 0;
+    // Track whether mouse is held down inside a terminal — when true, defer all
+    // output processing to keep mousemove (scrollbar drag / selection) smooth.
+    let terminalMouseDown = false;
+    const onTerminalMouseDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement)?.closest(".xterm")) {
+        terminalMouseDown = true;
+      }
+    };
+    const onTerminalMouseUp = () => {
+      if (!terminalMouseDown) return;
+      terminalMouseDown = false;
+      // Flush deferred outputs now that interaction ended
+      if (pendingOutputs.size > 0 && !rafId) {
+        rafId = requestAnimationFrame(drainPendingOutputs);
+      }
+    };
+    document.addEventListener("mousedown", onTerminalMouseDown, true);
+    document.addEventListener("mouseup", onTerminalMouseUp, true);
+
+    function drainPendingOutputs() {
+      rafId = 0;
+      // While user is dragging inside a terminal, defer processing entirely
+      // so mousemove events get uncontested main-thread time.
+      if (terminalMouseDown) {
+        rafId = requestAnimationFrame(drainPendingOutputs);
+        return;
+      }
+      for (const [taskId, chunks] of pendingOutputs) {
+        const joined = chunks.length === 1 ? chunks[0] : chunks.join("");
+
+        if (terminalWriteRefs.current[taskId]) {
+          enqueueTerminalWrite(taskId, joined);
+        }
+        if (taskId in taskBufferRef.current) {
+          pushToBuffer(taskBufferRef.current[taskId], joined);
+        }
+
+        if (pendingTaskIdsRef.current.has(taskId)) {
+          setTasks((prev) => {
+            const task = prev.find((item) => item.id === taskId);
+            if (!task || task.status !== "pending") {
+              pendingTaskIdsRef.current.delete(taskId);
+              return prev;
+            }
+            pendingTaskIdsRef.current.delete(taskId);
+            const next = prev.map((t) =>
+              t.id === taskId
+                ? { ...t, status: "running" as TaskStatus, attentionRequestedAt: undefined }
+                : t,
+            );
+            persistProjectTasks(task.projectId, next, showToast);
+            return next;
+          });
+        }
+      }
+      pendingOutputs.clear();
+    }
+
     const p1 = listen<{ task_id: string; data: string }>("agent-output", (e) => {
       const { task_id, data } = e.payload;
-
-      if (terminalWriteRefs.current[task_id]) {
-        enqueueTerminalWrite(task_id, data);
+      let arr = pendingOutputs.get(task_id);
+      if (!arr) {
+        arr = [];
+        pendingOutputs.set(task_id, arr);
       }
-      // Always buffer so project-switch → return can replay full history
-      if (task_id in taskBufferRef.current) {
-        pushToBuffer(taskBufferRef.current[task_id], data);
-      }
-
-      if (pendingTaskIdsRef.current.has(task_id)) {
-        setTasks((prev) => {
-          const task = prev.find((item) => item.id === task_id);
-          if (!task || task.status !== "pending") {
-            pendingTaskIdsRef.current.delete(task_id);
-            return prev;
-          }
-          pendingTaskIdsRef.current.delete(task_id);
-          const next = prev.map((t) =>
-            t.id === task_id
-              ? { ...t, status: "running" as TaskStatus, attentionRequestedAt: undefined }
-              : t,
-          );
-          persistProjectTasks(task.projectId, next, showToast);
-          return next;
-        });
+      arr.push(data);
+      if (!rafId) {
+        rafId = requestAnimationFrame(drainPendingOutputs);
       }
     });
     const p2 = listen<{ task_id: string; status: TaskStatus; failure_reason?: string }>(
@@ -340,6 +395,9 @@ function App() {
       p1.then((fn) => fn());
       p2.then((fn) => fn());
       p3.then((fn) => fn());
+      if (rafId) cancelAnimationFrame(rafId);
+      document.removeEventListener("mousedown", onTerminalMouseDown, true);
+      document.removeEventListener("mouseup", onTerminalMouseUp, true);
     };
     // 事件监听器仅需在挂载时注册一次；回调通过 ref 模式保持最新引用，无需重新订阅
     // eslint-disable-next-line react-hooks/exhaustive-deps
