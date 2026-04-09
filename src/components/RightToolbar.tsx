@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { IconButton } from "./IconButton";
-import { Folder, Search, GitBranch, History, Bell, Settings, Terminal } from "lucide-react";
+import { Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
 
 export function RightToolbar({
   activePanel,
@@ -28,12 +28,6 @@ export function RightToolbar({
   const placeholders = [{ icon: <Search size={17} />, title: "Search (coming soon)" }];
 
   const footerItems = [
-    {
-      icon: <Bell size={17} />,
-      title: "Notifications (coming soon)",
-      disabled: true,
-      onClick: undefined,
-    },
     { icon: <Settings size={17} />, title: "Settings", disabled: false, onClick: onOpenSettings },
   ];
 

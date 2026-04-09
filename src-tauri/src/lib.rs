@@ -8,6 +8,7 @@ mod app_settings;
 mod config;
 mod fs;
 mod git;
+mod notification;
 mod pty;
 mod session;
 mod storage;
@@ -107,6 +108,9 @@ pub fn run() {
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,
+            notification::get_notifications,
+            notification::mark_notification_read,
+            notification::mark_all_notifications_read,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

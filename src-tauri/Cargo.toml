@@ -2,7 +2,7 @@
 name = "nezha"
 version = "0.1.0"
 description = "An agent-first vibe coding application"
-authors = ["Hanshuaikang"]
+authors = ["hanshuaikang"]
 edition = "2021"
 repository = "https://github.com/hanshuaikang/nezha"
 homepage = "https://github.com/hanshuaikang/nezha"
@@ -38,6 +38,7 @@ notify = "6"
 toml = "0.8"
 libc = "0.2"
 parking_lot = "0.12"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 uuid = { version = "1", features = ["v4"] }
 
 [profile.dev]

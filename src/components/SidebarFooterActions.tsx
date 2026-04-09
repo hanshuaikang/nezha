@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
 import type { ThemeMode } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
+import { NotificationBell } from "./NotificationBell";
 import s from "../styles";
 
 export function SidebarFooterActions({
@@ -22,6 +23,7 @@ export function SidebarFooterActions({
   return (
     <>
       <div style={s.sidebarFooterActions}>
+        <NotificationBell />
         <button
           style={s.sidebarIconBtn}
           title="App Settings"
