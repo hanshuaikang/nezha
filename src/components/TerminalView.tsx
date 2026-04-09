@@ -151,8 +151,9 @@ export function TerminalView({
     // 用对象持有状态，避免闭包捕获过期值
     const writeState = {
       pendingChunks: [] as Array<{ data: string; callback?: () => void }>,
-      watermark: 0,  // 当前 xterm write queue 中的字节估算
-      paused: false, // 是否因高水位被暂停
+      watermark: 0,       // 当前 xterm write queue 中的字节估算
+      paused: false,      // 是否因高水位被暂停
+      selectionPaused: false, // 鼠标左键按下期间暂停写入，保证选区流畅
     };
 
     /** 真正写入 xterm，写完后更新水位并检查是否可以 flush 下一条 */
@@ -170,7 +171,7 @@ export function TerminalView({
     }
 
     function enqueueChunk(data: string, callback?: () => void) {
-      if (writeState.paused || writeState.watermark >= HIGH_WATER) {
+      if (writeState.paused || writeState.selectionPaused || writeState.watermark >= HIGH_WATER) {
         if (writeState.watermark >= HIGH_WATER) writeState.paused = true;
         writeState.pendingChunks.push({ data, callback });
         return;
@@ -178,9 +179,9 @@ export function TerminalView({
       flushOne(data, callback);
     }
 
-    /** 将 pending 队列里的数据依次写入（低水位恢复时调用） */
+    /** 将 pending 队列里的数据依次写入（低水位恢复 / 选区结束时调用） */
     function drainPending() {
-      while (writeState.pendingChunks.length > 0 && !writeState.paused) {
+      while (writeState.pendingChunks.length > 0 && !writeState.paused && !writeState.selectionPaused) {
         const next = writeState.pendingChunks.shift()!;
         if (writeState.watermark >= HIGH_WATER) {
           writeState.pendingChunks.unshift(next);
@@ -231,7 +232,17 @@ export function TerminalView({
     const disposeOnData = term.onData((data) => onInputRef.current(data));
 
     const handlePointerDown = (e: PointerEvent) => {
-      if (e.button === 0) focusTerminal();
+      if (e.button === 0) {
+        focusTerminal();
+        writeState.selectionPaused = true;
+      }
+    };
+    // pointerup 挂在 document 上，拖出终端区域外松手也能正确恢复
+    const handlePointerUp = (e: PointerEvent) => {
+      if (e.button === 0 && writeState.selectionPaused) {
+        writeState.selectionPaused = false;
+        drainPending();
+      }
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
@@ -248,6 +259,7 @@ export function TerminalView({
     };
 
     container.addEventListener("pointerdown", handlePointerDown as EventListener);
+    document.addEventListener("pointerup", handlePointerUp as EventListener);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -278,6 +290,7 @@ export function TerminalView({
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       container.removeEventListener("pointerdown", handlePointerDown as EventListener);
+      document.removeEventListener("pointerup", handlePointerUp as EventListener);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
       term.dispose();
