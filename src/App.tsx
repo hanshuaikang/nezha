@@ -135,6 +135,9 @@ function App() {
       (e) => {
         const { task_id, status, failure_reason } = e.payload;
         updateTaskStatus(task_id, status, undefined, failure_reason);
+        if (!isActiveTaskStatus(status)) {
+          tm.removeTaskBuffers([task_id]);
+        }
       },
     );
     const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
