@@ -14,7 +14,7 @@ import type { ThemeMode } from "../types";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
-import appLogo from "../assets/logo.png";
+import appLogo from "../assets/app-logo.png";
 
 // Reuse the same singleton highlighter as FileViewer
 import type { Highlighter } from "shiki";
