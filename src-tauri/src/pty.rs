@@ -14,6 +14,9 @@ const SESSION_WAIT_MAX: Duration = Duration::from_millis(500);
 const PTY_READ_BUFFER_SIZE: usize = 32 * 1024;
 const PTY_EMIT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
+/// 有界 channel 容量：满时 reader 线程阻塞，反压传播至 OS 内核 PTY 缓冲区，
+/// 最终使写入进程（Claude/Codex）的 write() 系统调用阻塞，从源头限流。
+const PTY_EMIT_CHANNEL_CAPACITY: usize = 32;
 
 fn task_attachments_dir(project_path: &str, task_id: &str) -> std::path::PathBuf {
     Path::new(project_path)
@@ -221,7 +224,7 @@ fn spawn_pty_reader(
                 flush_interval,
                 max_batch_bytes,
             } => {
-                let (tx, rx) = std::sync::mpsc::channel::<String>();
+                let (tx, rx) = std::sync::mpsc::sync_channel::<String>(PTY_EMIT_CHANNEL_CAPACITY);
                 let emit_app = app.clone();
                 let emit_id = id.clone();
                 let worker = std::thread::spawn(move || {
@@ -282,11 +285,12 @@ fn spawn_pty_reader(
                         let data = unsafe {
                             std::str::from_utf8_unchecked(&combined[..valid_len]).to_owned()
                         };
+                        // session_tx 需要独立副本；data 本身留给 emit 路径 move，避免多余堆分配
                         if let Some(ref tx) = session_tx {
                             let _ = tx.send(data.clone());
                         }
                         if let Some(ref tx) = emit_tx {
-                            match tx.send(data.clone()) {
+                            match tx.send(data) {
                                 Ok(()) => {}
                                 Err(err) => emit_pty_event(&app, &id, event_name, id_key, err.0),
                             }

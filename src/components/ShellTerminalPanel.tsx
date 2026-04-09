@@ -4,61 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import {
+  DARK_THEME,
+  LIGHT_THEME,
+  initTerminal,
+  loadWebglAddon,
+  safeFit,
+  createSmartWriter,
+} from "./terminalShared";
 import { X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
-
-const DARK_THEME = {
-  background: "#1e2230",
-  foreground: "#cdd6f4",
-  cursor: "#cdd6f4",
-  selectionBackground: "#45475a",
-  black: "#484f58",
-  red: "#ff7b72",
-  green: "#3fb950",
-  yellow: "#d29922",
-  blue: "#58a6ff",
-  magenta: "#d2a8ff",
-  cyan: "#39c5cf",
-  white: "#b1bac4",
-  brightBlack: "#6e7681",
-  brightRed: "#ffa198",
-  brightGreen: "#56d364",
-  brightYellow: "#e3b341",
-  brightBlue: "#79c0ff",
-  brightMagenta: "#f0a1ff",
-  brightCyan: "#56d4dd",
-  brightWhite: "#f0f6fc",
-};
-
-const LIGHT_THEME = {
-  background: "#ffffff",
-  foreground: "#24292f",
-  cursor: "#24292f",
-  selectionBackground: "#b3d7ff",
-  black: "#24292f",
-  red: "#cf222e",
-  green: "#116329",
-  yellow: "#9a6700",
-  blue: "#0550ae",
-  magenta: "#8250df",
-  cyan: "#1b7c83",
-  white: "#6e7781",
-  brightBlack: "#57606a",
-  brightRed: "#a40e26",
-  brightGreen: "#1a7f37",
-  brightYellow: "#633c01",
-  brightBlue: "#0969da",
-  brightMagenta: "#6639ba",
-  brightCyan: "#3192aa",
-  brightWhite: "#8c959f",
-};
-
-/** 流控水位线（与 TerminalView 保持一致） */
-const HIGH_WATER = 128 * 1024;
-const LOW_WATER  =  16 * 1024;
 
 interface ShellOutputEvent {
   shell_id: string;
@@ -111,45 +67,17 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
 
     useEffect(() => {
       if (!containerRef.current) return;
+      const container = containerRef.current;
 
-      const term = new Terminal({
-        convertEol: false,
-        scrollback: 5000,
-        cursorBlink: true,
-        fontFamily: "monospace",
-        fontSize: 12,
-        theme: isDarkRef.current ? DARK_THEME : LIGHT_THEME,
-        allowProposedApi: true,
-      });
+      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000);
       terminalRef.current = term;
-
-      const fitAddon = new FitAddon();
       fitAddonRef.current = fitAddon;
-      const unicode11Addon = new Unicode11Addon();
-      term.loadAddon(fitAddon);
-      term.loadAddon(unicode11Addon);
-      term.unicode.activeVersion = "11";
-      term.open(containerRef.current);
-
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose();
-        });
-        term.loadAddon(webglAddon);
-      } catch {
-        /* 不支持 WebGL 时降级 */
-      }
+      term.open(container);
+      loadWebglAddon(term);
 
       const fit = () => {
-        try {
-          fitAddon.fit();
-          invoke("resize_pty", { taskId: shellId, cols: term.cols, rows: term.rows }).catch(
-            () => {},
-          );
-        } catch {
-          // ignore
-        }
+        const s = safeFit(fitAddon, term);
+        if (s) invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
 
       setTimeout(() => {
@@ -167,46 +95,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
         term.focus();
       }, 50);
 
-      // --- 仅保留高水位流控，不因选区拖拽暂停写入 ---
-      const writeState = {
-        pendingChunks: [] as string[],
-        watermark: 0,
-        paused: false,
-      };
+      const writer = createSmartWriter(term);
 
-      function flushOne(data: string) {
-        writeState.watermark += data.length;
-        term.write(data, () => {
-          writeState.watermark -= data.length;
-          if (writeState.paused && writeState.watermark < LOW_WATER) {
-            writeState.paused = false;
-            drainPending();
-          }
-        });
-      }
-
-      function drainPending() {
-        while (writeState.pendingChunks.length > 0 && !writeState.paused) {
-          const next = writeState.pendingChunks.shift()!;
-          if (writeState.watermark >= HIGH_WATER) {
-            writeState.pendingChunks.unshift(next);
-            writeState.paused = true;
-            break;
-          }
-          flushOne(next);
-        }
-      }
-
-      function smartWrite(data: string) {
-        if (writeState.paused || writeState.watermark >= HIGH_WATER) {
-          if (writeState.watermark >= HIGH_WATER) writeState.paused = true;
-          writeState.pendingChunks.push(data);
-          return;
-        }
-        flushOne(data);
-      }
-
-      const container = containerRef.current!;
       const disposeSmartCopy = attachSmartCopy(term);
       const disposeOnData = term.onData((data) => {
         invoke("send_input", { taskId: shellId, data }).catch(() => {});
@@ -219,14 +109,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
 
       const handleVisibilityChange = () => {
         if (document.visibilityState !== "visible" || !terminalRef.current) return;
-        // WKWebView 后台挂起 canvas rAF，切回来时强制 refresh 触发重绘。
-        // reset() 会清空 scrollback，不能用；refresh() 是非破坏性的。
         window.requestAnimationFrame(() => {
-          try {
-            fit();
-          } catch {
-            /* ignore */
-          }
+          fit();
           const t = terminalRef.current;
           if (t) {
             t.refresh(0, t.rows - 1);
@@ -240,7 +124,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       let cleaned = false;
       listen<ShellOutputEvent>("shell-output", (event) => {
         if (event.payload.shell_id === shellId && terminalRef.current) {
-          smartWrite(event.payload.data);
+          writer.write(event.payload.data);
         }
       }).then((fn) => {
         if (cleaned) {
@@ -267,18 +151,11 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     useEffect(() => {
       if (!isActive) return;
       window.requestAnimationFrame(() => {
-        try {
-          fitAddonRef.current?.fit();
-          const term = terminalRef.current;
-          if (!term) return;
-          invoke("resize_pty", { taskId: shellId, cols: term.cols, rows: term.rows }).catch(
-            () => {},
-          );
-          term.refresh(0, term.rows - 1);
-          term.focus();
-        } catch {
-          // ignore
-        }
+        if (!fitAddonRef.current || !terminalRef.current) return;
+        const s = safeFit(fitAddonRef.current, terminalRef.current);
+        if (s) invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+        terminalRef.current.focus();
       });
     }, [isActive, shellId]);
 

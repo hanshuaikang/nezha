@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -7,102 +7,9 @@ import { isActiveTaskStatus } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
+import { useTerminalManager } from "./hooks/useTerminalManager";
 import s from "./styles";
 import "./App.css";
-
-const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB per task (in-memory limit)
-const MAX_WRITE_CHARS_PER_BATCH = 64 * 1024;
-
-// Chunk-based buffer: avoids O(n) string copies on every agent-output event.
-// totalLen = chars currently stored; droppedLen = chars evicted from the front.
-// Absolute position = totalLen + droppedLen (used for snapshot offset tracking).
-interface TaskBuffer {
-  chunks: string[];
-  totalLen: number;
-  droppedLen: number;
-}
-
-type TerminalWriteFn = (data: string, callback?: () => void) => void;
-
-interface TerminalWriteState {
-  pending: string[];
-  writing: boolean;
-  scheduled: boolean;
-  ready: boolean;
-  generation: number;
-}
-
-function createTaskBuffer(): TaskBuffer {
-  return { chunks: [], totalLen: 0, droppedLen: 0 };
-}
-
-function createTerminalWriteState(generation = 0): TerminalWriteState {
-  return { pending: [], writing: false, scheduled: false, ready: false, generation };
-}
-
-function shiftTerminalWriteChunk(pending: string[]): string {
-  let remaining = MAX_WRITE_CHARS_PER_BATCH;
-  const parts: string[] = [];
-
-  while (remaining > 0 && pending.length > 0) {
-    const next = pending[0];
-    if (next.length <= remaining) {
-      parts.push(next);
-      pending.shift();
-      remaining -= next.length;
-      continue;
-    }
-
-    parts.push(next.slice(0, remaining));
-    pending[0] = next.slice(remaining);
-    remaining = 0;
-  }
-
-  return parts.join("");
-}
-
-function pushToBuffer(buf: TaskBuffer, data: string): void {
-  buf.chunks.push(data);
-  buf.totalLen += data.length;
-  while (buf.totalLen > MAX_BUFFER_SIZE && buf.chunks.length > 0) {
-    const dropped = buf.chunks.shift()!;
-    buf.totalLen -= dropped.length;
-    buf.droppedLen += dropped.length;
-  }
-}
-
-function getBufferAbsLen(buf: TaskBuffer): number {
-  return buf.totalLen + buf.droppedLen;
-}
-
-function scheduleMicrotask(fn: () => void): void {
-  if (typeof queueMicrotask === "function") {
-    queueMicrotask(fn);
-    return;
-  }
-  Promise.resolve().then(fn).catch((error) => {
-    setTimeout(() => {
-      throw error;
-    }, 0);
-  });
-}
-
-// Join chunks starting from an absolute offset (recorded at snapshot time).
-function joinBufferFrom(buf: TaskBuffer, absOffset: number): string {
-  const relOffset = absOffset - buf.droppedLen;
-  if (relOffset <= 0) return buf.chunks.join("");
-  let cum = 0;
-  for (let i = 0; i < buf.chunks.length; i++) {
-    const len = buf.chunks[i].length;
-    if (cum + len > relOffset) {
-      const parts = buf.chunks.slice(i);
-      parts[0] = parts[0].slice(relOffset - cum);
-      return parts.join("");
-    }
-    cum += len;
-  }
-  return "";
-}
 
 function persistProjects(projects: Project[], onError: (msg: string) => void) {
   invoke("save_projects", { projects }).catch((e: unknown) => {
@@ -147,82 +54,12 @@ function App() {
   const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  // Mutable buffer map — written on every agent-output event without triggering re-renders.
-  // Keyed by task id; entry created on task submit/resume, deleted on task delete.
-  const taskBufferRef = useRef<Record<string, TaskBuffer>>({});
-  const terminalSnapshotRef = useRef<Record<string, { snapshot: string; bufferLength: number }>>(
-    {},
-  );
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
-
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
-  // Per-task write functions registered by mounted TerminalView instances
-  const terminalWriteRefs = useRef<Record<string, TerminalWriteFn>>({});
-  const terminalSizeRef = useRef<{ cols: number; rows: number }>({ cols: 220, rows: 50 });
-  const terminalWriteStateRef = useRef<Record<string, TerminalWriteState>>({});
-  // Track tasks still in "pending" to avoid calling setTasks on every agent-output event
-  const pendingTaskIdsRef = useRef<Set<string>>(new Set());
 
-  const resetTerminalWriteState = useCallback((taskId: string) => {
-    const prev = terminalWriteStateRef.current[taskId];
-    const next = createTerminalWriteState((prev?.generation ?? 0) + 1);
-    terminalWriteStateRef.current[taskId] = next;
-    return next;
-  }, []);
-
-  const scheduleTerminalDrain = useCallback((taskId: string, generation: number) => {
-    const state = terminalWriteStateRef.current[taskId];
-    if (!state || state.generation !== generation || state.scheduled || !state.ready) {
-      return;
-    }
-    state.scheduled = true;
-    scheduleMicrotask(() => {
-      const current = terminalWriteStateRef.current[taskId];
-      if (!current || current.generation !== generation) {
-        return;
-      }
-      current.scheduled = false;
-      const writeFn = terminalWriteRefs.current[taskId];
-      if (!writeFn) {
-        current.writing = false;
-        current.pending = [];
-        return;
-      }
-
-      const chunk = shiftTerminalWriteChunk(current.pending);
-      if (!chunk) {
-        current.writing = false;
-        return;
-      }
-
-      writeFn(chunk, () => {
-        const next = terminalWriteStateRef.current[taskId];
-        if (!next || next.generation !== generation) {
-          return;
-        }
-        if (next.pending.length === 0) {
-          next.writing = false;
-          return;
-        }
-        scheduleTerminalDrain(taskId, generation);
-      });
-    });
-  }, []);
-
-  const enqueueTerminalWrite = useCallback(
-    (taskId: string, data: string) => {
-      const state = terminalWriteStateRef.current[taskId] ?? resetTerminalWriteState(taskId);
-      state.pending.push(data);
-      if (state.writing) {
-        return;
-      }
-      state.writing = true;
-      scheduleTerminalDrain(taskId, state.generation);
-    },
-    [resetTerminalWriteState, scheduleTerminalDrain],
-  );
+  const tm = useTerminalManager();
 
   const mountProject = useCallback((projectId: string) => {
     setMountedProjectIds((prev) => (prev.includes(projectId) ? prev : [...prev, projectId]));
@@ -291,45 +128,19 @@ function App() {
     init().catch(console.error);
   }, []);
 
-  // Tauri event listeners
+  // Tauri event listeners (agent-output is handled inside useTerminalManager)
   useEffect(() => {
-    const p1 = listen<{ task_id: string; data: string }>("agent-output", (e) => {
-      const { task_id, data } = e.payload;
-
-      if (terminalWriteRefs.current[task_id]) {
-        enqueueTerminalWrite(task_id, data);
-      }
-      // Always buffer so project-switch → return can replay full history
-      if (task_id in taskBufferRef.current) {
-        pushToBuffer(taskBufferRef.current[task_id], data);
-      }
-
-      if (pendingTaskIdsRef.current.has(task_id)) {
-        setTasks((prev) => {
-          const task = prev.find((item) => item.id === task_id);
-          if (!task || task.status !== "pending") {
-            pendingTaskIdsRef.current.delete(task_id);
-            return prev;
-          }
-          pendingTaskIdsRef.current.delete(task_id);
-          const next = prev.map((t) =>
-            t.id === task_id
-              ? { ...t, status: "running" as TaskStatus, attentionRequestedAt: undefined }
-              : t,
-          );
-          persistProjectTasks(task.projectId, next, showToast);
-          return next;
-        });
-      }
-    });
-    const p2 = listen<{ task_id: string; status: TaskStatus; failure_reason?: string }>(
+    const p1 = listen<{ task_id: string; status: TaskStatus; failure_reason?: string }>(
       "task-status",
       (e) => {
         const { task_id, status, failure_reason } = e.payload;
         updateTaskStatus(task_id, status, undefined, failure_reason);
+        if (!isActiveTaskStatus(status)) {
+          tm.removeTaskBuffers([task_id]);
+        }
       },
     );
-    const p3 = listen<{ task_id: string; session_id: string; session_path: string }>(
+    const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
       "task-session",
       (e) => {
         const { task_id, session_id, session_path } = e.payload;
@@ -339,11 +150,9 @@ function App() {
     return () => {
       p1.then((fn) => fn());
       p2.then((fn) => fn());
-      p3.then((fn) => fn());
     };
-    // 事件监听器仅需在挂载时注册一次；回调通过 ref 模式保持最新引用，无需重新订阅
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enqueueTerminalWrite]);
+  }, []);
 
   async function handleOpen() {
     const selected = await openDialog({ directory: true, multiple: false });
@@ -390,18 +199,11 @@ function App() {
       agent: task.agent,
       permissionMode: task.permissionMode,
       images,
-      cols: terminalSizeRef.current.cols,
-      rows: terminalSizeRef.current.rows,
+      cols: tm.terminalSizeRef.current.cols,
+      rows: tm.terminalSizeRef.current.rows,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
-      const errMsg = `\r\nError: ${msg}\r\n`;
-      const writeFn = terminalWriteRefs.current[task.id];
-      if (writeFn) {
-        writeFn(errMsg);
-      }
-      const buf = taskBufferRef.current[task.id] ?? createTaskBuffer();
-      pushToBuffer(buf, errMsg);
-      taskBufferRef.current[task.id] = buf;
+      tm.writeErrorToTerminal(task.id, `\r\nError: ${msg}\r\n`);
       updateTaskStatus(task.id, "failed", undefined, msg);
     });
   }
@@ -442,9 +244,7 @@ function App() {
 
     if (!immediate) return;
 
-    taskBufferRef.current[task.id] = createTaskBuffer();
-    delete terminalSnapshotRef.current[task.id];
-    pendingTaskIdsRef.current.add(task.id);
+    tm.resetTaskTerminal(task.id);
     invokeRunTask(task, project.path, images);
   }
 
@@ -461,9 +261,7 @@ function App() {
       persistProjectTasks(task.projectId, next, showToast);
       return next;
     });
-    taskBufferRef.current[task.id] = createTaskBuffer();
-    delete terminalSnapshotRef.current[task.id];
-    pendingTaskIdsRef.current.add(task.id);
+    tm.resetTaskTerminal(task.id);
     updateProjectView(task.projectId, { selectedTaskId: task.id, isNewTask: false });
     invokeRunTask(task, project.path, []);
   }
@@ -493,9 +291,7 @@ function App() {
       persistProjectTasks(task.projectId, next, showToast);
       return next;
     });
-    taskBufferRef.current[taskId] = createTaskBuffer();
-    delete terminalSnapshotRef.current[taskId];
-    pendingTaskIdsRef.current.add(taskId);
+    tm.resetTaskTerminal(taskId);
     setTaskRunCounts((prev) => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
 
     invoke("resume_task", {
@@ -505,29 +301,13 @@ function App() {
       sessionId,
       prompt: task.prompt,
       permissionMode: task.permissionMode,
-      cols: terminalSizeRef.current.cols,
-      rows: terminalSizeRef.current.rows,
+      cols: tm.terminalSizeRef.current.cols,
+      rows: tm.terminalSizeRef.current.rows,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
-      const errMsg = `\r\nError: ${msg}\r\n`;
-      const writeFn = terminalWriteRefs.current[taskId];
-      if (writeFn) {
-        writeFn(errMsg);
-      }
-      if (taskId in taskBufferRef.current) {
-        pushToBuffer(taskBufferRef.current[taskId], errMsg);
-      }
+      tm.writeErrorToTerminal(taskId, `\r\nError: ${msg}\r\n`);
       updateTaskStatus(taskId, "failed", undefined, msg);
     });
-  }
-
-  function removeTaskBuffers(taskIds: string[]) {
-    for (const taskId of taskIds) {
-      delete taskBufferRef.current[taskId];
-      delete terminalSnapshotRef.current[taskId];
-      delete terminalWriteRefs.current[taskId];
-      delete terminalWriteStateRef.current[taskId];
-    }
   }
 
   function deleteTasks(taskIds: string[]) {
@@ -556,7 +336,7 @@ function App() {
       return next;
     });
 
-    removeTaskBuffers(taskIds);
+    tm.removeTaskBuffers(taskIds);
     setProjectViews((prev) => {
       const toDelete = new Set(taskIds);
       let changed = false;
@@ -682,45 +462,6 @@ function App() {
     });
   }
 
-  function handleInput(taskId: string, data: string) {
-    invoke("send_input", { taskId, data }).catch(console.error);
-  }
-
-  function handleResize(taskId: string, cols: number, rows: number) {
-    terminalSizeRef.current = { cols, rows };
-    invoke("resize_pty", { taskId, cols, rows }).catch(console.error);
-  }
-
-  function handleRegisterTerminal(taskId: string, fn: TerminalWriteFn | null): number {
-    const state = resetTerminalWriteState(taskId);
-    if (fn) {
-      terminalWriteRefs.current[taskId] = fn;
-    } else {
-      delete terminalWriteRefs.current[taskId];
-    }
-    return state.generation;
-  }
-
-  function handleTerminalReady(taskId: string, generation: number) {
-    const state = terminalWriteStateRef.current[taskId];
-    if (!state || state.generation !== generation) return;
-    state.ready = true;
-    scheduleTerminalDrain(taskId, generation);
-  }
-
-  function handleSnapshot(taskId: string, snapshot: string) {
-    const buf = taskBufferRef.current[taskId];
-    // Subtract bytes that are still in the pending write queue and have not yet
-    // been passed to term.write().  Using the total buffer length would overshoot
-    // the fence and cause those bytes to be silently dropped on terminal remount.
-    const state = terminalWriteStateRef.current[taskId];
-    const pendingLen = state?.pending.reduce((s, c) => s + c.length, 0) ?? 0;
-    terminalSnapshotRef.current[taskId] = {
-      snapshot,
-      bufferLength: buf ? Math.max(0, getBufferAbsLen(buf) - pendingLen) : 0,
-    };
-  }
-
   function updateTaskSession(taskId: string, sessionId: string, sessionPath: string) {
     setTasks((prev) => {
       let changed = false;
@@ -746,27 +487,6 @@ function App() {
       return changed ? next : prev;
     });
   }
-
-  const getTaskRestoreState = useCallback((taskId: string) => {
-    const buf = taskBufferRef.current[taskId];
-    const snapshotState = terminalSnapshotRef.current[taskId];
-
-    if (!buf) return { initialData: "" };
-
-    if (!snapshotState?.snapshot) {
-      return { initialData: buf.chunks.join("") };
-    }
-
-    const absLen = getBufferAbsLen(buf);
-    if (snapshotState.bufferLength < 0 || snapshotState.bufferLength > absLen) {
-      return { initialData: buf.chunks.join("") };
-    }
-
-    return {
-      initialSnapshot: snapshotState.snapshot,
-      initialData: joinBufferFrom(buf, snapshotState.bufferLength),
-    };
-  }, []);
 
   const sortedProjects = useMemo(
     () => [...projects].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt),
@@ -803,7 +523,7 @@ function App() {
               allProjects={railProjects}
               otherProjects={sortedProjects.filter((p) => p.id !== project.id)}
               tasks={tasks}
-              getTaskRestoreState={getTaskRestoreState}
+              getTaskRestoreState={tm.getTaskRestoreState}
               taskRunCounts={taskRunCounts}
               selectedTaskId={view.selectedTaskId}
               isNewTask={view.isNewTask}
@@ -822,11 +542,11 @@ function App() {
               onUpdateTodo={handleUpdateTodo}
               onCancelTask={handleCancelTask}
               onResumeTask={handleResumeTask}
-              onInput={handleInput}
-              onResize={handleResize}
-              onRegisterTerminal={handleRegisterTerminal}
-              onTerminalReady={handleTerminalReady}
-              onSnapshot={handleSnapshot}
+              onInput={tm.handleInput}
+              onResize={tm.handleResize}
+              onRegisterTerminal={tm.handleRegisterTerminal}
+              onTerminalReady={tm.handleTerminalReady}
+              onSnapshot={tm.handleSnapshot}
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
               onOpen={handleOpen}

@@ -508,7 +508,7 @@ fn claude_sessions_dir_for_project(project_path: &str) -> Option<PathBuf> {
     let encoded: String = project_path
         .chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            if c.is_ascii_alphanumeric() || c == '-' {
                 c
             } else {
                 '-'

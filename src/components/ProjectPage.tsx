@@ -140,11 +140,14 @@ export function ProjectPage({
   );
   const selectedTask = projectTasks.find((t) => t.id === selectedTaskId) ?? null;
 
+  // 只挂载当前选中的任务的 xterm 实例，其他任务通过 snapshot 序列化后卸载。
+  // 这样同时只有 1 个 WebGL context 存活，避免长时间运行后 GPU 内存累积。
   useEffect(() => {
     if (selectedTaskId && !isNewTask) {
-      setMountedTaskIds((prev) =>
-        prev.has(selectedTaskId) ? prev : new Set([...prev, selectedTaskId]),
-      );
+      setMountedTaskIds((prev) => {
+        if (prev.size === 1 && prev.has(selectedTaskId)) return prev;
+        return new Set([selectedTaskId]);
+      });
     }
   }, [selectedTaskId, isNewTask]);
 
