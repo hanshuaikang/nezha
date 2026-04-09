@@ -11,7 +11,6 @@ import s from "./styles";
 import "./App.css";
 
 const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB per task (in-memory limit)
-const MAX_WRITE_CHARS_PER_BATCH = 64 * 1024;
 const MAX_BUFFER_CHUNKS = 256; // compact when chunks array exceeds this
 const DRAIN_FRAME_BUDGET = 128 * 1024; // 每帧最多处理 128KB，避免单帧写入时间过长
 
@@ -28,8 +27,6 @@ type TerminalWriteFn = (data: string, callback?: () => void) => void;
 
 interface TerminalWriteState {
   pending: string[];
-  writing: boolean;
-  scheduled: boolean;
   ready: boolean;
   generation: number;
 }
@@ -39,28 +36,7 @@ function createTaskBuffer(): TaskBuffer {
 }
 
 function createTerminalWriteState(generation = 0): TerminalWriteState {
-  return { pending: [], writing: false, scheduled: false, ready: false, generation };
-}
-
-function shiftTerminalWriteChunk(pending: string[]): string {
-  let remaining = MAX_WRITE_CHARS_PER_BATCH;
-  const parts: string[] = [];
-
-  while (remaining > 0 && pending.length > 0) {
-    const next = pending[0];
-    if (next.length <= remaining) {
-      parts.push(next);
-      pending.shift();
-      remaining -= next.length;
-      continue;
-    }
-
-    parts.push(next.slice(0, remaining));
-    pending[0] = next.slice(remaining);
-    remaining = 0;
-  }
-
-  return parts.join("");
+  return { pending: [], ready: false, generation };
 }
 
 function pushToBuffer(buf: TaskBuffer, data: string): void {
@@ -169,56 +145,21 @@ function App() {
     return next;
   }, []);
 
-  const scheduleTerminalDrain = useCallback((taskId: string, generation: number) => {
-    const state = terminalWriteStateRef.current[taskId];
-    if (!state || state.generation !== generation || state.scheduled || !state.ready) {
-      return;
-    }
-    state.scheduled = true;
-    requestAnimationFrame(() => {
-      const current = terminalWriteStateRef.current[taskId];
-      if (!current || current.generation !== generation) {
-        return;
-      }
-      current.scheduled = false;
-      const writeFn = terminalWriteRefs.current[taskId];
-      if (!writeFn) {
-        current.writing = false;
-        current.pending = [];
-        return;
-      }
-
-      const chunk = shiftTerminalWriteChunk(current.pending);
-      if (!chunk) {
-        current.writing = false;
-        return;
-      }
-
-      writeFn(chunk, () => {
-        const next = terminalWriteStateRef.current[taskId];
-        if (!next || next.generation !== generation) {
-          return;
-        }
-        if (next.pending.length === 0) {
-          next.writing = false;
-          return;
-        }
-        scheduleTerminalDrain(taskId, generation);
-      });
-    });
-  }, []);
-
   const enqueueTerminalWrite = useCallback(
     (taskId: string, data: string) => {
       const state = terminalWriteStateRef.current[taskId] ?? resetTerminalWriteState(taskId);
-      state.pending.push(data);
-      if (state.writing) {
+      if (!state.ready) {
+        // Terminal 正在恢复 snapshot，先缓存；ready 后由 handleTerminalReady 一次性 flush
+        state.pending.push(data);
         return;
       }
-      state.writing = true;
-      scheduleTerminalDrain(taskId, state.generation);
+      const writeFn = terminalWriteRefs.current[taskId];
+      if (writeFn) {
+        // 直接写入 smartWrite，由 TerminalView 的 watermark 机制处理流控
+        writeFn(data);
+      }
     },
-    [resetTerminalWriteState, scheduleTerminalDrain],
+    [resetTerminalWriteState],
   );
 
   const mountProject = useCallback((projectId: string) => {
@@ -741,7 +682,15 @@ function App() {
     const state = terminalWriteStateRef.current[taskId];
     if (!state || state.generation !== generation) return;
     state.ready = true;
-    scheduleTerminalDrain(taskId, generation);
+    // 一次性 flush snapshot 恢复期间积累的数据
+    if (state.pending.length > 0) {
+      const writeFn = terminalWriteRefs.current[taskId];
+      if (writeFn) {
+        const data = state.pending.length === 1 ? state.pending[0] : state.pending.join("");
+        writeFn(data);
+      }
+      state.pending = [];
+    }
   }
 
   function handleSnapshot(taskId: string, snapshot: string) {
