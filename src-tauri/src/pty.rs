@@ -285,11 +285,12 @@ fn spawn_pty_reader(
                         let data = unsafe {
                             std::str::from_utf8_unchecked(&combined[..valid_len]).to_owned()
                         };
+                        // session_tx 需要独立副本；data 本身留给 emit 路径 move，避免多余堆分配
                         if let Some(ref tx) = session_tx {
                             let _ = tx.send(data.clone());
                         }
                         if let Some(ref tx) = emit_tx {
-                            match tx.send(data.clone()) {
+                            match tx.send(data) {
                                 Ok(()) => {}
                                 Err(err) => emit_pty_event(&app, &id, event_name, id_key, err.0),
                             }
