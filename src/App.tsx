@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Project, Task, TaskStatus, AgentType, PermissionMode, ThemeMode } from "./types";
 import { isActiveTaskStatus } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
@@ -103,6 +104,12 @@ function App() {
     document.documentElement.classList.toggle("dark", isDark);
     localStorage.setItem("nezha:theme", themeMode);
   }, [isDark, themeMode]);
+
+  useEffect(() => {
+    getCurrentWindow()
+      .setTheme(themeMode === "system" ? null : themeMode)
+      .catch(console.error);
+  }, [themeMode]);
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
