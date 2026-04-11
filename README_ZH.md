@@ -18,6 +18,15 @@
 </p>
 
 <p align="center">
+  <a href="https://www.producthunt.com/products/nezha-2?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-nezha" target="_blank" rel="noopener noreferrer">
+    <img alt="NeZha - Run multiple AI coding agents across projects | Product Hunt" width="200" height="48" style="width: 150px; height: 48px; vertical-align: middle;" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1120473&theme=light&t=1775898930608">
+  </a>
+  <a href="https://hellogithub.com/repository/hanshuaikang/nezha" target="_blank" rel="noopener noreferrer">
+    <img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=4dd4bd67871b461fa8bd3641d803db05&claim_uid=uT2Sc8Xli4PUA76&theme=neutral" alt="Featured｜HelloGitHub" style="width: 155px; height: 48px; margin-left: 12px; vertical-align: middle;" width="150" height="48" />
+  </a>
+</p>
+
+<p align="center">
   <img src="docs/images/index.png" alt="Nezha 产品图" width="80%" />
 </p>
 
