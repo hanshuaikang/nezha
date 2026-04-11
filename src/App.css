@@ -30,6 +30,9 @@
   --success: #16a34a;
   --warning: #d97706;
   --danger: #dc2626;
+  --usage-good: #22c55e;
+  --usage-warn: #f59e0b;
+  --usage-danger: #ef4444;
 
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -74,6 +77,9 @@ html.dark {
   --success: #3dd68c;
   --warning: #f5a623;
   --danger: #ff5555;
+  --usage-good: #4ade80;
+  --usage-warn: #fbbf24;
+  --usage-danger: #f87171;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);

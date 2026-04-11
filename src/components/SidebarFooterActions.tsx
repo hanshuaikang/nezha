@@ -3,6 +3,7 @@ import { Settings, Moon, Sun } from "lucide-react";
 import type { ThemeMode } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
 import { NotificationBell } from "./NotificationBell";
+import { UsagePopover } from "./UsagePopover";
 import s from "../styles";
 
 export function SidebarFooterActions({
@@ -42,6 +43,7 @@ export function SidebarFooterActions({
             <Moon size={14} strokeWidth={1.8} color="var(--text-hint)" />
           )}
         </button>
+        <UsagePopover />
       </div>
 
       {showAppSettings && (

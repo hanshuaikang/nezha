@@ -27,3 +27,4 @@ dist-ssr
 .local_docs
 bump-version.sh
 .env*
+knowledge

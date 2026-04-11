@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Task } from "../types";
+import type { Task, UsageWindow } from "../types";
 import { PERM_LABELS } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
-import { shortenPath } from "../utils";
+import { shortenPath, getUsageColor } from "../utils";
+import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import s from "../styles";
 import { X, RotateCcw, Pencil } from "lucide-react";
 
@@ -26,6 +27,17 @@ function formatDuration(secs: number): string {
 function formatTokens(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+}
+
+function InlineWindow({ label, window }: { label: string; window: UsageWindow }) {
+  return (
+    <span style={s.usageInlineWindow}>
+      <span style={s.usageInlineWindowLabel}>{label}</span>
+      <span style={{ ...s.usageInlineWindowValue, color: getUsageColor(window.remainingPercent) }}>
+        {window.remainingPercent}%
+      </span>
+    </span>
+  );
 }
 
 export function RunningView({
@@ -61,6 +73,8 @@ export function RunningView({
     task.status === "pending" || task.status === "running" || task.status === "input_required";
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
   const restoreState = getRestoreState?.() ?? {};
+
+  const { snapshot: usageSnapshot } = useUsageSnapshot(visible);
 
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -209,9 +223,33 @@ export function RunningView({
           flexShrink: 0,
         }}
       >
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
-          {PERM_LABELS[task.permissionMode]}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
+          <span>
+            {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
+            {PERM_LABELS[task.permissionMode]}
+          </span>
+          {usageSnapshot && (task.agent === "claude"
+            ? usageSnapshot.claude.status === "available" && (
+                <>
+                  {usageSnapshot.claude.data.fiveHour && (
+                    <><span>·</span><InlineWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>
+                  )}
+                  {usageSnapshot.claude.data.sevenDay && (
+                    <><span>·</span><InlineWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>
+                  )}
+                </>
+              )
+            : usageSnapshot.codex.status === "available" && (
+                <>
+                  {usageSnapshot.codex.data.primary && (
+                    <><span>·</span><InlineWindow label="5h" window={usageSnapshot.codex.data.primary} /></>
+                  )}
+                  {usageSnapshot.codex.data.secondary && (
+                    <><span>·</span><InlineWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>
+                  )}
+                </>
+              )
+          )}
         </div>
         {sessionPath && (
           <div
