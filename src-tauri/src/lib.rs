@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 mod analytics;
 mod app_settings;
@@ -12,6 +12,7 @@ mod notification;
 mod pty;
 mod session;
 mod storage;
+mod usage;
 
 use session::{ClaudeSessionInfo, CodexSessionInfo};
 
@@ -111,6 +112,7 @@ pub fn run() {
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,
+            usage::read_usage_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -75,3 +75,31 @@ export interface NotificationResult {
   unreadCount: number;
   hasUnreadPopup: boolean;
 }
+
+export interface UsageWindow {
+  usedPercent: number;
+  remainingPercent: number;
+  resetAt?: number | null;
+}
+
+export interface ClaudeUsageData {
+  fiveHour?: UsageWindow | null;
+  sevenDay?: UsageWindow | null;
+}
+
+export interface CodexUsageData {
+  email?: string | null;
+  planType?: string | null;
+  primary?: UsageWindow | null;
+  secondary?: UsageWindow | null;
+}
+
+export type UsageSource<T> =
+  | { status: "available"; data: T }
+  | { status: "unavailable"; reason: string };
+
+export interface UsageSnapshot {
+  claude: UsageSource<ClaudeUsageData>;
+  codex: UsageSource<CodexUsageData>;
+  fetchedAt: number;
+}
