@@ -139,4 +139,4 @@ The creation of Nezha was made possible by the following outstanding open-source
 - [xterm.js](https://github.com/xtermjs/xterm.js) - A terminal for the web.
 
 ### 👬 Friend Links
-<a href="https://linux.do">Linux.do</a>
+<a href="https://linux.do" target="_blank" rel="noopener noreferrer">Linux.do</a>
