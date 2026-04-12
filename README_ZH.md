@@ -136,4 +136,4 @@ Nezha 的诞生离不开以下优秀的开源项目，向它们致敬：
 - [xterm.js](https://github.com/xtermjs/xterm.js) - 强大的 Web 终端组件
 
 ### 👬 友情链接
-<a href="https://linux.do" target="_blank" rel="noopener noreferrer">Linux.do</a>
+<a href="https://linux.do">Linux.do</a>
