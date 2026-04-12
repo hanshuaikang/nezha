@@ -15,6 +15,7 @@ const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_BETA_HEADER: &str = "oauth-2025-04-20";
 const CLAUDE_TIMEOUT_SECS: u64 = 12;
 const CODEX_ATTEMPT_TIMEOUT_SECS: u64 = 10;
+const CLAUDE_429_BACKOFF_SECS: u64 = 300; // 5 分钟
 
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
@@ -22,6 +23,9 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 });
+
+/// 上次收到 Claude 用量 API 429 的时刻；5 分钟内跳过重试。
+static CLAUDE_429_UNTIL: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
 
 // ---------------------------------------------------------------------------
 // Persistent Codex app-server RPC client
@@ -311,6 +315,20 @@ async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
         return unavailable("Claude usage currently relies on macOS Keychain.");
     }
 
+    // 429 冷却检查：上次限流后 5 分钟内直接跳过
+    {
+        let guard = CLAUDE_429_UNTIL.lock();
+        if let Some(until) = *guard {
+            let remaining = until.saturating_duration_since(Instant::now());
+            if !remaining.is_zero() {
+                return unavailable(format!(
+                    "Claude usage rate-limited; retry in {}s.",
+                    remaining.as_secs()
+                ));
+            }
+        }
+    }
+
     let token_result =
         tokio::task::spawn_blocking(|| -> Result<(String, Option<String>), String> {
             let shell_path = get_login_shell_path();
@@ -376,6 +394,11 @@ async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
     };
 
     if !response.status().is_success() {
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            *CLAUDE_429_UNTIL.lock() =
+                Some(Instant::now() + Duration::from_secs(CLAUDE_429_BACKOFF_SECS));
+            return unavailable("Claude usage rate-limited (429); will retry in 5 minutes.");
+        }
         return unavailable(format!("Claude usage HTTP {}", response.status()));
     }
 
