@@ -134,3 +134,6 @@ Nezha 的诞生离不开以下优秀的开源项目，向它们致敬：
 - [Tauri](https://github.com/tauri-apps/tauri) - 构建更小、更快、更安全的桌面应用
 - [React](https://github.com/facebook/react) - 构建用户界面的 JavaScript 库
 - [xterm.js](https://github.com/xtermjs/xterm.js) - 强大的 Web 终端组件
+
+### 👬 友情链接
+<a href="https://linux.do">Linux.do</a>

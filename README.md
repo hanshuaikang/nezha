@@ -137,3 +137,6 @@ The creation of Nezha was made possible by the following outstanding open-source
 - [Tauri](https://github.com/tauri-apps/tauri) - Build smaller, faster, and more secure desktop applications with a web frontend.
 - [React](https://github.com/facebook/react) - The library for web and native user interfaces.
 - [xterm.js](https://github.com/xtermjs/xterm.js) - A terminal for the web.
+
+### 👬 Friend Links
+<a href="https://linux.do">Linux.do</a>
