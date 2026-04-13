@@ -1,10 +1,11 @@
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::process::{ChildStdin, Command, Stdio};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use chrono::DateTime;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -13,8 +14,8 @@ use crate::app_settings::{detect_claude_version, get_agent_bin, get_login_shell_
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_BETA_HEADER: &str = "oauth-2025-04-20";
 const CLAUDE_TIMEOUT_SECS: u64 = 12;
-// 每次 Codex 尝试的超时上限；最多重试两次，所以总计最长 20 秒。
 const CODEX_ATTEMPT_TIMEOUT_SECS: u64 = 10;
+const CLAUDE_429_BACKOFF_SECS: u64 = 300; // 5 分钟
 
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
@@ -22,6 +23,167 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 });
+
+/// 上次收到 Claude 用量 API 429 的时刻；5 分钟内跳过重试。
+static CLAUDE_429_UNTIL: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
+
+// ---------------------------------------------------------------------------
+// Persistent Codex app-server RPC client
+// ---------------------------------------------------------------------------
+
+/// Holds a live `codex app-server` process.  The process is spawned once and
+/// reused across multiple `read_usage_snapshot` calls.  If the process dies
+/// it is transparently replaced on the next call.
+pub(crate) struct CodexRpcClient {
+    stdin: ChildStdin,
+    rx: mpsc::Receiver<Result<Value, String>>,
+    child: std::process::Child,
+    next_id: i64,
+}
+
+impl CodexRpcClient {
+    /// Spawn a fresh `codex app-server` and complete the JSON-RPC handshake
+    /// (`initialize` / `initialized`).
+    pub(crate) fn spawn() -> Result<Self, String> {
+        let shell_path = get_login_shell_path();
+        let binary = get_agent_bin("codex");
+
+        let mut child = Command::new(&binary)
+            .arg("app-server")
+            .env("PATH", &shell_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start Codex app-server: {e}"))?;
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Codex app-server stdout unavailable".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "Codex app-server stderr unavailable".to_string())?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Codex app-server stdin unavailable".to_string())?;
+
+        // Background thread: forward stdout lines to the mpsc channel.
+        let (tx, rx) = mpsc::channel::<Result<Value, String>>();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                let msg = match line {
+                    Ok(line) => {
+                        let trimmed = line.trim().to_string();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        serde_json::from_str::<Value>(&trimmed)
+                            .map_err(|e| format!("Invalid Codex app-server JSON: {e}"))
+                    }
+                    Err(e) => Err(format!("Failed reading Codex app-server output: {e}")),
+                };
+                if tx.send(msg).is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Drain stderr so the child never blocks waiting for it to be consumed.
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = BufReader::new(stderr).read_to_string(&mut buf);
+        });
+
+        // JSON-RPC handshake: initialize → wait → initialized notification.
+        //
+        // IMPORTANT: perform the handshake before moving `child` into the
+        // struct.  If any step fails we must kill the child explicitly —
+        // std::process::Child::drop() does *not* kill the process, so a plain
+        // `?` would leave an orphan process and two threads blocked on its
+        // stdout/stderr pipes.
+        let deadline = Instant::now() + Duration::from_secs(CODEX_ATTEMPT_TIMEOUT_SECS);
+        let handshake = (|| -> Result<(), String> {
+            write_json_line(
+                &mut stdin,
+                &json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "clientInfo": { "name": "nezha", "version": env!("CARGO_PKG_VERSION") },
+                        "capabilities": {}
+                    }
+                }),
+            )?;
+            wait_for_result(&rx, 1, deadline)?;
+            write_json_line(
+                &mut stdin,
+                &json!({ "jsonrpc": "2.0", "method": "initialized" }),
+            )
+        })();
+
+        if let Err(e) = handshake {
+            // Kill the child so the two background threads (stdout reader and
+            // stderr drainer) receive EOF and exit cleanly.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(e);
+        }
+
+        Ok(CodexRpcClient {
+            stdin,
+            rx,
+            child,
+            next_id: 2,
+        })
+    }
+
+    /// `true` while the child process is still running.
+    pub(crate) fn is_alive(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
+    fn alloc_id(&mut self) -> i64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    /// Send a JSON-RPC request and return the `result` field of the response.
+    pub(crate) fn call(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: Instant,
+    ) -> Result<Value, String> {
+        let id = self.alloc_id();
+        write_json_line(
+            &mut self.stdin,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": method,
+                "params": params
+            }),
+        )?;
+        wait_for_result(&self.rx, id, deadline)
+    }
+}
+
+impl Drop for CodexRpcClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -65,10 +227,24 @@ pub struct CodexUsageData {
     pub secondary: Option<UsageWindow>,
 }
 
-#[tauri::command]
-pub async fn read_usage_snapshot() -> Result<UsageSnapshot, String> {
-    let (claude, codex) = tokio::join!(read_claude_usage(), read_codex_usage());
+// ---------------------------------------------------------------------------
+// Tauri command
+// ---------------------------------------------------------------------------
 
+#[tauri::command]
+pub async fn read_usage_snapshot(
+    state: tauri::State<'_, crate::TaskManager>,
+) -> Result<UsageSnapshot, String> {
+    // Clone the Arc so it can be moved into the blocking thread.
+    let codex_rpc = Arc::clone(&state.codex_rpc);
+    let (claude, codex_result) = tokio::join!(
+        read_claude_usage(),
+        tokio::task::spawn_blocking(move || read_codex_usage_with_client(codex_rpc))
+    );
+    let codex = match codex_result {
+        Ok(data) => data,
+        Err(e) => unavailable(format!("Failed to read Codex usage: {e}")),
+    };
     Ok(UsageSnapshot {
         claude,
         codex,
@@ -76,9 +252,81 @@ pub async fn read_usage_snapshot() -> Result<UsageSnapshot, String> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Codex usage — persistent client path
+// ---------------------------------------------------------------------------
+
+fn read_codex_usage_with_client(
+    codex_rpc: Arc<Mutex<Option<CodexRpcClient>>>,
+) -> UsageSource<CodexUsageData> {
+    let mut guard = codex_rpc.lock();
+
+    // Drop a dead client so we get a fresh one below.
+    if let Some(ref mut c) = *guard {
+        if !c.is_alive() {
+            *guard = None;
+        }
+    }
+
+    // Spawn if no live client exists.
+    if guard.is_none() {
+        match CodexRpcClient::spawn() {
+            Ok(c) => {
+                *guard = Some(c);
+            }
+            Err(e) => return unavailable(e),
+        }
+    }
+
+    let client = guard.as_mut().unwrap();
+
+    match attempt_codex_usage_calls(client) {
+        Ok(data) => UsageSource::Available { data },
+        Err(e) => {
+            // Kill the broken client so the next call spawns a fresh one.
+            *guard = None;
+            unavailable(e)
+        }
+    }
+}
+
+fn attempt_codex_usage_calls(client: &mut CodexRpcClient) -> Result<CodexUsageData, String> {
+    let deadline = Instant::now() + Duration::from_secs(CODEX_ATTEMPT_TIMEOUT_SECS);
+
+    let account = client.call("account/read", json!({}), deadline)?;
+
+    // Some Codex versions expect `null` params, others an empty object — try both.
+    let rate_limits = client
+        .call("account/rateLimits/read", Value::Null, deadline)
+        .or_else(|_| {
+            let d = Instant::now() + Duration::from_secs(CODEX_ATTEMPT_TIMEOUT_SECS);
+            client.call("account/rateLimits/read", json!({}), d)
+        })?;
+
+    Ok(parse_codex_usage(account, rate_limits))
+}
+
+// ---------------------------------------------------------------------------
+// Claude usage
+// ---------------------------------------------------------------------------
+
 async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
     if !cfg!(target_os = "macos") {
         return unavailable("Claude usage currently relies on macOS Keychain.");
+    }
+
+    // 429 冷却检查：上次限流后 5 分钟内直接跳过
+    {
+        let guard = CLAUDE_429_UNTIL.lock();
+        if let Some(until) = *guard {
+            let remaining = until.saturating_duration_since(Instant::now());
+            if !remaining.is_zero() {
+                return unavailable(format!(
+                    "Claude usage rate-limited; retry in {}s.",
+                    remaining.as_secs()
+                ));
+            }
+        }
     }
 
     let token_result =
@@ -146,6 +394,11 @@ async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
     };
 
     if !response.status().is_success() {
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            *CLAUDE_429_UNTIL.lock() =
+                Some(Instant::now() + Duration::from_secs(CLAUDE_429_BACKOFF_SECS));
+            return unavailable("Claude usage rate-limited (429); will retry in 5 minutes.");
+        }
         return unavailable(format!("Claude usage HTTP {}", response.status()));
     }
 
@@ -166,145 +419,9 @@ async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
     }
 }
 
-async fn read_codex_usage() -> UsageSource<CodexUsageData> {
-    match tokio::task::spawn_blocking(read_codex_usage_blocking).await {
-        Ok(Ok(data)) => UsageSource::Available { data },
-        Ok(Err(reason)) => unavailable(reason),
-        Err(err) => unavailable(format!("Failed to read Codex usage: {err}")),
-    }
-}
-
-fn read_codex_usage_blocking() -> Result<CodexUsageData, String> {
-    let mut reasons = Vec::new();
-    for params in [Value::Null, json!({})] {
-        let deadline = Instant::now() + Duration::from_secs(CODEX_ATTEMPT_TIMEOUT_SECS);
-        match read_codex_usage_blocking_once(params, deadline) {
-            Ok(data) => return Ok(data),
-            Err(reason) => reasons.push(reason),
-        }
-    }
-
-    Err(reasons.join(" | "))
-}
-
-fn read_codex_usage_blocking_once(
-    rate_limit_params: Value,
-    deadline: Instant,
-) -> Result<CodexUsageData, String> {
-    let shell_path = get_login_shell_path();
-    let binary = get_agent_bin("codex");
-    let mut child = Command::new(&binary)
-        .arg("app-server")
-        .env("PATH", shell_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start Codex app-server: {e}"))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Codex app-server stdout was unavailable.".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "Codex app-server stderr was unavailable.".to_string())?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Codex app-server stdin was unavailable.".to_string())?;
-
-    let (message_tx, message_rx) = mpsc::channel::<Result<Value, String>>();
-    std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            let line = match line {
-                Ok(line) => line,
-                Err(err) => {
-                    let _ = message_tx.send(Err(format!(
-                        "Failed reading Codex app-server output: {err}"
-                    )));
-                    break;
-                }
-            };
-
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            let parsed = serde_json::from_str::<Value>(trimmed)
-                .map_err(|err| format!("Invalid Codex app-server JSON: {err}"));
-            if message_tx.send(parsed).is_err() {
-                break;
-            }
-        }
-    });
-
-    // stderr 线程仅用于耗尽管道，防止子进程因 stderr 满而阻塞。
-    std::thread::spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut buf = String::new();
-        let _ = reader.read_to_string(&mut buf);
-    });
-
-    let result = (|| -> Result<CodexUsageData, String> {
-        write_json_line(
-            &mut stdin,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "clientInfo": {
-                        "name": "nezha",
-                        "version": env!("CARGO_PKG_VERSION"),
-                    },
-                    "capabilities": {},
-                }
-            }),
-        )?;
-        wait_for_result(&message_rx, 1, deadline)?;
-
-        write_json_line(
-            &mut stdin,
-            &json!({ "jsonrpc": "2.0", "method": "initialized" }),
-        )?;
-
-        write_json_line(
-            &mut stdin,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "account/read",
-                "params": {}
-            }),
-        )?;
-        let account = wait_for_result(&message_rx, 2, deadline)?;
-
-        write_json_line(
-            &mut stdin,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "account/rateLimits/read",
-                "params": rate_limit_params
-            }),
-        )?;
-        let rate_limits = wait_for_result(&message_rx, 3, deadline)?;
-
-        Ok(parse_codex_usage(account, rate_limits))
-    })();
-
-    let _ = child.kill();
-    let _ = child.wait();
-
-    match result {
-        Ok(data) => Ok(data),
-        Err(reason) => Err(reason),
-    }
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 fn write_json_line(stdin: &mut dyn Write, value: &Value) -> Result<(), String> {
     let payload = serde_json::to_string(value)
