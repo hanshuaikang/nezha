@@ -85,6 +85,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     useEffect(() => {
       if (!containerRef.current) return;
       const container = containerRef.current;
+      let cleaned = false;
+      let initTimeoutId: number | null = null;
+      let readyTimeoutId: number | null = null;
 
       const { term, fitAddon } = initTerminal(isDarkRef.current, 5000);
       terminalRef.current = term;
@@ -93,11 +96,13 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       loadWebglAddon(term);
 
       const fit = () => {
+        if (cleaned) return;
         const s = safeFit(fitAddon, term);
         if (s) invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
 
-      setTimeout(() => {
+      initTimeoutId = window.setTimeout(() => {
+        if (cleaned) return;
         fit();
         invoke<void>("open_shell", {
           shellId,
@@ -106,7 +111,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           rows: term.rows,
         })
           .then(() => {
-            setTimeout(() => onReadyRef.current?.(), 300);
+            if (cleaned) return;
+            readyTimeoutId = window.setTimeout(() => {
+              if (!cleaned) {
+                onReadyRef.current?.();
+              }
+            }, 300);
           })
           .catch(console.error);
         if (isActiveRef.current) {
@@ -143,7 +153,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       document.addEventListener("visibilitychange", handleVisibilityChange);
 
       let unlisten: (() => void) | null = null;
-      let cleaned = false;
       listen<ShellOutputEvent>("shell-output", (event) => {
         if (event.payload.shell_id === shellId && terminalRef.current) {
           writer.write(event.payload.data);
@@ -158,6 +167,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       return () => {
         cleaned = true;
+        if (initTimeoutId !== null) {
+          window.clearTimeout(initTimeoutId);
+        }
+        if (readyTimeoutId !== null) {
+          window.clearTimeout(readyTimeoutId);
+        }
         unlisten?.();
         disposeSmartCopy();
         disposeOnData.dispose();
@@ -335,7 +350,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 projectPath={projectPath}
                 isActive={isActive && activeShellId === shell.id}
                 isDark={isDark}
-                onReady={activeShellId === shell.id ? onReady : undefined}
+                onReady={onReady}
               />
             ))}
           </div>
