@@ -143,9 +143,22 @@ fn save_task_images(
 
 /// 设置 CommandBuilder 的标准环境变量。
 fn setup_env(cmd: &mut CommandBuilder) {
-    for (key, value) in crate::app_settings::get_login_shell_env() {
+    let login_env = crate::app_settings::get_login_shell_env();
+    for (key, value) in login_env {
         cmd.env(key, value);
     }
+
+    // 确保 locale 为 UTF-8。
+    // macOS 的 Terminal.app / iTerm2 会自动注入 LANG，但从 Dock 启动的 Tauri 应用
+    // 进程环境中没有 locale 变量，导致 PTY 子进程无法正确处理中文等多字节输入。
+    let has = |name: &str| login_env.iter().any(|(k, _)| k == name);
+    if !has("LANG") {
+        cmd.env("LANG", "en_US.UTF-8");
+    }
+    if !has("LC_CTYPE") {
+        cmd.env("LC_CTYPE", "en_US.UTF-8");
+    }
+
     // 设置终端类型，使 Claude Code / Codex 输出正确的转义序列
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
