@@ -41,5 +41,8 @@ parking_lot = "0.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 uuid = { version = "1", features = ["v4"] }
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-window-state = "2"
+
 [profile.dev]
 debug = 0
