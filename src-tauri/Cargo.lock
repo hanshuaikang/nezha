@@ -2334,6 +2334,8 @@ dependencies = [
  "chrono",
  "libc",
  "notify",
+ "objc2",
+ "objc2-app-kit",
  "once_cell",
  "parking_lot",
  "portable-pty",
