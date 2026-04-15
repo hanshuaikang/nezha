@@ -47,7 +47,7 @@ impl TaskManager {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .on_window_event(window_behavior::handle_window_event)
         .setup(|_app| {
             // 后台预热 login shell 环境，避免第一次启动任务时阻塞
@@ -120,7 +120,64 @@ pub fn run() {
             notification::mark_notification_read,
             notification::mark_all_notifications_read,
             usage::read_usage_snapshot,
-        ])
+        ]);
+
+    // macOS: custom menu so Cmd+W reliably hides the window even in fullscreen.
+    // The default menu's "Close Window" fires performClose: which macOS intercepts
+    // during the fullscreen-exit animation, often preventing CloseRequested from
+    // reaching our on_window_event handler.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(|handle| {
+            use tauri::menu::*;
+
+            let app_menu = SubmenuBuilder::new(handle, "NeZha")
+                .about(None)
+                .separator()
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .quit()
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+
+            let view_menu = SubmenuBuilder::new(handle, "View")
+                .fullscreen()
+                .build()?;
+
+            let hide_item = MenuItemBuilder::new("Close Window")
+                .id("hide_window")
+                .accelerator("CmdOrCtrl+W")
+                .build(handle)?;
+
+            let window_menu = SubmenuBuilder::new(handle, "Window")
+                .minimize()
+                .maximize()
+                .separator()
+                .item(&hide_item)
+                .build()?;
+
+            MenuBuilder::new(handle)
+                .items(&[&app_menu, &edit_menu, &view_menu, &window_menu])
+                .build()
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "hide_window" {
+                window_behavior::hide_main_window(app);
+            }
+        });
+
+    builder
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(window_behavior::handle_run_event);
