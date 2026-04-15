@@ -1,6 +1,6 @@
 [package]
 name = "nezha"
-version = "0.2.1"
+version = "0.2.2"
 description = "An agent-first vibe coding application"
 authors = ["hanshuaikang"]
 edition = "2021"
