@@ -8,6 +8,7 @@ interface FsEntry {
   path: string;
   is_dir: boolean;
   extension?: string;
+  is_gitignored: boolean;
 }
 
 interface TreeNode extends FsEntry {
@@ -15,22 +16,27 @@ interface TreeNode extends FsEntry {
   expanded: boolean;
 }
 
+const GITIGNORED_COLOR = "#6b7280";
+
 function FileIcon({
   name,
   ext,
   isDir,
   expanded,
+  isGitignored,
 }: {
   name: string;
   ext?: string;
   isDir: boolean;
   expanded?: boolean;
+  isGitignored?: boolean;
 }) {
   if (isDir) {
+    const folderColor = isGitignored ? GITIGNORED_COLOR : expanded ? "#7cb9f4" : "#94b8d8";
     return (
       <span
         style={{
-          color: expanded ? "#7cb9f4" : "#94b8d8",
+          color: folderColor,
           display: "inline-flex",
           alignItems: "center",
           flexShrink: 0,
@@ -48,7 +54,7 @@ function FileIcon({
       </span>
     );
   }
-  const color = getFileColor(name, ext);
+  const color = isGitignored ? GITIGNORED_COLOR : getFileColor(name, ext);
   return (
     <span
       style={{
@@ -137,11 +143,12 @@ function TreeItem({
         ext={node.extension}
         isDir={node.is_dir}
         expanded={node.expanded}
+        isGitignored={node.is_gitignored}
       />
       <span
         style={{
           fontSize: 12.5,
-          color: "var(--text-primary)",
+          color: node.is_gitignored ? GITIGNORED_COLOR : "var(--text-primary)",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -171,7 +178,8 @@ function isSameEntry(a: FsEntry, b: FsEntry) {
     a.path === b.path &&
     a.name === b.name &&
     a.is_dir === b.is_dir &&
-    a.extension === b.extension
+    a.extension === b.extension &&
+    a.is_gitignored === b.is_gitignored
   );
 }
 
