@@ -7,6 +7,7 @@ pub(crate) struct FsEntry {
     path: String,
     is_dir: bool,
     extension: Option<String>,
+    is_gitignored: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -97,7 +98,7 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
             let is_dir = p.is_dir();
             let extension =
                 p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
-            FsEntry { name, path: p.to_string_lossy().into_owned(), is_dir, extension }
+            FsEntry { name, path: p.to_string_lossy().into_owned(), is_dir, extension, is_gitignored: false }
         })
         .collect();
     result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
@@ -105,6 +106,41 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
+
+    // Mark gitignored entries via `git check-ignore --stdin`
+    if !result.is_empty() {
+        let ignored_set: std::collections::HashSet<String> = {
+            use std::io::Write;
+            let mut cmd = std::process::Command::new("git");
+            cmd.args(["check-ignore", "--stdin"])
+                .current_dir(&project_path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null());
+            match cmd.spawn() {
+                Ok(mut child) => {
+                    if let Some(ref mut stdin) = child.stdin {
+                        for entry in &result {
+                            let _ = writeln!(stdin, "{}", entry.path);
+                        }
+                    }
+                    match child.wait_with_output() {
+                        Ok(output) => String::from_utf8_lossy(&output.stdout)
+                            .lines()
+                            .filter(|l| !l.is_empty())
+                            .map(|l| l.to_string())
+                            .collect(),
+                        Err(_) => std::collections::HashSet::new(),
+                    }
+                }
+                Err(_) => std::collections::HashSet::new(),
+            }
+        };
+        for entry in &mut result {
+            entry.is_gitignored = ignored_set.contains(&entry.path);
+        }
+    }
+
     Ok(result)
 }
 
