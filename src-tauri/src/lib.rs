@@ -48,6 +48,7 @@ impl TaskManager {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .on_window_event(window_behavior::handle_window_event)
         .setup(|_app| {
             // 后台预热 login shell 环境，避免第一次启动任务时阻塞
