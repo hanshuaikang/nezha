@@ -15,7 +15,6 @@ mod pty;
 mod session;
 mod storage;
 mod usage;
-mod window_behavior;
 
 use session::{ClaudeSessionInfo, CodexSessionInfo};
 
@@ -48,7 +47,6 @@ impl TaskManager {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .on_window_event(window_behavior::handle_window_event)
         .setup(|_app| {
             // 后台预热 login shell 环境，避免第一次启动任务时阻塞
             std::thread::spawn(|| {
@@ -121,7 +119,6 @@ pub fn run() {
             notification::mark_all_notifications_read,
             usage::read_usage_snapshot,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(window_behavior::handle_run_event);
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
