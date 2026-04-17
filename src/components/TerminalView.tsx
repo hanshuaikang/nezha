@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -55,6 +55,15 @@ export function TerminalView({
   onResizeRef.current = onResize;
   onRegisterRef.current = onRegisterTerminal;
 
+  // 仅在 cols/rows 真正变化时回调；否则会触发 resize_pty → SIGWINCH →
+  // 下游 TUI（Claude Code / Codex）全屏重绘，导致每次切回都看到一次多余重画。
+  const notifyResize = useCallback((cols: number, rows: number) => {
+    const last = lastSizeRef.current;
+    if (last && last.cols === cols && last.rows === rows) return;
+    lastSizeRef.current = { cols, rows };
+    onResizeRef.current(cols, rows);
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
@@ -67,15 +76,6 @@ export function TerminalView({
     term.loadAddon(serializeAddon);
     term.open(container);
     loadWebglAddon(term);
-
-    // 仅在 cols/rows 真正变化时回调；否则会触发 resize_pty → SIGWINCH →
-    // 下游 TUI（Claude Code / Codex）全屏重绘，导致每次切回都看到一次多余重画。
-    const notifyResize = (cols: number, rows: number) => {
-      const last = lastSizeRef.current;
-      if (last && last.cols === cols && last.rows === rows) return;
-      lastSizeRef.current = { cols, rows };
-      onResizeRef.current(cols, rows);
-    };
 
     const size = safeFit(fitAddon, term);
     if (size) notifyResize(size.cols, size.rows);
@@ -180,17 +180,11 @@ export function TerminalView({
     window.requestAnimationFrame(() => {
       if (!fitAddonRef.current || !terminalRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current);
-      if (s) {
-        const last = lastSizeRef.current;
-        if (!last || last.cols !== s.cols || last.rows !== s.rows) {
-          lastSizeRef.current = { cols: s.cols, rows: s.rows };
-          onResizeRef.current(s.cols, s.rows);
-        }
-      }
+      if (s) notifyResize(s.cols, s.rows);
       terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       terminalRef.current.focus();
     });
-  }, [isActive]);
+  }, [isActive, notifyResize]);
 
   useEffect(() => {
     if (terminalRef.current) {
