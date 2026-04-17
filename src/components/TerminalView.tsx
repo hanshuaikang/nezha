@@ -7,7 +7,6 @@ import {
   DARK_THEME,
   LIGHT_THEME,
   initTerminal,
-  loadWebglAddon,
   safeFit,
   createSmartWriter,
 } from "./terminalShared";
@@ -65,7 +64,8 @@ export function TerminalView({
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
-    loadWebglAddon(term);
+    // 故意不启用 WebGL renderer：选区首次建立有 ~100-300ms 启动成本（纹理/shader 初始化），
+    // Canvas renderer 在 Nezha 的文本量级下交互更顺畅。
 
     const size = safeFit(fitAddon, term);
     if (size) onResizeRef.current(size.cols, size.rows);
