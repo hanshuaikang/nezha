@@ -843,9 +843,8 @@ body {
   border-radius: 2px;
 }
 
-/* xterm 容器独立合成层，防止 canvas dirty 触发父层重合成 */
+/* xterm 子树隔离：防止辅助 DOM（选区/link/textarea/scrollbar）变更外溢父级 layout/paint */
 .xterm {
   contain: layout paint style;
   isolation: isolate;
-  will-change: transform;
 }

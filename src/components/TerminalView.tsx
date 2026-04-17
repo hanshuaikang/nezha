@@ -46,11 +46,7 @@ export function TerminalView({
   const onRegisterRef = useRef(onRegisterTerminal);
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
-  const isActiveRef = useRef(isActive);
-  const writerRef = useRef<ReturnType<typeof createSmartWriter> | null>(null);
-  const hiddenBufferRef = useRef<string>("");
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  isActiveRef.current = isActive;
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -91,20 +87,8 @@ export function TerminalView({
     };
 
     const writer = createSmartWriter(term);
-    writerRef.current = writer;
 
-    // 终端隐藏时，`visibility: hidden` 仍保留合成层，任何 term.write 都会触发 canvas 重绘
-    // 与每帧合成开销。所以把隐藏期间到达的数据缓存起来，切回可见时一次性 flush。
-    const gatedWrite = (data: string, callback?: () => void) => {
-      if (!isActiveRef.current) {
-        hiddenBufferRef.current += data;
-        callback?.();
-        return;
-      }
-      writer.write(data, callback);
-    };
-
-    const terminalGeneration = onRegisterRef.current(gatedWrite);
+    const terminalGeneration = onRegisterRef.current(writer.write);
 
     const completeRestore = () => {
       onReadyRef.current?.(terminalGeneration);
@@ -202,11 +186,6 @@ export function TerminalView({
           lastSizeRef.current = { cols: s.cols, rows: s.rows };
           onResizeRef.current(s.cols, s.rows);
         }
-      }
-      if (hiddenBufferRef.current) {
-        const buffered = hiddenBufferRef.current;
-        hiddenBufferRef.current = "";
-        writerRef.current?.write(buffered);
       }
       terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       terminalRef.current.focus();

@@ -68,8 +68,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const isDarkRef = useRef(isDark);
     const isActiveRef = useRef(isActive);
     const onReadyRef = useRef(onReady);
-    const writerRef = useRef<ReturnType<typeof createSmartWriter> | null>(null);
-    const hiddenBufferRef = useRef<string>("");
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
     isDarkRef.current = isDark;
     isActiveRef.current = isActive;
@@ -132,7 +130,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       }, 50);
 
       const writer = createSmartWriter(term);
-      writerRef.current = writer;
       const disposeSmartCopy = attachSmartCopy(term);
       const disposeOnData = term.onData((data) => {
         invoke("send_input", { taskId: shellId, data }).catch(() => {});
@@ -163,11 +160,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let unlisten: (() => void) | null = null;
       listen<ShellOutputEvent>("shell-output", (event) => {
         if (event.payload.shell_id === shellId && terminalRef.current) {
-          // 隐藏期间缓存，避免每条输出都触发 canvas 重绘与合成
-          if (!isActiveRef.current) {
-            hiddenBufferRef.current += event.payload.data;
-            return;
-          }
           writer.write(event.payload.data);
         }
       }).then((fn) => {
@@ -209,11 +201,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             lastSizeRef.current = { cols: s.cols, rows: s.rows };
             invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
           }
-        }
-        if (hiddenBufferRef.current) {
-          const buffered = hiddenBufferRef.current;
-          hiddenBufferRef.current = "";
-          writerRef.current?.write(buffered);
         }
         terminalRef.current.refresh(0, terminalRef.current.rows - 1);
         terminalRef.current.focus();
