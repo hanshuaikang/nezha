@@ -7,6 +7,7 @@ import {
   DARK_THEME,
   LIGHT_THEME,
   initTerminal,
+  loadWebglAddon,
   safeFit,
   createSmartWriter,
 } from "./terminalShared";
@@ -45,6 +46,11 @@ export function TerminalView({
   const onRegisterRef = useRef(onRegisterTerminal);
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
+  const isActiveRef = useRef(isActive);
+  const writerRef = useRef<ReturnType<typeof createSmartWriter> | null>(null);
+  const hiddenBufferRef = useRef<string>("");
+  const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  isActiveRef.current = isActive;
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -64,11 +70,19 @@ export function TerminalView({
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
-    // 故意不启用 WebGL renderer：选区首次建立有 ~100-300ms 启动成本（纹理/shader 初始化），
-    // Canvas renderer 在 Nezha 的文本量级下交互更顺畅。
+    loadWebglAddon(term);
+
+    // 仅在 cols/rows 真正变化时回调；否则会触发 resize_pty → SIGWINCH →
+    // 下游 TUI（Claude Code / Codex）全屏重绘，导致每次切回都看到一次多余重画。
+    const notifyResize = (cols: number, rows: number) => {
+      const last = lastSizeRef.current;
+      if (last && last.cols === cols && last.rows === rows) return;
+      lastSizeRef.current = { cols, rows };
+      onResizeRef.current(cols, rows);
+    };
 
     const size = safeFit(fitAddon, term);
-    if (size) onResizeRef.current(size.cols, size.rows);
+    if (size) notifyResize(size.cols, size.rows);
 
     const focusTerminal = () => {
       window.requestAnimationFrame(() => {
@@ -77,8 +91,20 @@ export function TerminalView({
     };
 
     const writer = createSmartWriter(term);
+    writerRef.current = writer;
 
-    const terminalGeneration = onRegisterRef.current(writer.write);
+    // 终端隐藏时，`visibility: hidden` 仍保留合成层，任何 term.write 都会触发 canvas 重绘
+    // 与每帧合成开销。所以把隐藏期间到达的数据缓存起来，切回可见时一次性 flush。
+    const gatedWrite = (data: string, callback?: () => void) => {
+      if (!isActiveRef.current) {
+        hiddenBufferRef.current += data;
+        callback?.();
+        return;
+      }
+      writer.write(data, callback);
+    };
+
+    const terminalGeneration = onRegisterRef.current(gatedWrite);
 
     const completeRestore = () => {
       onReadyRef.current?.(terminalGeneration);
@@ -87,7 +113,7 @@ export function TerminalView({
 
     window.requestAnimationFrame(() => {
       const s = safeFit(fitAddon, term);
-      if (s) onResizeRef.current(s.cols, s.rows);
+      if (s) notifyResize(s.cols, s.rows);
       if (initialSnapshot) {
         term.write(initialSnapshot, () => {
           if (initialData) {
@@ -124,7 +150,7 @@ export function TerminalView({
       if (document.visibilityState !== "visible") return;
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term);
-        if (s) onResizeRef.current(s.cols, s.rows);
+        if (s) notifyResize(s.cols, s.rows);
         term.refresh(0, term.rows - 1);
         term.focus();
       });
@@ -139,7 +165,7 @@ export function TerminalView({
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         const s = safeFit(fitAddon, term);
-        if (s) onResizeRef.current(s.cols, s.rows);
+        if (s) notifyResize(s.cols, s.rows);
       }, 50);
     });
     resizeObserver.observe(container);
@@ -170,7 +196,18 @@ export function TerminalView({
     window.requestAnimationFrame(() => {
       if (!fitAddonRef.current || !terminalRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current);
-      if (s) onResizeRef.current(s.cols, s.rows);
+      if (s) {
+        const last = lastSizeRef.current;
+        if (!last || last.cols !== s.cols || last.rows !== s.rows) {
+          lastSizeRef.current = { cols: s.cols, rows: s.rows };
+          onResizeRef.current(s.cols, s.rows);
+        }
+      }
+      if (hiddenBufferRef.current) {
+        const buffered = hiddenBufferRef.current;
+        hiddenBufferRef.current = "";
+        writerRef.current?.write(buffered);
+      }
       terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       terminalRef.current.focus();
     });

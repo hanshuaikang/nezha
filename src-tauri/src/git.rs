@@ -247,7 +247,12 @@ pub(crate) struct GitBranchInfo {
 
 #[tauri::command]
 pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo>, String> {
-    let output = run_git(&project_path, &["branch", "-a"])?;
+    let output = run_git_with_timeout(
+        project_path,
+        vec!["branch".to_string(), "-a".to_string()],
+        Duration::from_secs(5),
+    )
+    .await?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let mut branches = Vec::new();
     for line in stdout.lines() {

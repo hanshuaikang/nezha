@@ -842,3 +842,10 @@ body {
   color: #fff;
   border-radius: 2px;
 }
+
+/* xterm 容器独立合成层，防止 canvas dirty 触发父层重合成 */
+.xterm {
+  contain: layout paint style;
+  isolation: isolate;
+  will-change: transform;
+}
