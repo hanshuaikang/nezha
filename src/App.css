@@ -842,3 +842,9 @@ body {
   color: #fff;
   border-radius: 2px;
 }
+
+/* xterm 子树隔离：防止辅助 DOM（选区/link/textarea/scrollbar）变更外溢父级 layout/paint */
+.xterm {
+  contain: layout paint style;
+  isolation: isolate;
+}

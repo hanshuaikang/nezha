@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -46,6 +46,7 @@ export function TerminalView({
   const onRegisterRef = useRef(onRegisterTerminal);
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
+  const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -53,6 +54,15 @@ export function TerminalView({
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
   onRegisterRef.current = onRegisterTerminal;
+
+  // 仅在 cols/rows 真正变化时回调；否则会触发 resize_pty → SIGWINCH →
+  // 下游 TUI（Claude Code / Codex）全屏重绘，导致每次切回都看到一次多余重画。
+  const notifyResize = useCallback((cols: number, rows: number) => {
+    const last = lastSizeRef.current;
+    if (last && last.cols === cols && last.rows === rows) return;
+    lastSizeRef.current = { cols, rows };
+    onResizeRef.current(cols, rows);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -68,7 +78,7 @@ export function TerminalView({
     loadWebglAddon(term);
 
     const size = safeFit(fitAddon, term);
-    if (size) onResizeRef.current(size.cols, size.rows);
+    if (size) notifyResize(size.cols, size.rows);
 
     const focusTerminal = () => {
       window.requestAnimationFrame(() => {
@@ -87,7 +97,7 @@ export function TerminalView({
 
     window.requestAnimationFrame(() => {
       const s = safeFit(fitAddon, term);
-      if (s) onResizeRef.current(s.cols, s.rows);
+      if (s) notifyResize(s.cols, s.rows);
       if (initialSnapshot) {
         term.write(initialSnapshot, () => {
           if (initialData) {
@@ -124,7 +134,7 @@ export function TerminalView({
       if (document.visibilityState !== "visible") return;
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term);
-        if (s) onResizeRef.current(s.cols, s.rows);
+        if (s) notifyResize(s.cols, s.rows);
         term.refresh(0, term.rows - 1);
         term.focus();
       });
@@ -139,7 +149,7 @@ export function TerminalView({
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         const s = safeFit(fitAddon, term);
-        if (s) onResizeRef.current(s.cols, s.rows);
+        if (s) notifyResize(s.cols, s.rows);
       }, 50);
     });
     resizeObserver.observe(container);
@@ -170,11 +180,11 @@ export function TerminalView({
     window.requestAnimationFrame(() => {
       if (!fitAddonRef.current || !terminalRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current);
-      if (s) onResizeRef.current(s.cols, s.rows);
+      if (s) notifyResize(s.cols, s.rows);
       terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       terminalRef.current.focus();
     });
-  }, [isActive]);
+  }, [isActive, notifyResize]);
 
   useEffect(() => {
     if (terminalRef.current) {

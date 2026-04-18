@@ -68,6 +68,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const isDarkRef = useRef(isDark);
     const isActiveRef = useRef(isActive);
     const onReadyRef = useRef(onReady);
+    const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
     isDarkRef.current = isDark;
     isActiveRef.current = isActive;
     onReadyRef.current = onReady;
@@ -98,7 +99,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       const fit = () => {
         if (cleaned) return;
         const s = safeFit(fitAddon, term);
-        if (s) invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        if (!s) return;
+        const last = lastSizeRef.current;
+        if (last && last.cols === s.cols && last.rows === s.rows) return;
+        lastSizeRef.current = { cols: s.cols, rows: s.rows };
+        invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
 
       initTimeoutId = window.setTimeout(() => {
@@ -190,7 +195,13 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       window.requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current) return;
         const s = safeFit(fitAddonRef.current, terminalRef.current);
-        if (s) invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        if (s) {
+          const last = lastSizeRef.current;
+          if (!last || last.cols !== s.cols || last.rows !== s.rows) {
+            lastSizeRef.current = { cols: s.cols, rows: s.rows };
+            invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+          }
+        }
         terminalRef.current.refresh(0, terminalRef.current.rows - 1);
         terminalRef.current.focus();
       });

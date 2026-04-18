@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::process::{Output, Stdio};
 use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 // ── 辅助函数 ─────────────────────────────────────────────────────────────────
 
@@ -41,25 +43,68 @@ fn run_git<S: AsRef<std::ffi::OsStr>>(
         .map_err(|e| e.to_string())
 }
 
+async fn read_pipe_to_end<R: AsyncRead + Unpin>(
+    mut pipe: R,
+    stream_name: &str,
+) -> Result<Vec<u8>, String> {
+    let mut data = Vec::new();
+    pipe.read_to_end(&mut data)
+        .await
+        .map_err(|e| format!("Failed to read git {}: {}", stream_name, e))?;
+    Ok(data)
+}
+
 /// 带超时的 git 命令执行。
-/// 使用 tokio::task::spawn_blocking 将阻塞操作移到线程池，
-/// 并用 tokio::time::timeout 限制最长执行时间。
+/// 超时后会终止底层 git 子进程，避免后台进程和阻塞线程持续积压。
 async fn run_git_with_timeout(
     project_path: String,
     args: Vec<String>,
     timeout: Duration,
-) -> Result<std::process::Output, String> {
-    tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
-        validate_project_path(&project_path)?;
-        std::process::Command::new("git")
-            .args(&args)
-            .current_dir(&project_path)
-            .output()
-            .map_err(|e| e.to_string())
-    }))
-    .await
-    .map_err(|_| format!("Git 命令执行超时（{}秒）", timeout.as_secs()))?
-    .map_err(|e| format!("Git 命令线程错误: {}", e))?
+) -> Result<Output, String> {
+    validate_project_path(&project_path)?;
+
+    let mut child = tokio::process::Command::new("git")
+        .args(&args)
+        .current_dir(&project_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture git stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture git stderr".to_string())?;
+
+    let stdout_task = tokio::spawn(read_pipe_to_end(stdout, "stdout"));
+    let stderr_task = tokio::spawn(read_pipe_to_end(stderr, "stderr"));
+
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(result) => result.map_err(|e| e.to_string())?,
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+            stdout_task.abort();
+            stderr_task.abort();
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(format!("Git 命令执行超时（{}秒）", timeout.as_secs()));
+        }
+    };
+
+    let stdout = stdout_task
+        .await
+        .map_err(|e| format!("Git stdout task failed: {}", e))??;
+    let stderr = stderr_task
+        .await
+        .map_err(|e| format!("Git stderr task failed: {}", e))??;
+
+    Ok(Output { status, stdout, stderr })
 }
 
 /// 执行 git 命令，若退出码非零则将 stderr 作为错误返回。
@@ -247,7 +292,12 @@ pub(crate) struct GitBranchInfo {
 
 #[tauri::command]
 pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo>, String> {
-    let output = run_git(&project_path, &["branch", "-a"])?;
+    let output = run_git_with_timeout(
+        project_path,
+        vec!["branch".to_string(), "-a".to_string()],
+        Duration::from_secs(5),
+    )
+    .await?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let mut branches = Vec::new();
     for line in stdout.lines() {

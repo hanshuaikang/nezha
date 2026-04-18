@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Search, Plus, ChevronDown, X, Tag, Check, GitFork, GitBranch } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import * as Popover from "@radix-ui/react-popover";
@@ -272,13 +272,23 @@ export function BranchBar({ projectPath }: { projectPath: string }) {
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState("");
 
+  // 防止 focus / 轮询 / 切换分支 等多源触发同时打出多次 IPC 请求。
+  // 已有未完成的请求时直接复用，避免后端 git 命令并发堵塞 Tokio worker。
+  const inflightRef = useRef<Promise<void> | null>(null);
   const fetchBranches = useCallback(async () => {
-    try {
-      const result = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath });
-      setBranches(result);
-    } catch {
-      // not a git repo or git not available
-    }
+    if (inflightRef.current) return inflightRef.current;
+    const p = (async () => {
+      try {
+        const result = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath });
+        setBranches(result);
+      } catch {
+        // not a git repo or git not available
+      } finally {
+        inflightRef.current = null;
+      }
+    })();
+    inflightRef.current = p;
+    return p;
   }, [projectPath]);
 
   useEffect(() => {
@@ -325,6 +335,10 @@ export function BranchBar({ projectPath }: { projectPath: string }) {
         branchName: branch.name,
         isRemote: branch.remote !== null,
       });
+      const staleFetch = inflightRef.current;
+      if (staleFetch) {
+        await staleFetch;
+      }
       await fetchBranches();
       setPickerOpen(false);
       setSearch("");

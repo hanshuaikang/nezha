@@ -78,70 +78,74 @@ fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
 
 #[tauri::command]
 pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
-    validate_path_within(&path, &project_path)?;
-    let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
-    let mut result: Vec<FsEntry> = entries
-        .flatten()
-        .filter(|entry| {
-            let p = entry.path();
-            if p.is_dir() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                !IGNORED_DIRS.contains(&name_str.as_ref())
-            } else {
-                true
-            }
-        })
-        .map(|entry| {
-            let p = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let is_dir = p.is_dir();
-            let extension =
-                p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
-            FsEntry { name, path: p.to_string_lossy().into_owned(), is_dir, extension, is_gitignored: false }
-        })
-        .collect();
-    result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
+    tauri::async_runtime::spawn_blocking(move || {
+        validate_path_within(&path, &project_path)?;
+        let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+        let mut result: Vec<FsEntry> = entries
+            .flatten()
+            .filter(|entry| {
+                let p = entry.path();
+                if p.is_dir() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    !IGNORED_DIRS.contains(&name_str.as_ref())
+                } else {
+                    true
+                }
+            })
+            .map(|entry| {
+                let p = entry.path();
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let is_dir = p.is_dir();
+                let extension =
+                    p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
+                FsEntry { name, path: p.to_string_lossy().into_owned(), is_dir, extension, is_gitignored: false }
+            })
+            .collect();
+        result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
 
-    // Mark gitignored entries via `git check-ignore --stdin`
-    if !result.is_empty() {
-        let ignored_set: std::collections::HashSet<String> = {
-            use std::io::Write;
-            let mut cmd = std::process::Command::new("git");
-            cmd.args(["check-ignore", "--stdin"])
-                .current_dir(&project_path)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null());
-            match cmd.spawn() {
-                Ok(mut child) => {
-                    if let Some(ref mut stdin) = child.stdin {
-                        for entry in &result {
-                            let _ = writeln!(stdin, "{}", entry.path);
+        // Mark gitignored entries via `git check-ignore --stdin`
+        if !result.is_empty() {
+            let ignored_set: std::collections::HashSet<String> = {
+                use std::io::Write;
+                let mut cmd = std::process::Command::new("git");
+                cmd.args(["check-ignore", "--stdin"])
+                    .current_dir(&project_path)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null());
+                match cmd.spawn() {
+                    Ok(mut child) => {
+                        if let Some(ref mut stdin) = child.stdin {
+                            for entry in &result {
+                                let _ = writeln!(stdin, "{}", entry.path);
+                            }
+                        }
+                        match child.wait_with_output() {
+                            Ok(output) => String::from_utf8_lossy(&output.stdout)
+                                .lines()
+                                .filter(|l| !l.is_empty())
+                                .map(|l| l.to_string())
+                                .collect(),
+                            Err(_) => std::collections::HashSet::new(),
                         }
                     }
-                    match child.wait_with_output() {
-                        Ok(output) => String::from_utf8_lossy(&output.stdout)
-                            .lines()
-                            .filter(|l| !l.is_empty())
-                            .map(|l| l.to_string())
-                            .collect(),
-                        Err(_) => std::collections::HashSet::new(),
-                    }
+                    Err(_) => std::collections::HashSet::new(),
                 }
-                Err(_) => std::collections::HashSet::new(),
+            };
+            for entry in &mut result {
+                entry.is_gitignored = ignored_set.contains(&entry.path);
             }
-        };
-        for entry in &mut result {
-            entry.is_gitignored = ignored_set.contains(&entry.path);
         }
-    }
 
-    Ok(result)
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -204,38 +208,40 @@ pub async fn read_image_preview(path: String, project_path: String) -> Result<Im
 
 #[tauri::command]
 pub async fn write_file_content(path: String, content: String, project_path: String) -> Result<(), String> {
-    validate_path_within(&path, &project_path)?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        validate_path_within(&path, &project_path)?;
+        std::fs::write(&path, content).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
-    let tracked = std::process::Command::new("git")
-        .args(["-c", "core.quotePath=false", "ls-files"])
-        .current_dir(&project_path)
-        .output()
-        .map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = std::process::Command::new("git")
+            .args([
+                "-c",
+                "core.quotePath=false",
+                "ls-files",
+                "-c",
+                "-o",
+                "--exclude-standard",
+            ])
+            .current_dir(&project_path)
+            .output()
+            .map_err(|e| e.to_string())?;
 
-    let untracked = std::process::Command::new("git")
-        .args(["-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"])
-        .current_dir(&project_path)
-        .output()
-        .map_err(|e| e.to_string())?;
+        let mut files: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect();
 
-    let mut files: Vec<String> = String::from_utf8_lossy(&tracked.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| l.to_string())
-        .collect();
-
-    let extra: Vec<String> = String::from_utf8_lossy(&untracked.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| l.to_string())
-        .collect();
-
-    files.extend(extra);
-    files.sort();
-    files.dedup();
-    Ok(files)
+        files.sort();
+        files.dedup();
+        Ok(files)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
