@@ -345,6 +345,16 @@ export function NewTaskView({
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}
           onTogglePlanMode={() => setPlanMode((v) => !v)}
+          onAddImages={(dataUrls) => {
+            setPastedImages((prev) => [
+              ...prev,
+              ...dataUrls.map((dataUrl) => ({
+                id: `${Date.now()}-${Math.random()}`,
+                dataUrl,
+              })),
+            ]);
+            setIsEmpty(false);
+          }}
           onSubmit={handleSubmit}
         />
       </div>
