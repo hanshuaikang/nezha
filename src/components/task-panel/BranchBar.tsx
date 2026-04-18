@@ -335,6 +335,10 @@ export function BranchBar({ projectPath }: { projectPath: string }) {
         branchName: branch.name,
         isRemote: branch.remote !== null,
       });
+      const staleFetch = inflightRef.current;
+      if (staleFetch) {
+        await staleFetch;
+      }
       await fetchBranches();
       setPickerOpen(false);
       setSearch("");

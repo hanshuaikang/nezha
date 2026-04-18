@@ -88,7 +88,9 @@ async fn run_git_with_timeout(
         Ok(result) => result.map_err(|e| e.to_string())?,
         Err(_) => {
             let _ = child.start_kill();
-            let _ = child.wait().await;
+            let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+            stdout_task.abort();
+            stderr_task.abort();
             let _ = stdout_task.await;
             let _ = stderr_task.await;
             return Err(format!("Git 命令执行超时（{}秒）", timeout.as_secs()));
