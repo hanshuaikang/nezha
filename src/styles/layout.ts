@@ -36,9 +36,9 @@ export const layout = {
     width: 44,
     height: 44,
     borderRadius: 12,
-    background: "linear-gradient(145deg, #25566F, #4E86C8 58%, #3FAEA0 100%)",
+    background: "linear-gradient(145deg, #13213F, #1676D2 58%, #2FB7D3 100%)",
     padding: 4,
-    boxShadow: "0 10px 20px rgba(78, 134, 200, 0.17)",
+    boxShadow: "0 10px 20px rgba(22, 118, 210, 0.14)",
   },
   sidebarBrandBadge: {
     display: "flex",
