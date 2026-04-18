@@ -2,7 +2,7 @@ import { Send, BookmarkPlus, ChevronDown, Map as MapIcon } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
 import type { AgentType, PermissionMode } from "../../types";
-import { PERM_LABELS } from "../../types";
+import { permissionModeLabel } from "../../types";
 import s from "../../styles";
 import claudeLogo from "../../assets/claude.svg";
 import chatgptLogo from "../../assets/chatgpt.svg";
@@ -49,16 +49,8 @@ export function AgentPermSelector({
       <Select.Root
         value={permMode}
         onValueChange={(v) => onSetPermMode(v as PermissionMode)}
-        disabled={agent === "codex"}
       >
-        <Select.Trigger
-          style={{
-            ...s.toolbarBtn,
-            opacity: agent === "codex" ? 0.4 : 1,
-            cursor: agent === "codex" ? "not-allowed" : "pointer",
-          }}
-          title={agent === "codex" ? "Codex manages permissions internally" : undefined}
-        >
+        <Select.Trigger style={s.toolbarBtn}>
           <Select.Value />
           <Select.Icon>
             <ChevronDown size={11} strokeWidth={2.5} style={{ opacity: 0.6 }} />
@@ -107,7 +99,7 @@ export function AgentPermSelector({
                     (e.currentTarget as HTMLElement).style.background = "transparent";
                   }}
                 >
-                  <Select.ItemText>{PERM_LABELS[perm]}</Select.ItemText>
+                  <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
                 </Select.Item>
               ))}
             </Select.Viewport>

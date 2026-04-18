@@ -42,6 +42,13 @@ export const PERM_LABELS: Record<PermissionMode, string> = {
   full_access: "Full Access",
 };
 
+export function permissionModeLabel(mode: PermissionMode, agent?: AgentType): string {
+  if (agent === "codex" && mode === "auto_edit") {
+    return "Auto Mode";
+  }
+  return PERM_LABELS[mode];
+}
+
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: "Todo",
   pending: "Pending",
