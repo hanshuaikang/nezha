@@ -11,8 +11,8 @@ export const dialogs = {
     justifyContent: "center",
   },
   modalBox: {
-    width: 680,
-    height: "72vh",
+    width: "min(920px, calc(100vw - 48px), calc((100vh - 96px) * 4 / 3))",
+    aspectRatio: "4 / 3",
     background: "var(--bg-card)",
     border: "1px solid var(--border-medium)",
     borderRadius: 14,
