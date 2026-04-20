@@ -2,14 +2,13 @@
   <img src="docs/images/logo.png" alt="Nezha Logo" width="150" />
 </p>
 
-<h1 align="center">Nezha: An Agent-First Application For Vibe Coding </h1>
+<h1 align="center">Nezha: An Agent-First IDE For Vibe Coding </h1>
 
 <p align="center">
-  Parallelize your AI coding agents. Claude Code + Codex, running together.
-</p>
+Claude Code + Codex, Git, editing, and task management, all in one place.</p>
 
 <p align="center">
-  Multi-project Workspace · Fast Switching Between VibeCoding Tasks · Real-time Terminal · Session Auto-discovery · Native Git Integration · Lightweight Code Editor
+  Multi-project Workspace · Fast Switching Between VibeCoding Tasks · Real-time Terminal · Session Auto-discovery · Native Git Integration · Lightweight Code Editor · Real-time Usage
 </p>
 <p align="center">
   <a href="https://github.com/hanshuaikang/nezha/actions/workflows/checks.yml"><img alt="Checks" src="https://img.shields.io/github/actions/workflow/status/hanshuaikang/nezha/checks.yml?label=checks"></a>
