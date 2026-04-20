@@ -5,11 +5,11 @@
 <h1 align="center">哪吒(Nezha): 三头六臂，并发编程</h1>
 
 <p align="center">
-  三头六臂, 你的真正 Agent 优先的轻量级并发 VibeCoding 效率工具
+  专为 AI 编程量身打造的高效率轻量级 AI-Native IDE 
 </p>
 
 <p align="center">
-  多项目工作区, 快速切换多个项目的 vibecoding 任务 · 实时终端 · 会话自动发现 · 原生 Git 集成 · 轻量级代码编辑器
+  多项目工作区, 快速切换多个项目的 vibecoding 任务 · 实时终端 · 会话自动发现 · 原生 Git 集成 · 轻量级代码编辑器 · 实时套餐额度显示
 </p>
 <p align="center">
   <a href="https://github.com/hanshuaikang/nezha/actions/workflows/checks.yml"><img alt="Checks" src="https://img.shields.io/github/actions/workflow/status/hanshuaikang/nezha/checks.yml?label=checks"></a>
