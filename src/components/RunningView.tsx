@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Task, UsageWindow } from "../types";
-import { PERM_LABELS } from "../types";
+import { permissionModeLabel } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
@@ -223,7 +223,7 @@ export function RunningView({
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
           <span>
             {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
-            {PERM_LABELS[task.permissionMode]}
+            {permissionModeLabel(task.permissionMode, task.agent)}
           </span>
           {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
             ? usageSnapshot.claude.status === "available" && (

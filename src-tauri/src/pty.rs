@@ -375,6 +375,21 @@ fn build_claude_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     c
 }
 
+/// 为 Codex 命令构建 CommandBuilder，并根据 permission_mode 添加全局执行标志。
+fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
+    let mut c = CommandBuilder::new(agent_bin);
+    match permission_mode {
+        "auto_edit" => {
+            c.arg("--full-auto");
+        }
+        "full_access" => {
+            c.arg("--dangerously-bypass-approvals-and-sandbox");
+        }
+        _ => {}
+    }
+    c
+}
+
 // ── Tauri 命令 ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -434,7 +449,7 @@ pub async fn run_task(
     };
 
     let mut cmd = if is_codex {
-        let mut c = CommandBuilder::new(&agent_bin);
+        let mut c = build_codex_cmd(&agent_bin, &permission_mode);
         c.arg("--");
         c.arg(&final_prompt);
         c
@@ -571,7 +586,7 @@ pub async fn resume_task(
     let launch = crate::app_settings::get_agent_launch_spec(&agent);
     let agent_bin = launch.program.clone();
     let mut cmd = if agent == "codex" {
-        let mut c = CommandBuilder::new(&agent_bin);
+        let mut c = build_codex_cmd(&agent_bin, &permission_mode);
         c.arg("resume");
         c.arg(&session_id);
         c

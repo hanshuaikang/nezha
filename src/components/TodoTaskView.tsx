@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { Task, AgentType, PermissionMode } from "../types";
-import { PERM_LABELS } from "../types";
+import { permissionModeLabel } from "../types";
 import { Play, Pencil } from "lucide-react";
 import { TaskEditDialog } from "./task-panel/TaskEditDialog";
 
@@ -140,7 +140,7 @@ export function TodoTaskView({
                   padding: "2px 7px",
                 }}
               >
-                {PERM_LABELS[task.permissionMode]}
+                {permissionModeLabel(task.permissionMode, task.agent)}
               </span>
               <button
                 style={{

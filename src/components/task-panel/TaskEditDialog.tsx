@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import type { AgentType, PermissionMode } from "../../types";
-import { PERM_LABELS } from "../../types";
+import { permissionModeLabel } from "../../types";
 import s from "../../styles";
 
 const AGENTS: AgentType[] = ["claude", "codex"];
@@ -55,18 +55,12 @@ export function TaskEditDialog({
           {editAgent === "claude" ? "Claude Code" : "Codex"}
         </button>
         <button
-          style={{
-            ...s.toolbarBtn,
-            fontSize: 12,
-            opacity: editAgent === "codex" ? 0.4 : 1,
-            cursor: editAgent === "codex" ? "not-allowed" : "pointer",
-          }}
+          style={{ ...s.toolbarBtn, fontSize: 12 }}
           onClick={() => {
-            if (editAgent === "codex") return;
             setEditPermMode(PERMS[(PERMS.indexOf(editPermMode) + 1) % PERMS.length]);
           }}
         >
-          {PERM_LABELS[editPermMode]}
+          {permissionModeLabel(editPermMode, editAgent)}
         </button>
         <div style={{ flex: 1 }} />
         <button

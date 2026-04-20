@@ -1,14 +1,51 @@
-import { Send, BookmarkPlus, ChevronDown, Map as MapIcon } from "lucide-react";
+import { useRef } from "react";
+import {
+  ArrowUp,
+  BookmarkPlus,
+  ChevronDown,
+  Hand,
+  Image as ImageIcon,
+  Map as MapIcon,
+  Plus,
+} from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
 import type { AgentType, PermissionMode } from "../../types";
-import { PERM_LABELS } from "../../types";
+import { permissionModeLabel } from "../../types";
 import s from "../../styles";
 import claudeLogo from "../../assets/claude.svg";
 import chatgptLogo from "../../assets/chatgpt.svg";
 
 const AGENTS: AgentType[] = ["claude", "codex"];
 const PERMS: PermissionMode[] = ["ask", "auto_edit", "full_access"];
+
+function agentLabel(agent: AgentType): string {
+  return agent === "claude" ? "Claude Code" : "Codex";
+}
+
+function agentIcon(agent: AgentType): string {
+  return agent === "claude" ? claudeLogo : chatgptLogo;
+}
+
+function setMenuItemHover(el: HTMLElement, hover: boolean) {
+  el.style.background = hover ? "var(--accent-subtle)" : "transparent";
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result;
+      if (typeof dataUrl === "string") {
+        resolve(dataUrl);
+      } else {
+        reject(new Error("Image file did not produce a data URL."));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read image file."));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function AgentPermSelector({
   agent,
@@ -19,6 +56,7 @@ export function AgentPermSelector({
   onSetAgent,
   onSetPermMode,
   onTogglePlanMode,
+  onAddImages,
   onSubmit,
 }: {
   agent: AgentType;
@@ -29,115 +67,180 @@ export function AgentPermSelector({
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
   onTogglePlanMode: () => void;
+  onAddImages: (dataUrls: string[]) => void;
   onSubmit: (immediate: boolean) => void;
 }) {
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const canSend = !isEmpty || hasImages;
+
+  async function handleImageFiles(files: FileList | null) {
+    const images = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
+    if (images.length === 0) return;
+
+    const results = await Promise.allSettled(images.map(fileToDataUrl));
+    const dataUrls = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    if (dataUrls.length > 0) {
+      onAddImages(dataUrls);
+    }
+  }
 
   return (
     <div style={s.toolbar}>
-      <button
-        style={s.toolbarBtn}
-        onClick={() => onSetAgent(AGENTS[(AGENTS.indexOf(agent) + 1) % AGENTS.length])}
-      >
-        <img
-          src={agent === "claude" ? claudeLogo : chatgptLogo}
-          style={{ width: 14, height: 14, opacity: agent === "claude" ? 1 : 0.7 }}
-        />
-        <span style={{ fontSize: 13 }}>{agent === "claude" ? "Claude Code" : "Codex"}</span>
-      </button>
+      <div style={s.toolbarLeft}>
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <button style={s.toolbarPlusBtn} aria-label="More compose actions">
+              <Plus size={16} strokeWidth={1.9} />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="start"
+              sideOffset={8}
+              style={s.toolbarActionMenuContent}
+            >
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  void handleImageFiles(e.currentTarget.files);
+                  e.currentTarget.value = "";
+                }}
+              />
+              <button
+                style={{ ...s.toolbarMenuItem, width: "100%", border: "none", background: "none" }}
+                onClick={() => imageInputRef.current?.click()}
+                onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
+                onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
+                onFocus={(e) => setMenuItemHover(e.currentTarget, true)}
+                onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
+              >
+                <ImageIcon size={15} strokeWidth={2} color="var(--text-muted)" />
+                Images
+              </button>
 
-      <Select.Root
-        value={permMode}
-        onValueChange={(v) => onSetPermMode(v as PermissionMode)}
-        disabled={agent === "codex"}
-      >
-        <Select.Trigger
-          style={{
-            ...s.toolbarBtn,
-            opacity: agent === "codex" ? 0.4 : 1,
-            cursor: agent === "codex" ? "not-allowed" : "pointer",
-          }}
-          title={agent === "codex" ? "Codex manages permissions internally" : undefined}
-        >
-          <Select.Value />
-          <Select.Icon>
-            <ChevronDown size={11} strokeWidth={2.5} style={{ opacity: 0.6 }} />
-          </Select.Icon>
-        </Select.Trigger>
-        <Select.Portal>
-          <Select.Content
-            position="popper"
-            sideOffset={6}
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-medium)",
-              borderRadius: 8,
-              boxShadow: "var(--shadow-md)",
-              padding: 4,
-              minWidth: 160,
-              zIndex: 9999,
-            }}
-          >
-            <Select.Viewport>
-              {PERMS.map((perm) => (
-                <Select.Item
-                  key={perm}
-                  value={perm}
+              <div style={s.toolbarMenuSeparator} />
+
+              <button
+                role="switch"
+                aria-checked={planMode}
+                style={{
+                  ...s.toolbarMenuItem,
+                  width: "100%",
+                  border: "none",
+                  background: "none",
+                  justifyContent: "space-between",
+                }}
+                onClick={onTogglePlanMode}
+                onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
+                onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
+                onFocus={(e) => setMenuItemHover(e.currentTarget, true)}
+                onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <MapIcon size={15} strokeWidth={2} color="var(--text-muted)" />
+                  Plan mode
+                </span>
+                <span
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "7px 10px",
-                    borderRadius: 5,
-                    fontSize: 13,
-                    color: "var(--text-primary)",
-                    cursor: "pointer",
-                    outline: "none",
-                    userSelect: "none",
-                  }}
-                  onFocus={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "var(--accent-subtle)";
-                  }}
-                  onBlur={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "transparent";
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "var(--accent-subtle)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "transparent";
+                    ...s.toolbarSwitchTrack,
+                    background: planMode ? "var(--accent)" : "var(--border-medium)",
                   }}
                 >
-                  <Select.ItemText>{PERM_LABELS[perm]}</Select.ItemText>
-                </Select.Item>
-              ))}
-            </Select.Viewport>
-          </Select.Content>
-        </Select.Portal>
-      </Select.Root>
+                  <span
+                    style={{
+                      ...s.toolbarSwitchThumb,
+                      transform: planMode ? "translateX(16px)" : "translateX(0)",
+                    }}
+                  />
+                </span>
+              </button>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
 
-      <button
-        style={{
-          ...s.toolbarBtn,
-          ...(planMode
-            ? {
-                background: "var(--accent-subtle)",
-                border: "1px solid var(--accent)",
-                color: "var(--accent)",
-              }
-            : {}),
-        }}
-        onClick={onTogglePlanMode}
-        title="Append 'Please use plan mode' to your prompt"
-      >
-        <MapIcon size={13} />
-        <span style={{ fontSize: 13 }}>Plan Mode</span>
-      </button>
+        <Select.Root value={agent} onValueChange={(v) => onSetAgent(v as AgentType)}>
+          <Select.Trigger style={s.toolbarBtn} aria-label="Agent">
+            <img
+              src={agentIcon(agent)}
+              style={{
+                ...s.toolbarMenuItemIcon,
+                opacity: agent === "claude" ? 1 : 0.72,
+              }}
+            />
+            <span>{agentLabel(agent)}</span>
+            <Select.Icon>
+              <ChevronDown size={12} strokeWidth={2.5} style={{ opacity: 0.58 }} />
+            </Select.Icon>
+          </Select.Trigger>
+          <Select.Portal>
+            <Select.Content position="popper" sideOffset={6} style={s.toolbarMenuContent}>
+              <Select.Viewport>
+                {AGENTS.map((item) => (
+                  <Select.Item
+                    key={item}
+                    value={item}
+                    style={s.toolbarMenuItem}
+                    onFocus={(e) => setMenuItemHover(e.currentTarget, true)}
+                    onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
+                    onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
+                    onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
+                  >
+                    <img
+                      src={agentIcon(item)}
+                      style={{
+                        ...s.toolbarMenuItemIcon,
+                        opacity: item === "claude" ? 1 : 0.72,
+                      }}
+                    />
+                    <Select.ItemText>{agentLabel(item)}</Select.ItemText>
+                  </Select.Item>
+                ))}
+              </Select.Viewport>
+            </Select.Content>
+          </Select.Portal>
+        </Select.Root>
 
-      <div style={{ flex: 1 }} />
+        <Select.Root value={permMode} onValueChange={(v) => onSetPermMode(v as PermissionMode)}>
+          <Select.Trigger style={s.toolbarBtn} aria-label="Permission mode">
+            <Hand size={14} strokeWidth={2} color="var(--text-muted)" />
+            <Select.Value />
+            <Select.Icon>
+              <ChevronDown size={12} strokeWidth={2.5} style={{ opacity: 0.58 }} />
+            </Select.Icon>
+          </Select.Trigger>
+          <Select.Portal>
+            <Select.Content position="popper" sideOffset={6} style={s.toolbarMenuContent}>
+              <Select.Viewport>
+                {PERMS.map((perm) => (
+                  <Select.Item
+                    key={perm}
+                    value={perm}
+                    style={s.toolbarMenuItem}
+                    onFocus={(e) => setMenuItemHover(e.currentTarget, true)}
+                    onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
+                    onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
+                    onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
+                  >
+                    <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
+                  </Select.Item>
+                ))}
+              </Select.Viewport>
+            </Select.Content>
+          </Select.Portal>
+        </Select.Root>
 
-      {/* Split send button */}
-      <div style={{ display: "inline-flex" }}>
-        {/* Primary send button */}
+      </div>
+
+      <div style={s.toolbarSpacer} />
+
+      <div style={s.sendSplit}>
         <button
           style={{
             ...s.sendBtn,
@@ -150,18 +253,20 @@ export function AgentPermSelector({
             if (canSend) onSubmit(true);
           }}
         >
-          <Send size={13} strokeWidth={2} />
+          <ArrowUp size={13} strokeWidth={2.1} />
           <span>Send</span>
           <kbd style={s.kbd}>⌘↵</kbd>
         </button>
-        {/* Dropdown toggle via Radix Popover (Portal avoids overflow clipping) */}
         <Popover.Root>
           <Popover.Trigger asChild>
             <button
               style={{
                 ...s.sendBtn,
+                minWidth: 22,
+                minHeight: 32,
+                padding: "6px 5px",
                 borderRadius: "0 6px 6px 0",
-                padding: "6px 7px",
+                borderLeft: "none",
                 opacity: canSend ? 1 : 0.4,
                 cursor: canSend ? "pointer" : "not-allowed",
               }}
@@ -175,29 +280,16 @@ export function AgentPermSelector({
               side="bottom"
               align="end"
               sideOffset={6}
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-medium)",
-                borderRadius: 8,
-                boxShadow: "var(--shadow-md)",
-                padding: 4,
-                minWidth: 160,
-                zIndex: 9999,
-              }}
+              style={s.toolbarMenuContent}
             >
               <Popover.Close asChild>
                 <button
                   style={{
-                    display: "flex",
-                    alignItems: "center",
+                    ...s.toolbarMenuItem,
                     gap: 8,
                     width: "100%",
-                    padding: "7px 10px",
                     border: "none",
-                    borderRadius: 5,
                     background: "transparent",
-                    color: "var(--text-primary)",
-                    fontSize: 13,
                     cursor: hasImages ? "not-allowed" : "pointer",
                     opacity: hasImages ? 0.4 : 1,
                   }}

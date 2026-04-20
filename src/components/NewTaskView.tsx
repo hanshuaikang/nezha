@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { GitBranch, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import type { Project, AgentType, PermissionMode } from "../types";
 import { useToast } from "./Toast";
 import {
@@ -251,16 +251,7 @@ export function NewTaskView({
     <div style={s.newTaskOuter}>
       {/* Header */}
       <div style={s.newTaskHeader}>
-        <span style={s.newTaskTitle}>New Task</span>
-        <div style={s.newTaskMeta}>
-          <span style={s.metaChip}>{project.name}</span>
-          {project.branch && (
-            <>
-              <GitBranch size={11} color="var(--text-hint)" />
-              <span style={s.metaChip}>{project.branch}</span>
-            </>
-          )}
-        </div>
+        <span style={s.newTaskTitle}>What do you want to build today?</span>
       </div>
 
       {/* Missing context file warning */}
@@ -345,6 +336,16 @@ export function NewTaskView({
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}
           onTogglePlanMode={() => setPlanMode((v) => !v)}
+          onAddImages={(dataUrls) => {
+            setPastedImages((prev) => [
+              ...prev,
+              ...dataUrls.map((dataUrl) => ({
+                id: `${Date.now()}-${Math.random()}`,
+                dataUrl,
+              })),
+            ]);
+            setIsEmpty(false);
+          }}
           onSubmit={handleSubmit}
         />
       </div>
