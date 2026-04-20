@@ -17,14 +17,22 @@
   <a href="https://github.com/hanshuaikang/nezha/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hanshuaikang/nezha"></a>
 </p>
 
-<p align="center">
-  <a href="https://www.producthunt.com/products/nezha-2?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-nezha" target="_blank" rel="noopener noreferrer">
-    <img alt="NeZha - Run multiple AI coding agents across projects | Product Hunt" width="200" height="48" style="width: 150px; height: 48px; vertical-align: middle;" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1120473&theme=light&t=1775898930608">
-  </a>
-  <a href="https://hellogithub.com/repository/hanshuaikang/nezha" target="_blank" rel="noopener noreferrer">
-    <img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=4dd4bd67871b461fa8bd3641d803db05&claim_uid=uT2Sc8Xli4PUA76&theme=neutral" alt="Featured｜HelloGitHub" style="width: 155px; height: 48px; margin-left: 12px; vertical-align: middle;" width="150" height="48" />
-  </a>
-</p>
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <a href="https://www.producthunt.com/products/nezha-2?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-nezha" target="_blank" rel="noopener noreferrer">
+          <img alt="NeZha - Run multiple AI coding agents across projects | Product Hunt" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1120473&theme=light&t=1775898930608" width="150" height="48" />
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://hellogithub.com/repository/hanshuaikang/nezha" target="_blank" rel="noopener noreferrer">
+          <img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=4dd4bd67871b461fa8bd3641d803db05&claim_uid=uT2Sc8Xli4PUA76&theme=neutral" alt="Featured｜HelloGitHub" width="155" height="48" />
+        </a>
+      </td>
+    </tr>
+  </table>
+</div>
 
 <p align="center">
   <img src="docs/images/index.png" alt="Nezha Product Showcase" width="80%" />
@@ -115,16 +123,15 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
 ### 🎨 Carefully Crafted UI Style with Light and Dark Modes
 
 <p align="center">
-  <img src="docs/images/theme-dark.png" alt="Dark Theme" width="48%" />
-  <img src="docs/images/theme-light.png" alt="Light Theme" width="48%" />
+  <img src="docs/images/dark.png" alt="Dark Theme" width="48%" />
+  <img src="docs/images/light.png" alt="Light Theme" width="48%" />
 </p>
 
 ## 🗺️ Roadmap
 
 | <small>Module</small> | <small>Planned Feature</small> | <small>Status</small> |
 | --- | --- | :---: |
-| <small>**Cross-Platform**</small> | <small>Windows Support</small> | <small>⏳ Planned</small> |
-| | <small>Linux Support</small> | <small>⏳ Planned</small> |
+| <small>**Cross-Platform**</small> | <small>Linux Support</small> | <small>⏳ Planned</small> |
 | <small>**Agent Config**</small> | <small>Visual Configuration Management</small> | <small>⏳ Planned</small> |
 | | <small>Multi-Account Management</small> | <small>⏳ Planned</small> |
 | <small>**Workflow**</small> | <small>New Code Review View</small> | <small>⏳ Planned</small> |
@@ -137,6 +144,13 @@ The creation of Nezha was made possible by the following outstanding open-source
 - [Tauri](https://github.com/tauri-apps/tauri) - Build smaller, faster, and more secure desktop applications with a web frontend.
 - [React](https://github.com/facebook/react) - The library for web and native user interfaces.
 - [xterm.js](https://github.com/xtermjs/xterm.js) - A terminal for the web.
+
+Thanks to the following media creators for covering and sharing this project. The order is in no particular order, and you may want to follow them if you're interested.
+
+| Platform | Account |
+| --- | --- |
+| Twitter | [@aigclink](https://x.com/aigclink), [@QingQ77](https://x.com/QingQ77) |
+| WeChat Official Account | 码问 |
 
 ### 👬 Friend Links
 <a href="https://linux.do">Linux.do</a>
