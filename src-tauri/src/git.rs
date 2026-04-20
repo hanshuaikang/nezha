@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::path::Path;
-use std::process::{Output, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -36,8 +36,9 @@ fn run_git<S: AsRef<std::ffi::OsStr>>(
 ) -> Result<std::process::Output, String> {
     validate_project_path(project_path)?;
 
-    std::process::Command::new("git")
-        .args(args)
+    let mut cmd = std::process::Command::new("git");
+    crate::subprocess::configure_background_command(&mut cmd);
+    cmd.args(args)
         .current_dir(project_path)
         .output()
         .map_err(|e| e.to_string())
@@ -63,7 +64,9 @@ async fn run_git_with_timeout(
 ) -> Result<Output, String> {
     validate_project_path(&project_path)?;
 
-    let mut child = tokio::process::Command::new("git")
+    let mut cmd = tokio::process::Command::new("git");
+    crate::subprocess::configure_background_tokio_command(&mut cmd);
+    let mut child = cmd
         .args(&args)
         .current_dir(&project_path)
         .stdout(Stdio::piped())
@@ -119,12 +122,46 @@ fn run_git_check<S: AsRef<std::ffi::OsStr>>(
     Ok(())
 }
 
+fn apply_login_shell_env(cmd: &mut Command) {
+    for (key, value) in crate::app_settings::get_login_shell_env() {
+        cmd.env(key, value);
+    }
+}
+
+fn run_agent_commit_message_command(
+    agent: &str,
+    project_path: &str,
+    prompt: &str,
+) -> Result<Output, String> {
+    let launch = crate::app_settings::get_agent_launch_spec(agent);
+    let mut cmd = Command::new(&launch.program);
+    crate::subprocess::configure_background_command(&mut cmd);
+    if agent == "codex" {
+        cmd.args(["exec", prompt]);
+    } else {
+        cmd.args(["-p", prompt, "--output-format", "text"]);
+    }
+    cmd.current_dir(project_path);
+    cmd.stdin(Stdio::null());
+    apply_login_shell_env(&mut cmd);
+    for (key, value) in &launch.extra_env {
+        cmd.env(key, value);
+    }
+    cmd.output()
+        .map_err(|e| format!("Failed to run {agent}: {e}"))
+}
+
+fn create_empty_temp_file() -> Result<PathBuf, String> {
+    let path = std::env::temp_dir().join(format!("nezha-empty-{}.tmp", uuid::Uuid::new_v4()));
+    std::fs::File::create(&path)
+        .map_err(|e| format!("Failed to create temporary file for git diff: {e}"))?;
+    Ok(path)
+}
+
 // ── Tauri 命令 ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn generate_commit_message(project_path: String) -> Result<String, String> {
-    use std::process::Command;
-
     // 1. Get staged diff
     let diff_output = run_git(&project_path, &["diff", "--staged"])?;
     let diff = String::from_utf8_lossy(&diff_output.stdout).into_owned();
@@ -150,51 +187,11 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         commit_prompt, diff
     );
 
-    // 4. Build PATH with common tool locations
-    let home = std::env::var("HOME").unwrap_or_default();
-    let current_path = std::env::var("PATH").unwrap_or_default();
-    let extra_paths = [
-        format!("{home}/.local/bin"),
-        format!("{home}/.npm-global/bin"),
-        "/opt/homebrew/bin".to_string(),
-        "/opt/homebrew/sbin".to_string(),
-        "/usr/local/bin".to_string(),
-        "/usr/bin".to_string(),
-        "/bin".to_string(),
-        "/usr/sbin".to_string(),
-        "/sbin".to_string(),
-    ];
-    let mut path_parts: Vec<String> = extra_paths.iter().cloned().collect();
-    for p in current_path.split(':') {
-        if !p.is_empty() && !path_parts.contains(&p.to_string()) {
-            path_parts.push(p.to_string());
-        }
-    }
-    let full_path = path_parts.join(":");
-
-    // 5. Run agent in non-interactive exec mode with 15 second timeout
+    // 4. Run agent in non-interactive exec mode with 15 second timeout
     let output = tokio::time::timeout(
         Duration::from_secs(15),
         tokio::task::spawn_blocking(move || {
-            if agent == "codex" {
-                // codex exec runs in non-interactive mode without requiring a TTY
-                Command::new("codex")
-                    .args(["exec", &full_prompt])
-                    .env("PATH", &full_path)
-                    .env("HOME", &home)
-                    .current_dir(&project_path)
-                    .output()
-                    .map_err(|e| format!("Failed to run codex: {}", e))
-            } else {
-                // claude -p runs in non-interactive print mode; prompt is a positional arg
-                Command::new("claude")
-                    .args(["-p", &full_prompt, "--output-format", "text"])
-                    .env("PATH", &full_path)
-                    .env("HOME", &home)
-                    .current_dir(&project_path)
-                    .output()
-                    .map_err(|e| format!("Failed to run claude: {}", e))
-            }
+            run_agent_commit_message_command(&agent, &project_path, &full_prompt)
         }),
     )
     .await
@@ -580,13 +577,17 @@ pub async fn git_file_diff(
     if raw.is_empty() && !staged {
         let abs_path = std::path::Path::new(&project_path).join(&file_path);
         let abs_path_str = abs_path.to_string_lossy().into_owned();
+        let empty_file = create_empty_temp_file()?;
         let fallback_args = vec![
             "diff".to_string(),
             "--no-index".to_string(),
-            "/dev/null".to_string(),
+            empty_file.to_string_lossy().into_owned(),
             abs_path_str,
         ];
-        let fallback = run_git_with_timeout(project_path, fallback_args, Duration::from_secs(10)).await?;
+        let fallback =
+            run_git_with_timeout(project_path, fallback_args, Duration::from_secs(10)).await;
+        let _ = std::fs::remove_file(&empty_file);
+        let fallback = fallback?;
         let fallback_raw = fallback.stdout;
         let limit = 200 * 1024;
         return Ok(String::from_utf8_lossy(

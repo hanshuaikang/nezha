@@ -11,9 +11,11 @@ mod config;
 mod fs;
 mod git;
 mod notification;
+mod platform;
 mod pty;
 mod session;
 mod storage;
+mod subprocess;
 mod usage;
 
 use session::{ClaudeSessionInfo, CodexSessionInfo};
@@ -103,6 +105,7 @@ pub fn run() {
             config::init_project_config,
             config::read_project_config,
             config::write_project_config,
+            config::get_agent_config_file_path,
             config::read_agent_config_file,
             config::write_agent_config_file,
             storage::load_projects,

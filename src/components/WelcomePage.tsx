@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, BarChart2 } from "lucide-react";
 import type { Project, ThemeMode } from "../types";
+import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
@@ -118,12 +119,14 @@ export function WelcomePage({
               active={view === "projects"}
               onClick={() => setView("projects")}
             />
-            <SidebarItem
-              icon={<BarChart2 size={15} />}
-              label="Analytics"
-              active={view === "analytics"}
-              onClick={() => setView("analytics")}
-            />
+            {ENABLE_USAGE_INSIGHTS ? (
+              <SidebarItem
+                icon={<BarChart2 size={15} />}
+                label="Analytics"
+                active={view === "analytics"}
+                onClick={() => setView("analytics")}
+              />
+            ) : null}
           </nav>
 
           <div style={s.sidebarFooter}>
@@ -137,7 +140,7 @@ export function WelcomePage({
           </div>
         </div>
 
-        {view === "analytics" ? (
+        {ENABLE_USAGE_INSIGHTS && view === "analytics" ? (
           <AnalyticsDashboard projects={projects} />
         ) : (
           <div style={s.welcomePane}>

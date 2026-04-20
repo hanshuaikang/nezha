@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Task, UsageWindow } from "../types";
 import { PERM_LABELS } from "../types";
@@ -7,13 +7,11 @@ import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
 import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
+import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import s from "../styles";
 import { X, RotateCcw, Pencil } from "lucide-react";
 
 interface SessionMetrics {
-  input_tokens: number;
-  output_tokens: number;
-  tool_calls: number;
   duration_secs: number;
 }
 
@@ -22,11 +20,6 @@ function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = Math.round(secs % 60);
   return `${m}m ${s}s`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }
 
 function InlineWindow({ label, window }: { label: string; window: UsageWindow }) {
@@ -74,7 +67,7 @@ export function RunningView({
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
   const restoreState = getRestoreState?.() ?? {};
 
-  const { snapshot: usageSnapshot } = useUsageSnapshot(visible);
+  const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
 
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -83,21 +76,25 @@ export function RunningView({
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!sessionPath) return;
+    if (!sessionPath) {
+      setMetrics(null);
+      return;
+    }
 
     let cancelled = false;
 
     const load = () => {
       invoke<SessionMetrics>("read_session_metrics", { sessionPath })
-        .then((m) => {
-          if (!cancelled) setMetrics(m);
+        .then((nextMetrics) => {
+          if (!cancelled) {
+            setMetrics(nextMetrics);
+          }
         })
         .catch(() => {});
     };
 
     load();
 
-    // Refresh metrics periodically while task is active
     if (isActive) {
       const timer = setInterval(load, 3000);
       return () => {
@@ -228,7 +225,7 @@ export function RunningView({
             {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
             {PERM_LABELS[task.permissionMode]}
           </span>
-          {usageSnapshot && (task.agent === "claude"
+          {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
             ? usageSnapshot.claude.status === "available" && (
                 <>
                   {usageSnapshot.claude.data.fiveHour && (
@@ -277,9 +274,6 @@ export function RunningView({
             }}
           >
             <MetricPill label="Duration" value={formatDuration(metrics.duration_secs)} />
-            <MetricPill label="Tool calls" value={String(metrics.tool_calls)} />
-            <MetricPill label="Input" value={`${formatTokens(metrics.input_tokens)} tok`} />
-            <MetricPill label="Output" value={`${formatTokens(metrics.output_tokens)} tok`} />
           </div>
         )}
       </div>

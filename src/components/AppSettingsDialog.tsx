@@ -11,6 +11,7 @@ import {
   Monitor,
 } from "lucide-react";
 import type { ThemeMode } from "../types";
+import { APP_PLATFORM } from "../platform";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
@@ -44,6 +45,34 @@ type AgentKey = "claude" | "codex";
 
 const GITHUB_REPO_URL = "https://github.com/hanshuaikang/nezha";
 
+function getAgentSettingsFilePath(agent: AgentKey): string {
+  if (APP_PLATFORM === "windows") {
+    return agent === "claude"
+      ? "%USERPROFILE%\\.claude\\settings.json"
+      : "%USERPROFILE%\\.codex\\config.toml";
+  }
+
+  return agent === "claude" ? "~/.claude/settings.json" : "~/.codex/config.toml";
+}
+
+function getAgentExecutablePlaceholder(agent: AgentKey): string {
+  if (APP_PLATFORM === "windows") {
+    return agent === "claude"
+      ? "claude or C:\\Users\\<you>\\AppData\\Roaming\\npm\\claude.cmd"
+      : "codex or C:\\Users\\<you>\\AppData\\Roaming\\npm\\codex.cmd";
+  }
+
+  if (APP_PLATFORM === "macos") {
+    return agent === "claude"
+      ? "claude or /opt/homebrew/bin/claude"
+      : "codex or /opt/homebrew/bin/codex";
+  }
+
+  return agent === "claude"
+    ? "claude or /usr/local/bin/claude"
+    : "codex or /usr/local/bin/codex";
+}
+
 const NAV_ITEMS: Array<{
   key: NavKey;
   label: string;
@@ -58,14 +87,14 @@ const NAV_ITEMS: Array<{
     key: "claude",
     label: "Claude Code",
     logo: claudeLogo,
-    filePath: "~/.claude/settings.json",
+    filePath: getAgentSettingsFilePath("claude"),
     lang: "json",
   },
   {
     key: "codex",
     label: "Codex",
     logo: chatgptLogo,
-    filePath: "~/.codex/config.toml",
+    filePath: getAgentSettingsFilePath("codex"),
     lang: "toml",
   },
 ];
@@ -692,7 +721,7 @@ function GeneralPanel() {
                 style={inputStyle}
                 value={settings.claude_path}
                 onChange={(e) => setSettings((prev) => ({ ...prev, claude_path: e.target.value }))}
-                placeholder="/usr/local/bin/claude"
+                placeholder={getAgentExecutablePlaceholder("claude")}
                 spellCheck={false}
               />
               <span style={hintStyle}>Leave empty to use claude from the system PATH.</span>
@@ -704,7 +733,7 @@ function GeneralPanel() {
                 style={inputStyle}
                 value={settings.codex_path}
                 onChange={(e) => setSettings((prev) => ({ ...prev, codex_path: e.target.value }))}
-                placeholder="/usr/local/bin/codex"
+                placeholder={getAgentExecutablePlaceholder("codex")}
                 spellCheck={false}
               />
               <span style={hintStyle}>Leave empty to use codex from the system PATH.</span>
@@ -888,6 +917,15 @@ type FileState =
   | { status: "missing" }
   | { status: "loaded"; content: string };
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function AgentConfigPanel({
   agentKey,
   filePath,
@@ -899,19 +937,29 @@ function AgentConfigPanel({
   lang: string;
   isDark: boolean;
 }) {
+  const [resolvedFilePath, setResolvedFilePath] = useState(filePath);
   const [fileState, setFileState] = useState<FileState>({ status: "loading" });
   const [original, setOriginal] = useState("");
   const [editing, setEditing] = useState(false);
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [highlightError, setHighlightError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   // Load file
   useEffect(() => {
+    setResolvedFilePath(filePath);
+    invoke<string>("get_agent_config_file_path", { agent: agentKey })
+      .then((resolvedPath) => setResolvedFilePath(resolvedPath))
+      .catch(() => setResolvedFilePath(filePath));
+  }, [agentKey, filePath]);
+
+  useEffect(() => {
     setFileState({ status: "loading" });
     setEditing(false);
     setHighlighted(null);
+    setHighlightError(null);
     setError(null);
     setSaved(false);
     invoke<string | null>("read_agent_config_file", { agent: agentKey })
@@ -929,14 +977,28 @@ function AgentConfigPanel({
   // Re-highlight when content or theme changes
   useEffect(() => {
     if (fileState.status !== "loaded") return;
+    let cancelled = false;
     setHighlighted(null);
-    getHighlighter().then((hl) => {
-      const html = hl.codeToHtml(fileState.content, {
-        lang,
-        theme: isDark ? "github-dark" : "github-light",
+    setHighlightError(null);
+    getHighlighter()
+      .then((hl) => {
+        const html = hl.codeToHtml(fileState.content, {
+          lang,
+          theme: isDark ? "github-dark" : "github-light",
+        });
+        if (!cancelled) {
+          setHighlighted(html);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setHighlightError(String(err));
+        }
       });
-      setHighlighted(html);
-    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [fileState, lang, isDark]);
 
   async function handleSave() {
@@ -988,7 +1050,7 @@ function AgentConfigPanel({
               padding: "4px 9px",
             }}
           >
-            {filePath}
+            {resolvedFilePath}
           </div>
           {fileState.status === "loaded" && !editing && (
             <button
@@ -1029,26 +1091,57 @@ function AgentConfigPanel({
           <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 10 }}>{error}</div>
         )}
 
+        {highlightError && fileState.status === "loaded" && !editing && (
+          <div style={{ color: "var(--text-hint)", fontSize: 12, marginBottom: 10 }}>
+            Syntax highlighting is unavailable. Showing plain text instead.
+          </div>
+        )}
+
         {fileState.status === "loading" && !error && (
           <div style={{ color: "var(--text-hint)", fontSize: 13 }}>Loading...</div>
         )}
 
         {fileState.status === "missing" && (
-          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>Config file not found</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+            Config file not found: {resolvedFilePath}
+          </div>
         )}
 
         {fileState.status === "loaded" && !editing && (
-          <div
-            className="file-viewer-code"
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              borderRadius: 8,
-              border: "1px solid var(--border-dim)",
-              fontSize: 12.5,
-            }}
-            dangerouslySetInnerHTML={{ __html: highlighted ?? "" }}
-          />
+          highlighted ? (
+            <div
+              className="file-viewer-code"
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                borderRadius: 8,
+                border: "1px solid var(--border-dim)",
+                fontSize: 12.5,
+              }}
+              dangerouslySetInnerHTML={{ __html: highlighted }}
+            />
+          ) : (
+            <pre
+              style={{
+                flex: 1,
+                minHeight: 0,
+                margin: 0,
+                overflow: "auto",
+                padding: "14px 16px",
+                borderRadius: 8,
+                border: "1px solid var(--border-dim)",
+                background: "var(--bg-panel)",
+                color: "var(--text-primary)",
+                fontSize: 12.5,
+                fontFamily: "var(--font-mono)",
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+              dangerouslySetInnerHTML={{ __html: escapeHtml(fileState.content) }}
+            />
+          )
         )}
 
         {fileState.status === "loaded" && editing && (

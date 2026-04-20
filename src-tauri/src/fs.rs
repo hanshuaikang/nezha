@@ -113,6 +113,7 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
             let ignored_set: std::collections::HashSet<String> = {
                 use std::io::Write;
                 let mut cmd = std::process::Command::new("git");
+                crate::subprocess::configure_background_command(&mut cmd);
                 cmd.args(["check-ignore", "--stdin"])
                     .current_dir(&project_path)
                     .stdin(std::process::Stdio::piped())
@@ -219,7 +220,9 @@ pub async fn write_file_content(path: String, content: String, project_path: Str
 #[tauri::command]
 pub async fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let output = std::process::Command::new("git")
+        let mut cmd = std::process::Command::new("git");
+        crate::subprocess::configure_background_command(&mut cmd);
+        let output = cmd
             .args([
                 "-c",
                 "core.quotePath=false",

@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::app_settings::{detect_claude_version, get_agent_bin, get_login_shell_path};
+use crate::app_settings::{detect_claude_version, get_agent_launch_spec, get_login_shell_path};
 
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_BETA_HEADER: &str = "oauth-2025-04-20";
@@ -46,14 +46,19 @@ impl CodexRpcClient {
     /// (`initialize` / `initialized`).
     pub(crate) fn spawn() -> Result<Self, String> {
         let shell_path = get_login_shell_path();
-        let binary = get_agent_bin("codex");
+        let launch = get_agent_launch_spec("codex");
 
-        let mut child = Command::new(&binary)
-            .arg("app-server")
+        let mut cmd = Command::new(&launch.program);
+        crate::subprocess::configure_background_command(&mut cmd);
+        cmd.arg("app-server")
             .env("PATH", &shell_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (key, value) in &launch.extra_env {
+            cmd.env(key, value);
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to start Codex app-server: {e}"))?;
 
@@ -235,6 +240,14 @@ pub struct CodexUsageData {
 pub async fn read_usage_snapshot(
     state: tauri::State<'_, crate::TaskManager>,
 ) -> Result<UsageSnapshot, String> {
+    if cfg!(windows) {
+        return Ok(UsageSnapshot {
+            claude: unavailable("Usage insights are temporarily disabled on Windows."),
+            codex: unavailable("Usage insights are temporarily disabled on Windows."),
+            fetched_at: chrono::Utc::now().timestamp(),
+        });
+    }
+
     // Clone the Arc so it can be moved into the blocking thread.
     let codex_rpc = Arc::clone(&state.codex_rpc);
     let (claude, codex_result) = tokio::join!(
@@ -332,7 +345,9 @@ async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
     let token_result =
         tokio::task::spawn_blocking(|| -> Result<(String, Option<String>), String> {
             let shell_path = get_login_shell_path();
-            let output = Command::new("security")
+            let mut cmd = Command::new("security");
+            crate::subprocess::configure_background_command(&mut cmd);
+            let output = cmd
                 .args([
                     "find-generic-password",
                     "-s",
