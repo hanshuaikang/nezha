@@ -24,6 +24,7 @@ export function TaskPanel({
   systemPrefersDark,
   onThemeModeChange,
   onToggleTheme,
+  active = true,
 }: {
   project: Project;
   tasks: Task[];
@@ -41,6 +42,7 @@ export function TaskPanel({
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
+  active?: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -67,7 +69,7 @@ export function TaskPanel({
       </div>
 
       {/* Branch bar */}
-      <BranchBar projectPath={project.path} />
+      <BranchBar projectPath={project.path} active={active} />
 
       {/* New Task row */}
       <button

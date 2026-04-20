@@ -37,6 +37,7 @@ export function RunningView({
   task,
   runCount = 0,
   visible = true,
+  projectActive = true,
   onCancel,
   onResume,
   onInput,
@@ -51,6 +52,7 @@ export function RunningView({
   task: Task;
   runCount?: number;
   visible?: boolean;
+  projectActive?: boolean;
   onCancel: () => void;
   onResume?: () => void;
   onInput: (data: string) => void;
@@ -80,6 +82,11 @@ export function RunningView({
       setMetrics(null);
       return;
     }
+    // 只在项目处于前台时才跑 metrics 轮询；切到其他项目时暂停，
+    // 项目重新激活时这里会立即补拉一次。注意这里用的是 projectActive
+    // 而不是 visible —— 后者在同项目内打开 FileViewer / GitDiff 时也会是 false，
+    // 那种场景下不应该中断正在运行任务的 duration 更新。
+    if (!projectActive) return;
 
     let cancelled = false;
 
@@ -106,7 +113,7 @@ export function RunningView({
     return () => {
       cancelled = true;
     };
-  }, [sessionPath, isActive]);
+  }, [sessionPath, isActive, projectActive]);
 
   return (
     <div
