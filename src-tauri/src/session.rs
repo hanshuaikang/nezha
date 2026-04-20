@@ -117,7 +117,7 @@ fn session_modified_at(path: &Path) -> SystemTime {
 
 fn codex_sessions_roots(project_path: &str) -> Vec<PathBuf> {
     let mut roots = vec![PathBuf::from(project_path).join(".codex").join("sessions")];
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+    if let Some(home) = crate::platform::home_dir() {
         let home_root = home.join(".codex").join("sessions");
         if !roots.iter().any(|root| root == &home_root) {
             roots.push(home_root);
@@ -430,7 +430,10 @@ fn is_read_only_segment(segment: &str) -> bool {
 
     match command {
         "pwd" | "ls" | "rg" | "grep" | "cat" | "head" | "tail" | "wc" | "stat" | "which"
-        | "type" | "uname" | "date" | "ps" | "env" | "printenv" | "echo" | "printf" => true,
+        | "type" | "uname" | "date" | "ps" | "env" | "printenv" | "echo" | "printf"
+        | "Get-Location" | "Get-ChildItem" | "Get-Content" | "Select-String" | "Get-Process"
+        | "Get-Date" | "Get-Command" | "Test-Path" | "Resolve-Path" | "Where-Object"
+        | "Measure-Object" | "Sort-Object" | "Select-Object" => true,
         "sed" => {
             tokens.iter().any(|token| *token == "-n")
                 && !tokens.iter().any(|token| token.starts_with("-i"))
@@ -438,6 +441,16 @@ fn is_read_only_segment(segment: &str) -> bool {
         "find" => !tokens
             .iter()
             .any(|token| matches!(*token, "-delete" | "-exec" | "-ok")),
+        "git.exe" => matches!(
+            tokens.get(1).copied(),
+            Some("status")
+                | Some("diff")
+                | Some("show")
+                | Some("log")
+                | Some("branch")
+                | Some("rev-parse")
+                | Some("remote")
+        ),
         "git" => matches!(
             tokens.get(1).copied(),
             Some("status")
@@ -504,7 +517,7 @@ fn assistant_message_requests_user_input(payload: Option<&serde_json::Value>) ->
 // ── Claude Code 会话监视器 ────────────────────────────────────────────────────
 
 fn claude_sessions_dir_for_project(project_path: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    let home = crate::platform::home_dir()?;
     let encoded: String = project_path
         .chars()
         .map(|c| {
@@ -1438,6 +1451,17 @@ mod tests {
             "cargo test --manifest-path src-tauri/Cargo.toml"
         ));
         assert!(!looks_like_read_only_command("echo hello > out.txt"));
+    }
+
+    #[test]
+    fn powershell_read_only_commands_are_treated_as_safe() {
+        assert!(looks_like_read_only_command(
+            "Get-ChildItem -Force | Select-String -Pattern session"
+        ));
+        assert!(looks_like_read_only_command(
+            "Get-Content README.md | Select-Object -First 20"
+        ));
+        assert!(looks_like_read_only_command("git.exe status --short"));
     }
 
     #[test]

@@ -417,7 +417,8 @@ pub async fn run_task(
         format!("{}\n\n[Attached images]\n{}", base_prompt, image_paths.join("\n"))
     };
 
-    let agent_bin = crate::app_settings::get_agent_bin(&agent);
+    let launch = crate::app_settings::get_agent_launch_spec(&agent);
+    let agent_bin = launch.program.clone();
     let is_codex = agent == "codex";
 
     // 读取项目配置中已保存的 Claude 版本，用于判断是否支持 --session-id
@@ -449,6 +450,9 @@ pub async fn run_task(
     };
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
+    for (key, value) in &launch.extra_env {
+        cmd.env(key, value);
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -564,7 +568,8 @@ pub async fn resume_task(
         })
         .map_err(|e| e.to_string())?;
 
-    let agent_bin = crate::app_settings::get_agent_bin(&agent);
+    let launch = crate::app_settings::get_agent_launch_spec(&agent);
+    let agent_bin = launch.program.clone();
     let mut cmd = if agent == "codex" {
         let mut c = CommandBuilder::new(&agent_bin);
         c.arg("resume");
@@ -579,6 +584,9 @@ pub async fn resume_task(
     };
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
+    for (key, value) in &launch.extra_env {
+        cmd.env(key, value);
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -682,8 +690,11 @@ pub async fn open_shell(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let mut cmd = CommandBuilder::new(&shell);
+    let shell = crate::platform::default_shell_command();
+    let mut cmd = CommandBuilder::new(&shell.program);
+    for arg in &shell.args {
+        cmd.arg(arg);
+    }
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
 
