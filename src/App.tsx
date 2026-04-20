@@ -12,6 +12,14 @@ import { useTerminalManager } from "./hooks/useTerminalManager";
 import s from "./styles";
 import "./App.css";
 
+function deriveProjectName(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  if (!trimmed) return path;
+
+  const parts = trimmed.split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
+
 function persistProjects(projects: Project[], onError: (msg: string) => void) {
   invoke("save_projects", { projects }).catch((e: unknown) => {
     console.error(e);
@@ -165,7 +173,7 @@ function App() {
     const selected = await openDialog({ directory: true, multiple: false });
     if (!selected) return;
     const path = selected as string;
-    const name = path.split("/").pop() || path;
+    const name = deriveProjectName(path);
     const project: Project = { id: `${Date.now()}`, name, path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
       const next = [project, ...prev.filter((p) => p.path !== path)];

@@ -125,8 +125,7 @@ pub fn write_project_config(project_path: String, config: ProjectConfig) -> Resu
 }
 
 fn home_dir() -> Result<std::path::PathBuf, String> {
-    std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
+    crate::platform::home_dir()
         .ok_or_else(|| "Cannot find home directory".to_string())
 }
 
@@ -137,6 +136,11 @@ fn agent_config_path(agent: &str) -> Result<std::path::PathBuf, String> {
         "codex" => Ok(home.join(".codex").join("config.toml")),
         _ => Err(format!("Unknown agent: {}", agent)),
     }
+}
+
+#[tauri::command]
+pub fn get_agent_config_file_path(agent: String) -> Result<String, String> {
+    Ok(agent_config_path(&agent)?.to_string_lossy().into_owned())
 }
 
 /// Reads the local settings file for the given agent ("claude" or "codex").

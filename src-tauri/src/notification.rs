@@ -93,9 +93,7 @@ pub struct NotificationResult {
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
 fn nezha_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| "Cannot find home directory".to_string())?;
+    let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
 
