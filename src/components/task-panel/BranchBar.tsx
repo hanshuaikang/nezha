@@ -264,7 +264,13 @@ function BranchDialog({
   );
 }
 
-export function BranchBar({ projectPath }: { projectPath: string }) {
+export function BranchBar({
+  projectPath,
+  active = true,
+}: {
+  projectPath: string;
+  active?: boolean;
+}) {
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [showDialog, setShowDialog] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -292,11 +298,14 @@ export function BranchBar({ projectPath }: { projectPath: string }) {
   }, [projectPath]);
 
   useEffect(() => {
+    if (!active) return;
     fetchBranches();
-  }, [fetchBranches]);
+  }, [active, fetchBranches]);
 
   // 检测外部分支切换：窗口获焦时刷新 + 10 秒轮询兜底
+  // 仅当前可见项目才注册监听/轮询，避免后台项目叠加 IPC 打爆 Tokio worker
   useEffect(() => {
+    if (!active) return;
     const onFocus = () => fetchBranches();
     window.addEventListener("focus", onFocus);
     const timer = setInterval(fetchBranches, 10_000);
@@ -304,7 +313,7 @@ export function BranchBar({ projectPath }: { projectPath: string }) {
       window.removeEventListener("focus", onFocus);
       clearInterval(timer);
     };
-  }, [fetchBranches]);
+  }, [active, fetchBranches]);
 
   const currentBranch = branches.find((b) => b.current);
 

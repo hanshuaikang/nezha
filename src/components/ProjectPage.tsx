@@ -221,6 +221,7 @@ export function ProjectPage({
         systemPrefersDark={systemPrefersDark}
         onThemeModeChange={onThemeModeChange}
         onToggleTheme={onToggleTheme}
+        active={visible}
       />
       <div style={{ ...s.mainContent, flexDirection: "column" }}>
         <div
@@ -331,6 +332,7 @@ export function ProjectPage({
                   task={task}
                   runCount={taskRunCounts[task.id] ?? 0}
                   visible={visible && isVisible}
+                  projectActive={visible}
                   onCancel={() => onCancelTask(task.id)}
                   onResume={() => onResumeTask(task.id)}
                   onInput={(data) => onInput(task.id, data)}
