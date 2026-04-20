@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
+import { invoke } from "@tauri-apps/api/core";
 import { ChevronRight, ChevronDown, RotateCcw } from "lucide-react";
 import { getFileColor } from "../utils";
+import { useToast } from "./Toast";
 
 interface FsEntry {
   name: string;
@@ -71,6 +73,40 @@ function FileIcon({
 
 const ROW_HEIGHT = 22;
 const AUTO_REFRESH_MS = 2500;
+const FILE_TREE_HOVER_BG = "color-mix(in srgb, var(--accent) 7%, transparent)";
+
+async function writeClipboardText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back to execCommand for WebViews that deny the async clipboard API.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.opacity = "0";
+
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    if (!document.execCommand("copy")) {
+      throw new Error("Copy command was rejected");
+    }
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
 
 function flattenVisible(nodes: TreeNode[]): Array<{ node: TreeNode; depth: number }> {
   const result: Array<{ node: TreeNode; depth: number }> = [];
@@ -90,6 +126,7 @@ function TreeItem({
   node,
   depth,
   selectedPath,
+  contextPath,
   onSelect,
   onToggle,
   onContextMenu,
@@ -97,15 +134,18 @@ function TreeItem({
   node: TreeNode;
   depth: number;
   selectedPath: string | null;
+  contextPath: string | null;
   onSelect: (node: TreeNode) => void;
   onToggle: (path: string) => void;
-  onContextMenu: (e: React.MouseEvent, path: string) => void;
+  onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
 }) {
   const isSelected = selectedPath === node.path;
+  const isContextTarget = contextPath === node.path;
+  const isHighlighted = isSelected || isContextTarget;
   return (
     <div
       onClick={() => (node.is_dir ? onToggle(node.path) : onSelect(node))}
-      onContextMenu={(e) => onContextMenu(e, node.path)}
+      onContextMenu={(e) => onContextMenu(e, node)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -117,14 +157,18 @@ function TreeItem({
         borderRadius: 4,
         margin: "0 4px",
         boxSizing: "border-box",
-        background: isSelected ? "var(--bg-selected)" : "transparent",
+        background: isHighlighted ? "var(--bg-selected)" : "transparent",
         userSelect: "none",
       }}
       onMouseEnter={(e) => {
-        if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
+        if (!isHighlighted) {
+          e.currentTarget.style.background = FILE_TREE_HOVER_BG;
+        }
       }}
       onMouseLeave={(e) => {
-        if (!isSelected) (e.currentTarget as HTMLElement).style.background = "transparent";
+        if (!isHighlighted) {
+          e.currentTarget.style.background = "transparent";
+        }
       }}
     >
       <span
@@ -273,19 +317,48 @@ export function FileExplorer({
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(500);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const { showToast } = useToast();
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    path: string;
+  } | null>(null);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, path: string) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY, path });
+    setCtxMenu({ x: e.clientX, y: e.clientY, path: node.path });
   }, []);
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
-  const copyPath = useCallback((path: string, withAt: boolean) => {
-    navigator.clipboard.writeText(withAt ? `@${path}` : path);
-    setCtxMenu(null);
+  const openInSystemFolder = useCallback(
+    async (event: React.MouseEvent, path: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCtxMenu(null);
+
+      try {
+        await invoke("open_in_system_file_manager", { path, projectPath });
+      } catch (error) {
+        console.error("Failed to open file in system folder", error);
+        showToast(`Failed to open in system folder: ${String(error)}`);
+      }
+    },
+    [projectPath, showToast],
+  );
+
+  const copyPath = useCallback(async (event: React.MouseEvent, path: string, withAt: boolean) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      await writeClipboardText(withAt ? `@${path}` : path);
+    } catch (error) {
+      console.error("Failed to copy file path", error);
+    } finally {
+      setCtxMenu(null);
+    }
   }, []);
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
@@ -419,13 +492,12 @@ export function FileExplorer({
         flexDirection: "column",
         overflow: "hidden",
       }}
-      onClick={ctxMenu ? closeCtxMenu : undefined}
     >
       {ctxMenu && (
         <>
           <div
             style={{ position: "fixed", inset: 0, zIndex: 999 }}
-            onClick={closeCtxMenu}
+            onPointerDown={closeCtxMenu}
             onContextMenu={(e) => {
               e.preventDefault();
               closeCtxMenu();
@@ -440,26 +512,43 @@ export function FileExplorer({
               background: "var(--bg-sidebar)",
               border: "1px solid var(--border-dim)",
               borderRadius: 6,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-              minWidth: 180,
-              padding: "4px 0",
-              fontSize: 13,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+              minWidth: 148,
+              padding: "3px 0",
+              fontSize: 12.5,
             }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             {[
+              { label: "Open in System Folder", action: "open" as const },
               { label: "Copy full path", withAt: false },
               { label: "Copy @full path", withAt: true },
-            ].map(({ label, withAt }) => (
-              <div
-                key={label}
+            ].map((item) => (
+              <button
+                type="button"
+                key={item.label}
                 style={{
-                  padding: "6px 14px",
+                  display: "block",
+                  width: "calc(100% - 8px)",
+                  height: 26,
+                  padding: "0 10px",
                   cursor: "pointer",
                   color: "var(--text-primary)",
                   whiteSpace: "nowrap",
-                  borderRadius: 4,
+                  borderRadius: 3,
                   margin: "2px 4px",
                   transition: "background 0.1s",
+                  background: "transparent",
+                  border: "none",
+                  textAlign: "left",
+                  fontSize: 12.5,
+                  fontFamily: "var(--font-ui)",
+                  lineHeight: "26px",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "var(--accent)";
@@ -469,10 +558,16 @@ export function FileExplorer({
                   e.currentTarget.style.background = "transparent";
                   e.currentTarget.style.color = "var(--text-primary)";
                 }}
-                onClick={() => copyPath(ctxMenu.path, withAt)}
+                onClick={(event) => {
+                  if (item.action === "open") {
+                    void openInSystemFolder(event, ctxMenu.path);
+                    return;
+                  }
+                  void copyPath(event, ctxMenu.path, item.withAt);
+                }}
               >
-                {label}
-              </div>
+                {item.label}
+              </button>
             ))}
           </div>
         </>
@@ -593,6 +688,7 @@ export function FileExplorer({
                   node={node}
                   depth={depth}
                   selectedPath={selectedPath}
+                  contextPath={ctxMenu?.path ?? null}
                   onSelect={handleSelect}
                   onToggle={handleToggle}
                   onContextMenu={handleContextMenu}
