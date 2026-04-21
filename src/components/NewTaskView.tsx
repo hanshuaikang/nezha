@@ -69,13 +69,20 @@ export function NewTaskView({
 
   const { editorRef, isComposingRef, handle: editorHandle } = usePromptEditor();
 
-  // Load default agent from project config when project changes
+  // Load default agent and permission mode from project config when project changes
   useEffect(() => {
-    invoke<{ agent: { default: string } }>("read_project_config", { projectPath: project.path })
+    invoke<{ agent: { default: string; default_permission_mode?: string } }>(
+      "read_project_config",
+      { projectPath: project.path },
+    )
       .then((cfg) => {
         const defaultAgent = cfg.agent.default;
         if (defaultAgent === "claude" || defaultAgent === "codex") {
           setAgent(defaultAgent);
+        }
+        const defaultPerm = cfg.agent.default_permission_mode;
+        if (defaultPerm === "ask" || defaultPerm === "auto_edit" || defaultPerm === "full_access") {
+          setPermMode(defaultPerm);
         }
       })
       .catch(() => {});
