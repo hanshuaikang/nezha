@@ -512,7 +512,7 @@ export function BranchBar({
                 style={{
                   padding: "6px 10px",
                   fontSize: 11,
-                  color: "var(--danger, #e05c5c)",
+                  color: "var(--danger)",
                   borderTop: "1px solid var(--border)",
                 }}
               >

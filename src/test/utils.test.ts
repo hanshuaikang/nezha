@@ -129,36 +129,36 @@ describe("getGitStatusLabel", () => {
 // ── getFileColor ─────────────────────────────────────────────────────────────
 
 describe("getFileColor", () => {
-  it("TypeScript 文件返回蓝色", () => {
-    expect(getFileColor("App.tsx")).toBe("#3178c6");
-    expect(getFileColor("utils.ts")).toBe("#3178c6");
+  it("TypeScript 文件返回 TypeScript 图标颜色 token", () => {
+    expect(getFileColor("App.tsx")).toBe("var(--icon-file-ts)");
+    expect(getFileColor("utils.ts")).toBe("var(--icon-file-ts)");
   });
 
-  it("Rust 文件返回红色", () => {
-    expect(getFileColor("lib.rs")).toBe("#ce422b");
+  it("Rust 文件返回 Rust 图标颜色 token", () => {
+    expect(getFileColor("lib.rs")).toBe("var(--icon-file-rust)");
   });
 
-  it("Dockerfile 特殊文件名（大小写不敏感）返回 Docker 蓝", () => {
-    expect(getFileColor("Dockerfile")).toBe("#2496ed");
-    expect(getFileColor("dockerfile.prod")).toBe("#2496ed");
+  it("Dockerfile 特殊文件名（大小写不敏感）返回 Docker 图标颜色 token", () => {
+    expect(getFileColor("Dockerfile")).toBe("var(--icon-file-docker)");
+    expect(getFileColor("dockerfile.prod")).toBe("var(--icon-file-docker)");
   });
 
-  it("Makefile 返回正确颜色", () => {
-    expect(getFileColor("Makefile")).toBe("#6d8086");
+  it("Makefile 返回构建文件图标颜色 token", () => {
+    expect(getFileColor("Makefile")).toBe("var(--icon-file-build)");
   });
 
-  it(".env 文件返回灰色", () => {
-    expect(getFileColor(".env")).toBe("#6b7280");
-    expect(getFileColor(".env.production")).toBe("#6b7280");
+  it(".env 文件返回配置文件图标颜色 token", () => {
+    expect(getFileColor(".env")).toBe("var(--icon-file-config)");
+    expect(getFileColor(".env.production")).toBe("var(--icon-file-config)");
   });
 
-  it("无扩展名的未知文件返回默认灰色", () => {
-    expect(getFileColor("NOTICE")).toBe("#94a3b8");
+  it("无扩展名的未知文件返回默认图标颜色 token", () => {
+    expect(getFileColor("NOTICE")).toBe("var(--icon-file-default)");
   });
 
   it("ext 参数优先于从文件名推断的扩展名", () => {
     // 传入 ext="rs" 覆盖从 "foo.ts" 推断的 "ts"
-    expect(getFileColor("foo.ts", "rs")).toBe("#ce422b");
+    expect(getFileColor("foo.ts", "rs")).toBe("var(--icon-file-rust)");
   });
 });
 

@@ -4,7 +4,7 @@ export const dialogs = {
   modalOverlay: {
     position: "fixed" as const,
     inset: 0,
-    background: "rgba(0,0,0,0.45)",
+    background: "var(--overlay-bg)",
     zIndex: 1000,
     display: "flex",
     alignItems: "center",
@@ -16,7 +16,7 @@ export const dialogs = {
     background: "var(--bg-card)",
     border: "1px solid var(--border-medium)",
     borderRadius: 14,
-    boxShadow: "0 8px 32px rgba(0,0,0,0.22)",
+    boxShadow: "var(--shadow-popover)",
     display: "flex",
     flexDirection: "row" as const,
     overflow: "hidden",
@@ -158,12 +158,12 @@ export const dialogs = {
   },
   modalSaveBtn: {
     padding: "6px 16px",
-    background: "var(--accent)",
+    background: "var(--primary-action-bg)",
     border: "none",
     borderRadius: 7,
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--primary-action-fg)",
     cursor: "pointer",
   },
 } satisfies Record<string, React.CSSProperties>;

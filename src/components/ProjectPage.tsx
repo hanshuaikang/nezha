@@ -130,6 +130,7 @@ export function ProjectPage({
 
   const [showShellTerminal, setShowShellTerminal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
@@ -150,6 +151,10 @@ export function ProjectPage({
       });
     }
   }, [selectedTaskId, isNewTask]);
+
+  useEffect(() => {
+    setTaskPanelCollapsed(Boolean(openDiff));
+  }, [openDiff]);
 
   const handleSelectTask = useCallback(
     (id: string) => {
@@ -222,6 +227,8 @@ export function ProjectPage({
         onThemeModeChange={onThemeModeChange}
         onToggleTheme={onToggleTheme}
         active={visible}
+        collapsed={taskPanelCollapsed}
+        onToggleCollapsed={() => setTaskPanelCollapsed((v) => !v)}
       />
       <div style={{ ...s.mainContent, flexDirection: "column" }}>
         <div

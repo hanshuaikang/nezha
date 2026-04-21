@@ -51,7 +51,7 @@ export const TaskListItem = memo(
             ...s.taskStarBtn,
             opacity: task.starred ? 1 : hov ? 0.7 : 0,
             pointerEvents: task.starred || hov ? "auto" : "none",
-            color: task.starred ? "#c8922a" : "var(--text-hint)",
+            color: task.starred ? "var(--star-fg)" : "var(--text-hint)",
           }}
           onClick={(e) => {
             e.stopPropagation();

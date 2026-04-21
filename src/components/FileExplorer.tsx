@@ -18,7 +18,7 @@ interface TreeNode extends FsEntry {
   expanded: boolean;
 }
 
-const GITIGNORED_COLOR = "#6b7280";
+const GITIGNORED_COLOR = "var(--icon-file-ignored)";
 
 function FileIcon({
   name,
@@ -34,7 +34,11 @@ function FileIcon({
   isGitignored?: boolean;
 }) {
   if (isDir) {
-    const folderColor = isGitignored ? GITIGNORED_COLOR : expanded ? "#7cb9f4" : "#94b8d8";
+    const folderColor = isGitignored
+      ? GITIGNORED_COLOR
+      : expanded
+        ? "var(--icon-folder-open)"
+        : "var(--icon-folder)";
     return (
       <span
         style={{
@@ -512,7 +516,7 @@ export function FileExplorer({
               background: "var(--bg-sidebar)",
               border: "1px solid var(--border-dim)",
               borderRadius: 6,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+              boxShadow: "var(--shadow-popover)",
               minWidth: 148,
               padding: "3px 0",
               fontSize: 12.5,
@@ -552,7 +556,7 @@ export function FileExplorer({
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "var(--accent)";
-                  e.currentTarget.style.color = "#fff";
+                  e.currentTarget.style.color = "var(--fg-on-accent)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "transparent";
@@ -638,7 +642,7 @@ export function FileExplorer({
             width: 5,
             height: 14,
             borderRadius: 2,
-            background: "var(--accent)",
+            background: "var(--icon-folder-root)",
             flexShrink: 0,
             display: "inline-block",
           }}

@@ -181,11 +181,11 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
           gap: 10,
           padding: 14,
           borderRadius: 12,
-          border: `1px solid ${selected ? "var(--accent)" : "var(--border-medium)"}`,
-          background: selected ? "var(--accent-subtle)" : "var(--bg-subtle)",
+          border: `1px solid ${selected ? "var(--control-active-fg)" : "var(--border-medium)"}`,
+          background: selected ? "var(--control-active-bg)" : "var(--bg-subtle)",
           cursor: "pointer",
           textAlign: "left",
-          boxShadow: selected ? "0 0 0 1px var(--accent-subtle)" : "none",
+          boxShadow: selected ? "0 0 0 1px var(--control-active-bg)" : "none",
           transition: "border-color 0.12s, background 0.12s, box-shadow 0.12s",
         }}
       >
@@ -429,8 +429,8 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
           gap: 14,
           padding: "16px 18px",
           borderRadius: 12,
-          border: `1px solid ${themeMode === "system" ? "var(--accent)" : "var(--border-dim)"}`,
-          background: themeMode === "system" ? "var(--accent-subtle)" : "var(--bg-subtle)",
+          border: `1px solid ${themeMode === "system" ? "var(--control-active-fg)" : "var(--border-dim)"}`,
+          background: themeMode === "system" ? "var(--control-active-bg)" : "var(--bg-subtle)",
           cursor: "pointer",
           textAlign: "left",
         }}
@@ -444,9 +444,9 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
               borderRadius: 999,
               border: "none",
               padding: 3,
-              background: themeMode === "system" ? "var(--accent)" : "var(--border-medium)",
+              background: themeMode === "system" ? "var(--primary-action-bg)" : "var(--border-medium)",
               boxShadow:
-                themeMode === "system" ? "0 0 0 4px var(--accent-subtle)" : "inset 0 0 0 1px var(--border-dim)",
+                themeMode === "system" ? "0 0 0 4px var(--control-active-bg)" : "inset 0 0 0 1px var(--border-dim)",
               transition: "background 0.12s, box-shadow 0.12s",
             }}
           >
@@ -457,7 +457,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
                 borderRadius: 999,
                 display: "grid",
                 placeItems: "center",
-                background: "#fff",
+                background: "var(--control-knob-bg)",
                 color: themeMode === "system" ? "var(--accent)" : "var(--text-secondary)",
                 transform: themeMode === "system" ? "translateX(20px)" : "translateX(0)",
                 transition: "transform 0.12s ease",
@@ -783,7 +783,7 @@ function GeneralPanel() {
               alignItems: "center",
               gap: 4,
               fontSize: 12,
-              color: "var(--success, #34c759)",
+              color: "var(--success)",
               marginRight: "auto",
             }}
           >
@@ -1079,7 +1079,7 @@ function AgentConfigPanel({
                 alignItems: "center",
                 gap: 4,
                 fontSize: 12,
-                color: "var(--success, #34c759)",
+                color: "var(--success)",
               }}
             >
               <Check size={12} /> Saved
@@ -1154,7 +1154,7 @@ function AgentConfigPanel({
               minHeight: 300,
               resize: "none",
               boxSizing: "border-box",
-              caretColor: isDark ? "#F1F4FB" : "#171B24",
+              caretColor: "var(--text-primary)",
             }}
             value={fileState.content}
             onChange={(e) => setFileState({ status: "loaded", content: e.target.value })}

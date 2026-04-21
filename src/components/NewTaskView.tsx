@@ -257,7 +257,7 @@ export function NewTaskView({
       {/* Missing context file warning */}
       {hasMdFile === false && (
         <div style={s.agentMissingMdBanner}>
-          <TriangleAlert size={15} style={{ color: "#D97706", flexShrink: 0, marginTop: 1 }} />
+          <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
             <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
               No{" "}
@@ -265,7 +265,7 @@ export function NewTaskView({
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 12,
-                  background: "rgba(234,179,8,0.15)",
+                  background: "var(--warning-code-bg)",
                   padding: "0 4px",
                   borderRadius: 3,
                 }}

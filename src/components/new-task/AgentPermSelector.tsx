@@ -150,7 +150,7 @@ export function AgentPermSelector({
                 <span
                   style={{
                     ...s.toolbarSwitchTrack,
-                    background: planMode ? "var(--accent)" : "var(--border-medium)",
+                    background: planMode ? "var(--primary-action-bg)" : "var(--border-medium)",
                   }}
                 >
                   <span

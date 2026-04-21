@@ -177,10 +177,10 @@ const editorBaseTheme = EditorView.theme({
     color: "var(--text-hint)",
   },
   ".cm-activeLineGutter": {
-    background: "rgba(128,128,128,0.06)",
+    background: "var(--code-line-hover-bg)",
   },
   ".cm-focused .cm-activeLine, .cm-activeLine": {
-    background: "rgba(128,128,128,0.06)",
+    background: "var(--code-line-hover-bg)",
   },
 });
 
@@ -404,7 +404,7 @@ function FilePreviewPane({
         }}
       >
         <span
-          style={{ fontSize: 11, color: "rgba(255,255,255,0.85)", fontFamily: "var(--font-mono)" }}
+          style={{ fontSize: 11, color: "var(--inverse-muted)", fontFamily: "var(--font-mono)" }}
         >
           {filePath}
         </span>
@@ -413,7 +413,7 @@ function FilePreviewPane({
             style={{
               marginLeft: "auto",
               fontSize: 11,
-              color: saveStatus === "error" ? "#fca5a5" : "rgba(255,255,255,0.85)",
+              color: saveStatus === "error" ? "var(--danger-fg)" : "var(--inverse-muted)",
               fontFamily: "var(--font-mono)",
             }}
           >

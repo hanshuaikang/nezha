@@ -280,11 +280,11 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               alignItems: "center",
               gap: 3,
               padding: "3px 7px",
-              background: pushing ? "var(--accent)" : "none",
-              border: `1px solid ${pushing ? "var(--accent)" : "var(--border-dim)"}`,
+              background: pushing ? "var(--primary-action-bg)" : "none",
+              border: `1px solid ${pushing ? "var(--primary-action-bg)" : "var(--border-dim)"}`,
               borderRadius: 5,
               fontSize: 11.5,
-              color: pushing ? "#fff" : "var(--text-muted)",
+              color: pushing ? "var(--primary-action-fg)" : "var(--text-muted)",
               cursor: pushing ? "not-allowed" : "pointer",
               transition: "all 0.15s",
             }}
@@ -369,7 +369,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                 background: "var(--bg-card)",
                 border: "1px solid var(--border-dim)",
                 borderRadius: 7,
-                boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+                boxShadow: "var(--shadow-popover)",
                 zIndex: 200,
                 overflow: "hidden",
                 maxHeight: 220,
@@ -433,11 +433,11 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
           style={{
             margin: "0 10px 4px",
             padding: "6px 10px",
-            background: "rgba(248,81,73,0.1)",
-            border: "1px solid rgba(248,81,73,0.3)",
+            background: "var(--danger-surface)",
+            border: "1px solid var(--danger-border)",
             borderRadius: 6,
             fontSize: 11.5,
-            color: "#f85149",
+            color: "var(--danger-fg)",
           }}
         >
           {error}
@@ -595,7 +595,7 @@ function CommitRow({
                 padding: "1px 6px",
                 borderRadius: 4,
                 background: "var(--accent)",
-                color: "#fff",
+                color: "var(--fg-on-accent)",
                 flexShrink: 0,
                 whiteSpace: "nowrap",
               }}
@@ -711,8 +711,8 @@ function CommitDetailPanel({
         </div>
         <div style={{ fontSize: 11, color: "var(--text-hint)" }}>
           {detail.files.length} file{detail.files.length !== 1 ? "s" : ""} changed{" "}
-          <span style={{ color: "#3fb950" }}>+{detail.total_additions}</span>{" "}
-          <span style={{ color: "#f85149" }}>-{detail.total_deletions}</span>
+          <span style={{ color: "var(--diff-add-fg)" }}>+{detail.total_additions}</span>{" "}
+          <span style={{ color: "var(--diff-delete-fg)" }}>-{detail.total_deletions}</span>
         </div>
       </div>
 
@@ -767,8 +767,12 @@ function CommitDetailPanel({
                 </span>
               )}
             </span>
-            <span style={{ fontSize: 10.5, color: "#3fb950", flexShrink: 0 }}>+{f.additions}</span>
-            <span style={{ fontSize: 10.5, color: "#f85149", flexShrink: 0 }}>-{f.deletions}</span>
+            <span style={{ fontSize: 10.5, color: "var(--diff-add-fg)", flexShrink: 0 }}>
+              +{f.additions}
+            </span>
+            <span style={{ fontSize: 10.5, color: "var(--diff-delete-fg)", flexShrink: 0 }}>
+              -{f.deletions}
+            </span>
           </div>
         );
       })}

@@ -87,65 +87,66 @@ export function getFileColor(name: string, ext?: string): string {
   const n = name.toLowerCase();
   const e = ext ?? (name.includes(".") ? name.split(".").pop()!.toLowerCase() : "");
 
-  if (n === "dockerfile" || n.startsWith("dockerfile.")) return "#2496ed";
-  if (n === "makefile" || n === "gnumakefile" || n === "justfile") return "#6d8086";
-  if (n === "gemfile" || n === "rakefile") return "#cc342d";
+  if (n === "dockerfile" || n.startsWith("dockerfile.")) return "var(--icon-file-docker)";
+  if (n === "makefile" || n === "gnumakefile" || n === "justfile")
+    return "var(--icon-file-build)";
+  if (n === "gemfile" || n === "rakefile") return "var(--icon-file-ruby)";
   if (n.startsWith(".git") || n.startsWith(".docker") || n === ".editorconfig" || n === ".npmrc")
-    return "#6b7280";
-  if (n === ".env" || n.startsWith(".env.")) return "#6b7280";
+    return "var(--icon-file-config)";
+  if (n === ".env" || n.startsWith(".env.")) return "var(--icon-file-config)";
 
   switch (e) {
     case "ts":
     case "tsx":
-      return "#3178c6";
+      return "var(--icon-file-ts)";
     case "js":
     case "jsx":
     case "mjs":
     case "cjs":
-      return "#f7c948";
+      return "var(--icon-file-js)";
     case "json":
     case "jsonc":
-      return "#f59e0b";
+      return "var(--icon-file-json)";
     case "rs":
-      return "#ce422b";
+      return "var(--icon-file-rust)";
     case "html":
     case "htm":
-      return "#e34c26";
+      return "var(--icon-file-html)";
     case "css":
     case "scss":
     case "sass":
-      return "#264de4";
+      return "var(--icon-file-css)";
     case "md":
     case "mdx":
-      return "#7c3aed";
+      return "var(--icon-file-md)";
     case "yaml":
     case "yml":
-      return "#ef4444";
+      return "var(--icon-file-yaml)";
     case "toml":
-      return "#9c4221";
+      return "var(--icon-file-toml)";
     case "py":
-      return "#3572a5";
+      return "var(--icon-file-python)";
     case "go":
-      return "#00add8";
+      return "var(--icon-file-go)";
     case "sh":
     case "bash":
     case "zsh":
-      return "#4eaa25";
+      return "var(--icon-file-shell)";
     case "lock":
-      return "#6b7280";
+      return "var(--icon-file-config)";
     case "svg":
-      return "#ff9800";
+      return "var(--icon-file-svg)";
     case "png":
     case "jpg":
     case "jpeg":
     case "gif":
     case "webp":
     case "ico":
-      return "#22c55e";
+      return "var(--icon-file-image)";
     case "wasm":
-      return "#654ff0";
+      return "var(--icon-file-wasm)";
     default:
-      return "#94a3b8";
+      return "var(--icon-file-default)";
   }
 }
 
