@@ -11,7 +11,20 @@ export const panels = {
     position: "relative",
     overflow: "visible",
   },
-  newTaskHeader: { marginBottom: 20, textAlign: "center" },
+  newTaskHeader: {
+    marginBottom: 20,
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  newTaskClaudeGif: {
+    display: "block",
+    width: "min(128px, 32vw)",
+    height: "auto",
+    marginBottom: 10,
+    objectFit: "contain",
+  },
   newTaskTitle: {
     display: "block",
     fontSize: 22,

@@ -12,6 +12,8 @@ import {
 import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
+import claudeGif from "../assets/gif/claude.gif";
+import codexGif from "../assets/gif/codex.gif";
 import s from "../styles";
 
 interface PastedImage {
@@ -251,6 +253,11 @@ export function NewTaskView({
     <div style={s.newTaskOuter}>
       {/* Header */}
       <div style={s.newTaskHeader}>
+        <img
+          src={agent === "claude" ? claudeGif : codexGif}
+          alt=""
+          style={s.newTaskClaudeGif}
+        />
         <span style={s.newTaskTitle}>What do you want to build today?</span>
       </div>
 
