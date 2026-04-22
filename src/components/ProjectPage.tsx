@@ -56,6 +56,8 @@ export function ProjectPage({
   onSnapshot,
   onBack,
   onSwitchProject,
+  onReorderProjects,
+  onPersistProjectOrder,
   onOpen,
   isDark,
   themeMode,
@@ -111,6 +113,8 @@ export function ProjectPage({
   onSnapshot: (taskId: string, snapshot: string) => void;
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
+  onReorderProjects: (draggedProjectId: string, targetProjectId: string) => void;
+  onPersistProjectOrder: () => void;
   onOpen: () => void;
   isDark: boolean;
   themeMode: ThemeMode;
@@ -240,6 +244,8 @@ export function ProjectPage({
         allTasks={tasks}
         activeProjectId={project.id}
         onSwitch={onSwitchProject}
+        onReorderProjects={onReorderProjects}
+        onPersistProjectOrder={onPersistProjectOrder}
         onOpen={onOpen}
       />
       <TaskPanel
