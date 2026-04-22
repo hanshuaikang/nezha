@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -37,6 +37,19 @@ function persistProjectTasks(projectId: string, allTasks: Task[], onError: (msg:
   });
 }
 
+function reorderProjects(projects: Project[], draggedProjectId: string, targetProjectId: string) {
+  if (draggedProjectId === targetProjectId) return projects;
+
+  const sourceIndex = projects.findIndex((project) => project.id === draggedProjectId);
+  const targetIndex = projects.findIndex((project) => project.id === targetProjectId);
+  if (sourceIndex === -1 || targetIndex === -1) return projects;
+
+  const next = [...projects];
+  const [draggedProject] = next.splice(sourceIndex, 1);
+  next.splice(targetIndex, 0, draggedProject);
+  return next;
+}
+
 interface ProjectViewState {
   selectedTaskId: string | null;
   isNewTask: boolean;
@@ -67,6 +80,7 @@ function App() {
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
+  const projectsRef = useRef<Project[]>([]);
 
   const tm = useTerminalManager();
 
@@ -97,6 +111,10 @@ function App() {
   function getProjectView(projectId: string): ProjectViewState {
     return projectViews[projectId] ?? createDefaultProjectViewState();
   }
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -201,6 +219,22 @@ function App() {
       showToast(`Failed to initialize project config: ${String(e)}`, "warning");
     });
   }
+
+  const handleReorderProjects = useCallback(
+    (draggedProjectId: string, targetProjectId: string) => {
+      setProjects((prev) => {
+        const next = reorderProjects(prev, draggedProjectId, targetProjectId);
+        if (next === prev) return prev;
+        projectsRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handlePersistProjectOrder = useCallback(() => {
+    persistProjects(projectsRef.current, showToast);
+  }, [showToast]);
 
   function handleBack() {
     setActiveProject(null);
@@ -508,7 +542,7 @@ function App() {
     [projects],
   );
   const railProjects = useMemo(
-    () => [...projects].sort((a, b) => Number(a.id) - Number(b.id)),
+    () => [...projects],
     [projects],
   );
   const mountedProjects = useMemo(
@@ -564,6 +598,8 @@ function App() {
               onSnapshot={tm.handleSnapshot}
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
+              onReorderProjects={handleReorderProjects}
+              onPersistProjectOrder={handlePersistProjectOrder}
               onOpen={handleOpen}
               isDark={isDark}
               themeMode={themeMode}
