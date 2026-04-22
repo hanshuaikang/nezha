@@ -112,11 +112,15 @@ pub(crate) fn parse_session_metrics_cached(path: &std::path::Path) -> SessionMet
 
 #[tauri::command]
 pub async fn read_session_metrics(session_path: String) -> Result<SessionMetrics, String> {
-    let path = std::path::Path::new(&session_path);
-    if !path.exists() {
-        return Err(format!("Session file not found: {}", session_path));
-    }
-    Ok(parse_session_metrics_from_path(path))
+    tokio::task::spawn_blocking(move || {
+        let path = std::path::Path::new(&session_path);
+        if !path.exists() {
+            return Err(format!("Session file not found: {}", session_path));
+        }
+        Ok(parse_session_metrics_cached(path))
+    })
+    .await
+    .map_err(|e| format!("read_session_metrics join error: {}", e))?
 }
 
 // ── Weekly analytics ──────────────────────────────────────────────────────────

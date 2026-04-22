@@ -1,17 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
+import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
 import s from "../styles";
 
 interface ProjectConfig {
   agent: {
     default: string;
+    default_permission_mode: string;
     prompt_prefix: string;
     claude_version: string;
     codex_version: string;
   };
   git: { commit_prompt: string };
 }
+
+const PERMISSION_MODES: PermissionMode[] = ["ask", "auto_edit", "full_access"];
 
 interface AgentVersions {
   claude_version: string;
@@ -116,6 +120,7 @@ function Select({
 function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClose: () => void }) {
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [agentDefault, setAgentDefault] = useState("claude");
+  const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
   const [promptPrefix, setPromptPrefix] = useState("");
   const [commitPrompt, setCommitPrompt] = useState("");
   const [claudeVersion, setClaudeVersion] = useState("");
@@ -129,6 +134,10 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
       .then((c) => {
         setConfig(c);
         setAgentDefault(c.agent.default);
+        const mode = c.agent.default_permission_mode;
+        if (mode === "ask" || mode === "auto_edit" || mode === "full_access") {
+          setDefaultPermissionMode(mode);
+        }
         setPromptPrefix(c.agent.prompt_prefix ?? "");
         setCommitPrompt(c.git.commit_prompt);
         setClaudeVersion(c.agent.claude_version ?? "");
@@ -164,6 +173,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         config: {
           agent: {
             default: agentDefault,
+            default_permission_mode: defaultPermissionMode,
             prompt_prefix: promptPrefix,
             claude_version: claudeVersion,
             codex_version: codexVersion,
@@ -204,6 +214,22 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                     { value: "claude", label: "Claude Code" },
                     { value: "codex", label: "Codex" },
                   ]}
+                />
+              </div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>
+                  Default Permission Mode
+                  <span style={s.modalLabelHint}>
+                    Default permission mode used when creating new tasks
+                  </span>
+                </label>
+                <Select
+                  value={defaultPermissionMode}
+                  onChange={(v) => setDefaultPermissionMode(v as PermissionMode)}
+                  options={PERMISSION_MODES.map((mode) => ({
+                    value: mode,
+                    label: permissionModeLabel(mode, agentDefault as AgentType),
+                  }))}
                 />
               </div>
               <div style={s.modalField}>
