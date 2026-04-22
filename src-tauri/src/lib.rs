@@ -82,6 +82,7 @@ pub fn run() {
             fs::read_image_preview,
             fs::write_file_content,
             fs::list_project_files,
+            fs::list_project_file_search_entries,
             git::generate_commit_message,
             git::git_status,
             git::git_list_branches,
