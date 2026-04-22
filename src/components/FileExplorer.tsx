@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from "react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, RotateCcw } from "lucide-react";
+import { ChevronRight, ChevronDown, RotateCcw, Search, Filter } from "lucide-react";
 import { getFileColor } from "../utils";
 import { useToast } from "./Toast";
 
@@ -16,6 +16,21 @@ interface FsEntry {
 interface TreeNode extends FsEntry {
   children: TreeNode[] | null; // null = not loaded yet
   expanded: boolean;
+}
+
+interface SearchFileEntry {
+  name: string;
+  path: string;
+  relativePath: string;
+  extension?: string;
+  isGitignored: boolean;
+}
+
+interface IndexedSearchFileEntry extends SearchFileEntry {
+  normalizedName: string;
+  normalizedPath: string;
+  nameTokens: string[];
+  pathTokens: string[];
 }
 
 const GITIGNORED_COLOR = "#6b7280";
@@ -122,30 +137,74 @@ function flattenVisible(nodes: TreeNode[]): Array<{ node: TreeNode; depth: numbe
   return result;
 }
 
-function TreeItem({
-  node,
+function splitSearchTokens(value: string) {
+  return value
+    .split(/[/\\._\-\s]+/)
+    .flatMap((part) => part.split(/(?=[A-Z])/))
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hasCjk(value: string) {
+  return /[\u3400-\u9fff]/.test(value);
+}
+
+function getSearchRank(entry: IndexedSearchFileEntry, query: string) {
+  const nameStartsWith = entry.normalizedName.startsWith(query);
+  const nameTokenStartsWith = entry.nameTokens.some((token) => token.startsWith(query));
+  const pathTokenStartsWith = entry.pathTokens.some((token) => token.startsWith(query));
+  const allowLooseSubstring = query.length >= 3 || (query.length >= 2 && hasCjk(query));
+  const nameIncludes = allowLooseSubstring && entry.normalizedName.includes(query);
+  const pathIncludes = query.includes("/") && entry.normalizedPath.includes(query);
+
+  if (nameStartsWith) return 0;
+  if (nameTokenStartsWith) return 1;
+  if (pathTokenStartsWith) return 2;
+  if (nameIncludes) return 3;
+  if (pathIncludes) return 4;
+  return null;
+}
+
+function FileRow({
+  name,
+  path,
   depth,
+  extension,
+  isDir = false,
+  expanded,
+  isGitignored,
   selectedPath,
   contextPath,
+  trailingLabel,
+  title,
   onSelect,
-  onToggle,
   onContextMenu,
+  leadingSlot,
 }: {
-  node: TreeNode;
+  name: string;
+  path: string;
   depth: number;
+  extension?: string;
+  isDir?: boolean;
+  expanded?: boolean;
+  isGitignored?: boolean;
   selectedPath: string | null;
   contextPath: string | null;
-  onSelect: (node: TreeNode) => void;
-  onToggle: (path: string) => void;
-  onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+  trailingLabel?: string;
+  title?: string;
+  onSelect: (path: string, name: string) => void;
+  onContextMenu: (e: React.MouseEvent, path: string) => void;
+  leadingSlot?: React.ReactNode;
 }) {
-  const isSelected = selectedPath === node.path;
-  const isContextTarget = contextPath === node.path;
+  const isSelected = selectedPath === path;
+  const isContextTarget = contextPath === path;
   const isHighlighted = isSelected || isContextTarget;
+
   return (
     <div
-      onClick={() => (node.is_dir ? onToggle(node.path) : onSelect(node))}
-      onContextMenu={(e) => onContextMenu(e, node)}
+      onClick={() => onSelect(path, name)}
+      onContextMenu={(e) => onContextMenu(e, path)}
+      title={title}
       style={{
         display: "flex",
         alignItems: "center",
@@ -180,19 +239,19 @@ function TreeItem({
           color: "var(--text-hint)",
         }}
       >
-        {node.is_dir && (node.expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />)}
+        {leadingSlot}
       </span>
       <FileIcon
-        name={node.name}
-        ext={node.extension}
-        isDir={node.is_dir}
-        expanded={node.expanded}
-        isGitignored={node.is_gitignored}
+        name={name}
+        ext={extension}
+        isDir={isDir}
+        expanded={expanded}
+        isGitignored={isGitignored}
       />
       <span
         style={{
           fontSize: 12.5,
-          color: node.is_gitignored ? GITIGNORED_COLOR : "var(--text-primary)",
+          color: isGitignored ? GITIGNORED_COLOR : "var(--text-primary)",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -200,9 +259,70 @@ function TreeItem({
           fontFamily: "var(--font-ui)",
         }}
       >
-        {node.name}
+        {name}
       </span>
+      {trailingLabel && trailingLabel !== name && (
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-hint)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flexShrink: 1,
+            minWidth: 0,
+            maxWidth: "34%",
+            textAlign: "right",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          {trailingLabel}
+        </span>
+      )}
     </div>
+  );
+}
+
+function TreeItem({
+  node,
+  depth,
+  selectedPath,
+  contextPath,
+  onSelect,
+  onToggle,
+  onContextMenu,
+}: {
+  node: TreeNode;
+  depth: number;
+  selectedPath: string | null;
+  contextPath: string | null;
+  onSelect: (node: TreeNode) => void;
+  onToggle: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, path: string) => void;
+}) {
+  return (
+    <FileRow
+      name={node.name}
+      path={node.path}
+      depth={depth}
+      extension={node.extension}
+      isDir={node.is_dir}
+      expanded={node.expanded}
+      isGitignored={node.is_gitignored}
+      selectedPath={selectedPath}
+      contextPath={contextPath}
+      onSelect={(path, _name) => {
+        if (node.is_dir) {
+          onToggle(path);
+          return;
+        }
+        onSelect(node);
+      }}
+      onContextMenu={onContextMenu}
+      leadingSlot={
+        node.is_dir ? (node.expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />) : undefined
+      }
+    />
   );
 }
 
@@ -312,10 +432,15 @@ export function FileExplorer({
   width?: number;
 }) {
   const [nodes, setNodes] = useState<TreeNode[]>([]);
+  const [projectFiles, setProjectFiles] = useState<SearchFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [searchIndexLoading, setSearchIndexLoading] = useState(true);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(500);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const deferredSearch = useDeferredValue(normalizedSearch);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
   const [ctxMenu, setCtxMenu] = useState<{
@@ -324,10 +449,10 @@ export function FileExplorer({
     path: string;
   } | null>(null);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent, path: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY, path: node.path });
+    setCtxMenu({ x: e.clientX, y: e.clientY, path });
   }, []);
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
@@ -364,6 +489,8 @@ export function FileExplorer({
   const { safeInvoke, isCancelled } = useCancellableInvoke();
   const nodesRef = useRef<TreeNode[]>([]);
   const refreshIdRef = useRef(0);
+  const searchRefreshIdRef = useRef(0);
+  const searchIndexStatusRef = useRef<"idle" | "loading" | "loaded">("idle");
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -372,6 +499,40 @@ export function FileExplorer({
   const readEntries = useCallback(
     (path: string) => safeInvoke<FsEntry[]>("read_dir_entries", { path, projectPath }),
     [projectPath, safeInvoke],
+  );
+
+  const loadProjectFiles = useCallback(
+    async (showLoading = false) => {
+      const refreshId = searchRefreshIdRef.current + 1;
+      searchRefreshIdRef.current = refreshId;
+      searchIndexStatusRef.current = "loading";
+      if (showLoading) setSearchIndexLoading(true);
+      try {
+        const files = await safeInvoke<SearchFileEntry[]>("list_project_file_search_entries", {
+          projectPath,
+        });
+        if (files === null || refreshId !== searchRefreshIdRef.current) return;
+        searchIndexStatusRef.current = "loaded";
+        setProjectFiles(files);
+      } catch {
+        if (!isCancelled() && refreshId === searchRefreshIdRef.current) {
+          searchIndexStatusRef.current = "idle";
+        }
+      } finally {
+        if (!isCancelled() && refreshId === searchRefreshIdRef.current) {
+          setSearchIndexLoading(false);
+        }
+      }
+    },
+    [isCancelled, projectPath, safeInvoke],
+  );
+
+  const refreshSearchIndex = useCallback(
+    async (showLoading = false) => {
+      if (!normalizedSearch) return;
+      await loadProjectFiles(showLoading);
+    },
+    [loadProjectFiles, normalizedSearch],
   );
 
   const refresh = useCallback(
@@ -402,11 +563,31 @@ export function FileExplorer({
   }, [active, projectPath, refresh]);
 
   useEffect(() => {
+    searchRefreshIdRef.current += 1;
+    searchIndexStatusRef.current = "idle";
+    setProjectFiles([]);
+    setSearchIndexLoading(false);
+  }, [active, projectPath]);
+
+  useEffect(() => {
+    if (!normalizedSearch) {
+      searchRefreshIdRef.current += 1;
+      searchIndexStatusRef.current = "idle";
+      setProjectFiles([]);
+      setSearchIndexLoading(false);
+      return;
+    }
+    if (!active || searchIndexStatusRef.current !== "idle") return;
+    void loadProjectFiles(true);
+  }, [active, loadProjectFiles, normalizedSearch]);
+
+  useEffect(() => {
     if (!active) return;
 
     const handleVisibilityRefresh = () => {
       if (document.visibilityState !== "visible") return;
       void refresh();
+      void refreshSearchIndex();
     };
 
     const timer = window.setInterval(() => {
@@ -422,7 +603,7 @@ export function FileExplorer({
       window.removeEventListener("focus", handleVisibilityRefresh);
       document.removeEventListener("visibilitychange", handleVisibilityRefresh);
     };
-  }, [active, refresh]);
+  }, [active, refresh, refreshSearchIndex]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -434,11 +615,44 @@ export function FileExplorer({
   }, []);
 
   const flat = useMemo(() => flattenVisible(nodes), [nodes]);
+  const indexedProjectFiles = useMemo<IndexedSearchFileEntry[]>(
+    () =>
+      projectFiles.map((entry) => ({
+        ...entry,
+        normalizedName: entry.name.toLowerCase(),
+        normalizedPath: entry.relativePath.toLowerCase(),
+        nameTokens: splitSearchTokens(entry.name),
+        pathTokens: splitSearchTokens(entry.relativePath),
+      })),
+    [projectFiles],
+  );
+  const searchResults = useMemo(() => {
+    if (!deferredSearch) return [];
+
+    return indexedProjectFiles
+      .map((entry) => {
+        const rank = getSearchRank(entry, deferredSearch);
+        return {
+          ...entry,
+          rank,
+        };
+      })
+      .filter((item) => item.rank !== null)
+      .sort((a, b) => {
+        if (a.rank !== b.rank) return (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
+        const aNameLengthDelta = a.name.length - deferredSearch.length;
+        const bNameLengthDelta = b.name.length - deferredSearch.length;
+        if (aNameLengthDelta !== bNameLengthDelta) return aNameLengthDelta - bNameLengthDelta;
+        return a.relativePath.localeCompare(b.relativePath);
+      });
+  }, [deferredSearch, indexedProjectFiles]);
 
   const OVERSCAN = 5;
+  const totalRows = normalizedSearch ? searchResults.length : flat.length;
+  const showSearchLoading = normalizedSearch && searchIndexLoading;
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIdx = Math.min(
-    flat.length - 1,
+    totalRows - 1,
     Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN,
   );
 
@@ -477,6 +691,14 @@ export function FileExplorer({
     (node: TreeNode) => {
       setSelectedPath(node.path);
       onFileSelect(node.path, node.name);
+    },
+    [onFileSelect],
+  );
+
+  const handleSearchResultSelect = useCallback(
+    (path: string, name: string) => {
+      setSelectedPath(path);
+      onFileSelect(path, name);
     },
     [onFileSelect],
   );
@@ -596,7 +818,12 @@ export function FileExplorer({
           Files
         </span>
         <button
-          onClick={() => void refresh()}
+          onClick={() => {
+            void refresh();
+            if (normalizedSearch) {
+              void loadProjectFiles(true);
+            }
+          }}
           title="Refresh"
           style={{
             background: "none",
@@ -621,37 +848,72 @@ export function FileExplorer({
           <RotateCcw size={13} />
         </button>
       </div>
-      {/* Project root label */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "6px 8px 3px 20px",
-          fontSize: 12.5,
-          fontWeight: 600,
-          color: "var(--text-primary)",
-        }}
-      >
-        <span
+      <div style={{ padding: "8px 10px 4px", flexShrink: 0 }}>
+        <div
           style={{
-            width: 5,
-            height: 14,
-            borderRadius: 2,
-            background: "var(--accent)",
-            flexShrink: 0,
-            display: "inline-block",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 9px",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-dim)",
+            borderRadius: 6,
           }}
-        />
-        {projectName}
+        >
+          <Search size={12} color="var(--text-hint)" />
+          <input
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setScrollTop(0);
+              scrollRef.current?.scrollTo({ top: 0 });
+            }}
+            placeholder="Search files"
+            style={{
+              flex: 1,
+              border: "none",
+              outline: "none",
+              background: "transparent",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}
+          />
+          <Filter size={12} color="var(--text-hint)" />
+        </div>
       </div>
+      {/* Project root label */}
+      {!normalizedSearch && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 8px 3px 20px",
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+          }}
+        >
+          <span
+            style={{
+              width: 5,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+              display: "inline-block",
+            }}
+          />
+          {projectName}
+        </div>
+      )}
       {/* Tree */}
       <div
         ref={scrollRef}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         style={{ flex: 1, overflowY: "auto", position: "relative" }}
       >
-        {loading ? (
+        {loading || showSearchLoading ? (
           <div
             style={{
               padding: "16px 12px",
@@ -662,7 +924,7 @@ export function FileExplorer({
           >
             Loading...
           </div>
-        ) : flat.length === 0 ? (
+        ) : totalRows === 0 ? (
           <div
             style={{
               padding: "16px 12px",
@@ -671,30 +933,55 @@ export function FileExplorer({
               textAlign: "center",
             }}
           >
-            Empty directory
+            {normalizedSearch ? "No files found" : "Empty directory"}
           </div>
         ) : (
-          <div style={{ height: flat.length * ROW_HEIGHT + 12, position: "relative" }}>
-            {flat.slice(startIdx, endIdx + 1).map(({ node, depth }, i) => (
-              <div
-                key={node.path}
-                style={{
-                  position: "absolute",
-                  top: (startIdx + i) * ROW_HEIGHT + 2,
-                  width: "100%",
-                }}
-              >
-                <TreeItem
-                  node={node}
-                  depth={depth}
-                  selectedPath={selectedPath}
-                  contextPath={ctxMenu?.path ?? null}
-                  onSelect={handleSelect}
-                  onToggle={handleToggle}
-                  onContextMenu={handleContextMenu}
-                />
-              </div>
-            ))}
+          <div style={{ height: totalRows * ROW_HEIGHT + 12, position: "relative" }}>
+            {normalizedSearch
+              ? searchResults.slice(startIdx, endIdx + 1).map((item, i) => (
+                  <div
+                    key={item.path}
+                    style={{
+                      position: "absolute",
+                      top: (startIdx + i) * ROW_HEIGHT + 2,
+                      width: "100%",
+                    }}
+                  >
+                    <FileRow
+                      name={item.name}
+                      path={item.path}
+                      depth={0}
+                      extension={item.extension}
+                      isGitignored={item.isGitignored}
+                      selectedPath={selectedPath}
+                      contextPath={ctxMenu?.path ?? null}
+                      trailingLabel={item.relativePath}
+                      title={item.relativePath}
+                      onSelect={handleSearchResultSelect}
+                      onContextMenu={handleContextMenu}
+                    />
+                  </div>
+                ))
+              : flat.slice(startIdx, endIdx + 1).map(({ node, depth }, i) => (
+                  <div
+                    key={node.path}
+                    style={{
+                      position: "absolute",
+                      top: (startIdx + i) * ROW_HEIGHT + 2,
+                      width: "100%",
+                    }}
+                  >
+                    <TreeItem
+                      node={node}
+                      depth={depth}
+                      selectedPath={selectedPath}
+                      contextPath={ctxMenu?.path ?? null}
+                      onSelect={handleSelect}
+                      onToggle={handleToggle}
+                      onContextMenu={handleContextMenu}
+                    />
+                  </div>
+                ))}
           </div>
         )}
       </div>

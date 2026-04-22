@@ -1,4 +1,5 @@
 use base64::Engine;
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -17,6 +18,16 @@ pub(crate) struct ImagePreviewData {
     data_url: String,
     mime_type: String,
     byte_length: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectFileSearchEntry {
+    name: String,
+    path: String,
+    relative_path: String,
+    extension: Option<String>,
+    is_gitignored: bool,
 }
 
 const IGNORED_DIRS: &[&str] = &[
@@ -75,6 +86,62 @@ fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
         "svg" => Some("image/svg+xml"),
         _ => None,
     }
+}
+
+fn collect_project_file_search_entries(
+    root: &Path,
+    current_dir: &Path,
+    visited_dirs: &mut HashSet<std::path::PathBuf>,
+    result: &mut Vec<ProjectFileSearchEntry>,
+) -> Result<(), String> {
+    let canonical_dir = match current_dir.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return Ok(()),
+    };
+    if !canonical_dir.starts_with(root) || !visited_dirs.insert(canonical_dir.clone()) {
+        return Ok(());
+    }
+
+    let entries = match std::fs::read_dir(current_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        if path.is_dir() {
+            if IGNORED_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            collect_project_file_search_entries(root, &path, visited_dirs, result)?;
+            continue;
+        }
+
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase());
+        let relative_path = match path.strip_prefix(root) {
+            Ok(relative_path) => relative_path.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+
+        result.push(ProjectFileSearchEntry {
+            name,
+            path: path.to_string_lossy().into_owned(),
+            relative_path,
+            extension,
+            is_gitignored: false,
+        });
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -294,6 +361,60 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<String>, Str
         files.sort();
         files.dedup();
         Ok(files)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn list_project_file_search_entries(
+    project_path: String,
+) -> Result<Vec<ProjectFileSearchEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = validate_path_within(&project_path, &project_path)?;
+        let mut result = Vec::new();
+        let mut visited_dirs = HashSet::new();
+        collect_project_file_search_entries(&root, &root, &mut visited_dirs, &mut result)?;
+        result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+
+        if !result.is_empty() {
+            let ignored_set: std::collections::HashSet<String> = {
+                use std::io::Write;
+
+                let mut cmd = std::process::Command::new("git");
+                crate::subprocess::configure_background_command(&mut cmd);
+                cmd.args(["check-ignore", "--stdin"])
+                    .current_dir(&root)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null());
+
+                match cmd.spawn() {
+                    Ok(mut child) => {
+                        if let Some(ref mut stdin) = child.stdin {
+                            for entry in &result {
+                                let _ = writeln!(stdin, "{}", entry.path);
+                            }
+                        }
+                        match child.wait_with_output() {
+                            Ok(output) => String::from_utf8_lossy(&output.stdout)
+                                .lines()
+                                .filter(|line| !line.is_empty())
+                                .map(|line| line.to_string())
+                                .collect(),
+                            Err(_) => std::collections::HashSet::new(),
+                        }
+                    }
+                    Err(_) => std::collections::HashSet::new(),
+                }
+            };
+
+            for entry in &mut result {
+                entry.is_gitignored = ignored_set.contains(&entry.path);
+            }
+        }
+
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
