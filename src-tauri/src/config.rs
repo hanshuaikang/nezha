@@ -9,6 +9,8 @@ const DEFAULT_CONFIG: &str = r#"# Nezha project configuration
 [agent]
 # Default agent to use for new tasks: "claude" or "codex"
 default = "claude"
+# Default permission mode for new tasks: "ask", "auto_edit", or "full_access"
+default_permission_mode = "ask"
 # Text automatically prepended (followed by a newline) to every task prompt
 prompt_prefix = ""
 
@@ -25,12 +27,18 @@ commit_prompt = "You are a git commit message generator. Based on the provided g
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct AgentConfig {
     pub default: String,
+    #[serde(default = "default_permission_mode")]
+    pub default_permission_mode: String,
     #[serde(default)]
     pub prompt_prefix: String,
     #[serde(default)]
     pub claude_version: String,
     #[serde(default)]
     pub codex_version: String,
+}
+
+fn default_permission_mode() -> String {
+    "ask".to_string()
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -49,6 +57,7 @@ impl Default for ProjectConfig {
         ProjectConfig {
             agent: AgentConfig {
                 default: "claude".to_string(),
+                default_permission_mode: "ask".to_string(),
                 prompt_prefix: String::new(),
                 claude_version: String::new(),
                 codex_version: String::new(),
