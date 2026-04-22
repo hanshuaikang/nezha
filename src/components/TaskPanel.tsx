@@ -114,8 +114,8 @@ export function TaskPanel({
       <button
         style={{
           ...s.newTaskRow,
-          background: isNewTask ? "var(--control-active-bg)" : "transparent",
-          color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
+          background: isNewTask ? "var(--control-active-bg)" : "var(--bg-card)",
+          color: isNewTask ? "var(--control-active-fg)" : "var(--text-secondary)",
         }}
         onClick={onNewTask}
       >

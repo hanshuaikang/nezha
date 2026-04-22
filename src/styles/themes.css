@@ -1,15 +1,15 @@
 /* Design tokens: light theme */
 :root {
-  --bg-root: hsl(240deg 6% 99%);
-  --bg-shell: hsl(240deg 6% 99%);
-  --bg-titlebar: hsl(240deg 6% 99%);
-  --bg-sidebar: hsl(240deg 6% 99%);
-  --bg-sidebar-elevated: hsl(240deg 6% 98.4%);
+  --bg-root: hsl(240deg 6% 99.4%);
+  --bg-shell: hsl(240deg 6% 99.4%);
+  --bg-titlebar: hsl(240deg 6% 99.4%);
+  --bg-sidebar: #fdfdfd;
+  --bg-sidebar-elevated: #fafafa;
   --bg-panel: #ffffff;
   --bg-card: #ffffff;
-  --bg-hover: hsl(240deg 6% 97.5%);
+  --bg-hover: hsl(240deg 6% 97.7%);
   --bg-selected: rgba(15, 23, 42, 0.08);
-  --bg-subtle: hsl(240deg 6% 99%);
+  --bg-subtle: hsl(240deg 6% 99.4%);
   --bg-input: #ffffff;
   --bg: var(--bg-root);
 
