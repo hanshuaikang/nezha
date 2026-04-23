@@ -148,7 +148,7 @@ Thanks to the following media creators for covering and sharing this project. Th
 
 | Platform | Account |
 | --- | --- |
-| Twitter | [@aigclink](https://x.com/aigclink), [@QingQ77](https://x.com/QingQ77) |
+| Twitter | [@aigclink](https://x.com/aigclink), [@QingQ77](https://x.com/QingQ77), [@ilovek8s](https://x.com/ilovek8s) |
 | WeChat Official Account | 码问 |
 
 ### 👬 Friend Links

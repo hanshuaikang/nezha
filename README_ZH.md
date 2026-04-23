@@ -148,7 +148,7 @@ Nezha 的诞生离不开以下优秀的开源项目，向它们致敬：
 
 | 平台 | 账号 |
 | --- | --- |
-| 推特 | [@aigclink](https://x.com/aigclink)、[@QingQ77](https://x.com/QingQ77) |
+| 推特 | [@aigclink](https://x.com/aigclink)、[@QingQ77](https://x.com/QingQ77)、[@ilovek8s](https://x.com/ilovek8s) |
 | 公众号 | 码问 |
 
 
