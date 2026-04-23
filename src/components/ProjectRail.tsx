@@ -300,11 +300,11 @@ export function ProjectRail({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: addHov ? "var(--bg-hover)" : "none",
-          border: "1.5px dashed var(--border-medium)",
+          background: addHov ? "var(--bg-hover)" : "var(--bg-card)",
+          border: "1px solid var(--border-medium)",
           borderRadius: 8,
           cursor: "pointer",
-          color: addHov ? "var(--text-muted)" : "var(--text-hint)",
+          color: addHov ? "var(--text-primary)" : "var(--text-muted)",
           transition: "background 0.12s, color 0.12s",
         }}
       >
