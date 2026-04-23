@@ -322,7 +322,7 @@ export function PromptEditor({
             top: 0,
             left: 0,
             right: 0,
-            padding: "16px 16px 8px",
+            padding: "22px 24px 12px",
             color: "var(--text-hint)",
             fontSize: 14,
             lineHeight: 1.65,
