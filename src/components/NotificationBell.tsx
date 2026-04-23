@@ -8,9 +8,9 @@ import s from "../styles";
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
     case "warning":
-      return <AlertTriangle size={14} strokeWidth={2} color="var(--color-warning, #f59e0b)" />;
+      return <AlertTriangle size={14} strokeWidth={2} color="var(--color-warning)" />;
     case "error":
-      return <AlertCircle size={14} strokeWidth={2} color="var(--danger, #ef4444)" />;
+      return <AlertCircle size={14} strokeWidth={2} color="var(--danger)" />;
     default:
       return <Info size={14} strokeWidth={2} color="var(--accent)" />;
   }
@@ -199,7 +199,7 @@ export function NotificationBell() {
   const unreadCount = result?.unreadCount ?? 0;
   const isActive = unreadCount > 0 || loading || Boolean(error);
   const bellColor = error
-    ? "var(--danger, #ef4444)"
+    ? "var(--danger)"
     : unreadCount > 0
       ? "var(--accent)"
       : "var(--text-hint)";
@@ -230,8 +230,8 @@ export function NotificationBell() {
               minWidth: 12,
               height: 12,
               borderRadius: 6,
-              background: "var(--danger, #ef4444)",
-              color: "#fff",
+              background: "var(--danger)",
+              color: "var(--fg-on-accent)",
               fontSize: 8,
               fontWeight: 700,
               display: "flex",
@@ -259,7 +259,7 @@ export function NotificationBell() {
               background: "var(--bg-card)",
               border: "1px solid var(--border-medium)",
               borderRadius: 14,
-              boxShadow: "0 8px 32px rgba(0,0,0,0.22)",
+              boxShadow: "var(--shadow-popover)",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
@@ -346,7 +346,7 @@ export function NotificationBell() {
                     padding: 24,
                     textAlign: "center",
                     fontSize: 12,
-                    color: "var(--danger, #ef4444)",
+                    color: "var(--danger)",
                     lineHeight: 1.5,
                   }}
                 >

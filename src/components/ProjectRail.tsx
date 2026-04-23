@@ -24,7 +24,7 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
         width: 9,
         height: 9,
         borderRadius: "50%",
-        background: isAttention ? "var(--color-warning, #f59e0b)" : "var(--color-success, #22c55e)",
+        background: isAttention ? "var(--color-warning)" : "var(--color-success)",
         border: "2px solid var(--bg-sidebar)",
         boxSizing: "border-box" as const,
       }}
@@ -118,7 +118,7 @@ function ProjectDrawer({
         display: "flex",
         flexDirection: "column",
         zIndex: 50,
-        boxShadow: "4px 0 16px rgba(0,0,0,0.12)",
+        boxShadow: "var(--shadow-drawer)",
       }}
     >
       <div
@@ -179,9 +179,7 @@ function ProjectDrawer({
                       height: 9,
                       borderRadius: "50%",
                       background:
-                        status === "attention"
-                          ? "var(--color-warning, #f59e0b)"
-                          : "var(--color-success, #22c55e)",
+                        status === "attention" ? "var(--color-warning)" : "var(--color-success)",
                       border: "2px solid var(--bg-panel)",
                       boxSizing: "border-box",
                     }}
@@ -302,11 +300,11 @@ export function ProjectRail({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: addHov ? "var(--bg-hover)" : "none",
-          border: "1.5px dashed var(--border-medium)",
+          background: addHov ? "var(--bg-hover)" : "var(--bg-card)",
+          border: "1px solid var(--border-medium)",
           borderRadius: 8,
           cursor: "pointer",
-          color: addHov ? "var(--text-muted)" : "var(--text-hint)",
+          color: addHov ? "var(--text-primary)" : "var(--text-muted)",
           transition: "background 0.12s, color 0.12s",
         }}
       >

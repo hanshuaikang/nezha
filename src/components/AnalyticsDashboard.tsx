@@ -221,7 +221,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
                 </div>
                 <div style={s.agentBarTrack}>
                   <div
-                    style={{ ...s.agentBarFill, width: `${codexPct}%`, background: "#a78bfa" }}
+                    style={{ ...s.agentBarFill, width: `${codexPct}%`, background: "var(--usage-codex)" }}
                   />
                 </div>
               </div>

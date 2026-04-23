@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, ChevronLeft, Plus, Trash2 } from "lucide-react";
+import { Search, ChevronLeft, Plus, Trash2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { Project, Task, ThemeMode } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
@@ -25,6 +25,8 @@ export function TaskPanel({
   onThemeModeChange,
   onToggleTheme,
   active = true,
+  collapsed = false,
+  onToggleCollapsed,
 }: {
   project: Project;
   tasks: Task[];
@@ -43,8 +45,37 @@ export function TaskPanel({
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
   active?: boolean;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   const [query, setQuery] = useState("");
+
+  if (collapsed) {
+    return (
+      <div style={{ ...s.taskPanel, ...s.taskPanelCollapsed }}>
+        <button
+          type="button"
+          style={s.taskPanelExpandBtn}
+          onClick={onToggleCollapsed}
+          title="Show tasks"
+        >
+          <PanelLeftOpen size={16} strokeWidth={2} />
+        </button>
+        <ProjectAvatar name={project.name} size={24} />
+        <button
+          type="button"
+          style={{
+            ...s.taskPanelCollapsedNewBtn,
+            color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
+          }}
+          onClick={onNewTask}
+          title="New Task"
+        >
+          <Plus size={15} strokeWidth={2.4} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={s.taskPanel}>
@@ -55,6 +86,14 @@ export function TaskPanel({
         </button>
         <ProjectAvatar name={project.name} size={22} />
         <span style={s.panelProjectName}>{project.name}</span>
+        <button
+          type="button"
+          style={s.panelCollapseBtn}
+          onClick={onToggleCollapsed}
+          title="Hide tasks"
+        >
+          <PanelLeftClose size={15} strokeWidth={2} />
+        </button>
       </div>
 
       {/* Search */}
@@ -75,8 +114,8 @@ export function TaskPanel({
       <button
         style={{
           ...s.newTaskRow,
-          background: isNewTask ? "var(--bg-selected)" : "transparent",
-          color: isNewTask ? "var(--accent)" : "var(--text-muted)",
+          background: isNewTask ? "var(--control-active-bg)" : "var(--bg-card)",
+          color: isNewTask ? "var(--control-active-fg)" : "var(--text-secondary)",
         }}
         onClick={onNewTask}
       >

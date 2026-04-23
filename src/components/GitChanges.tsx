@@ -222,11 +222,11 @@ export function GitChanges({
             padding: "3px 10px",
             borderRadius: 5,
             fontSize: 12,
-            fontWeight: 500,
+            fontWeight: tab === "task" ? 600 : 500,
             border: "none",
             cursor: "pointer",
-            background: tab === "task" ? "none" : "none",
-            color: tab === "task" ? "var(--text-primary)" : "var(--text-muted)",
+            background: tab === "task" ? "var(--control-selected-bg)" : "none",
+            color: tab === "task" ? "var(--control-selected-fg)" : "var(--text-muted)",
           }}
         >
           Current Task {taskCount}
@@ -237,11 +237,11 @@ export function GitChanges({
             padding: "3px 10px",
             borderRadius: 5,
             fontSize: 12,
-            fontWeight: 600,
+            fontWeight: tab === "all" ? 600 : 500,
             border: "none",
             cursor: "pointer",
-            background: tab === "all" ? "var(--accent)" : "none",
-            color: tab === "all" ? "#fff" : "var(--text-muted)",
+            background: tab === "all" ? "var(--control-selected-bg)" : "none",
+            color: tab === "all" ? "var(--control-selected-fg)" : "var(--text-muted)",
           }}
         >
           All {allCount}
@@ -254,11 +254,11 @@ export function GitChanges({
           style={{
             margin: "0 12px 4px",
             padding: "6px 10px",
-            background: "rgba(248,81,73,0.1)",
-            border: "1px solid rgba(248,81,73,0.3)",
+            background: "var(--danger-surface)",
+            border: "1px solid var(--danger-border)",
             borderRadius: 6,
             fontSize: 11.5,
-            color: "#f85149",
+            color: "var(--danger-fg)",
           }}
         >
           {error}
@@ -378,7 +378,7 @@ export function GitChanges({
               padding: "8px 10px",
               paddingRight: 36,
               background: "var(--bg-card)",
-              border: `1px solid ${commitMsgError ? "#f85149" : textareaFocused ? "var(--accent)" : "var(--border-medium)"}`,
+              border: `1px solid ${commitMsgError ? "var(--danger-fg)" : textareaFocused ? "var(--control-active-fg)" : "var(--border-medium)"}`,
               borderRadius: 6,
               color: "var(--text-primary)",
               fontSize: 12.5,
@@ -415,7 +415,7 @@ export function GitChanges({
           </button>
         </div>
         {commitMsgError && (
-          <div style={{ fontSize: 11.5, color: "#f85149", marginTop: 3, paddingLeft: 2 }}>
+          <div style={{ fontSize: 11.5, color: "var(--danger-fg)", marginTop: 3, paddingLeft: 2 }}>
             Please enter a commit message
           </div>
         )}
@@ -428,8 +428,8 @@ export function GitChanges({
               alignItems: "center",
               gap: 5,
               padding: "5px 12px",
-              background: "var(--accent)",
-              color: "#fff",
+              background: "var(--primary-action-bg)",
+              color: "var(--primary-action-fg)",
               border: "none",
               borderRadius: 6,
               fontSize: 12.5,

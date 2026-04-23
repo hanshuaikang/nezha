@@ -18,14 +18,14 @@ function DiffLine({ line }: { line: string }) {
   let color = "var(--text-secondary)";
 
   if (line.startsWith("+") && !line.startsWith("+++")) {
-    bg = "rgba(46, 160, 67, 0.12)";
-    color = "#3fb950";
+    bg = "var(--diff-add-bg)";
+    color = "var(--diff-add-fg)";
   } else if (line.startsWith("-") && !line.startsWith("---")) {
-    bg = "rgba(248, 81, 73, 0.12)";
-    color = "#f85149";
+    bg = "var(--diff-delete-bg)";
+    color = "var(--diff-delete-fg)";
   } else if (line.startsWith("@@")) {
-    bg = "rgba(88, 166, 255, 0.08)";
-    color = "#79c0ff";
+    bg = "var(--diff-hunk-bg)";
+    color = "var(--diff-hunk-fg)";
   } else if (
     line.startsWith("diff --git") ||
     line.startsWith("index ") ||

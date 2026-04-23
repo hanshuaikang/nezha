@@ -12,6 +12,8 @@ import {
 import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
+import claudeGif from "../assets/gif/claude.gif";
+import codexGif from "../assets/gif/codex.gif";
 import s from "../styles";
 
 interface PastedImage {
@@ -258,13 +260,18 @@ export function NewTaskView({
     <div style={s.newTaskOuter}>
       {/* Header */}
       <div style={s.newTaskHeader}>
+        <img
+          src={agent === "claude" ? claudeGif : codexGif}
+          alt=""
+          style={s.newTaskClaudeGif}
+        />
         <span style={s.newTaskTitle}>What do you want to build today?</span>
       </div>
 
       {/* Missing context file warning */}
       {hasMdFile === false && (
         <div style={s.agentMissingMdBanner}>
-          <TriangleAlert size={15} style={{ color: "#D97706", flexShrink: 0, marginTop: 1 }} />
+          <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
             <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
               No{" "}
@@ -272,7 +279,7 @@ export function NewTaskView({
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 12,
-                  background: "rgba(234,179,8,0.15)",
+                  background: "var(--warning-code-bg)",
                   padding: "0 4px",
                   borderRadius: 3,
                 }}

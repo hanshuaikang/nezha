@@ -82,10 +82,10 @@ function ToastContainer({
             padding: "10px 12px 10px 14px",
             borderRadius: 10,
             background: t.type === "error" ? "var(--danger)" : "var(--warning)",
-            color: "#fff",
+            color: "var(--fg-on-accent)",
             fontSize: 12.5,
             fontWeight: 500,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.24), 0 1px 4px rgba(0,0,0,0.14)",
+            boxShadow: "var(--shadow-toast)",
             lineHeight: 1.5,
           }}
         >
@@ -96,7 +96,7 @@ function ToastContainer({
               background: "none",
               border: "none",
               cursor: "pointer",
-              color: "rgba(255,255,255,0.75)",
+              color: "var(--inverse-muted)",
               padding: "0 0 0 4px",
               fontSize: 18,
               lineHeight: 1,

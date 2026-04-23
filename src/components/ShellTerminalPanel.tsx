@@ -418,7 +418,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                     style={{
                       height: 28,
                       padding: "0 4px 0 8px",
-                      borderLeft: selected ? "2px solid var(--accent)" : "2px solid transparent",
+                      borderLeft: selected
+                        ? "2px solid var(--control-active-fg)"
+                        : "2px solid transparent",
                       background: selected ? "var(--bg-hover)" : "transparent",
                       color: "var(--text-primary)",
                       cursor: "pointer",
@@ -427,7 +429,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       gap: 6,
                     }}
                   >
-                    <TerminalIcon size={13} color={selected ? "var(--accent)" : "var(--text-hint)"} />
+                    <TerminalIcon
+                      size={13}
+                      color={selected ? "var(--control-active-fg)" : "var(--text-hint)"}
+                    />
                     <div
                       style={{
                         flex: 1,

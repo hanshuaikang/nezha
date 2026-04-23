@@ -1,90 +1,4 @@
-/* ── Design Tokens ─────────────────────────────────────────────── */
-:root {
-  --bg-root: #e9edf4;
-  --bg-shell: #f7f8fb;
-  --bg-titlebar: #f2f3f6;
-  --bg-sidebar: #f3f5f9;
-  --bg-sidebar-elevated: #eceff5;
-  --bg-panel: #fcfcfd;
-  --bg-card: #ffffff;
-  --bg-hover: #f1f4fa;
-  --bg-selected: #dde7ff;
-  --bg-subtle: #f4f6fa;
-  --bg-input: #ffffff;
-
-  --border-dim: rgba(15, 23, 42, 0.08);
-  --border-medium: rgba(15, 23, 42, 0.14);
-  --border-strong: rgba(99, 122, 163, 0.24);
-  --border-focus: #7a95ff;
-
-  --text-primary: #171b24;
-  --text-secondary: #414857;
-  --text-muted: #69758a;
-  --text-hint: #9aa3b2;
-
-  --accent: #5d7cff;
-  --accent-strong: #4467f5;
-  --accent-soft: rgba(93, 124, 255, 0.28);
-  --accent-hover: #4d6ff2;
-  --accent-subtle: rgba(93, 124, 255, 0.12);
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --usage-good: #22c55e;
-  --usage-warn: #f59e0b;
-  --usage-danger: #ef4444;
-
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
-
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-
-  --font-ui: "SF Pro Display", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-}
-
-html.dark {
-  --bg-root: #1d212a;
-  --bg-shell: #262b36;
-  --bg-titlebar: #2b313e;
-  --bg-sidebar: #242a35;
-  --bg-sidebar-elevated: #202631;
-  --bg-panel: #2b313d;
-  --bg-card: #313847;
-  --bg-hover: #394154;
-  --bg-selected: #34446d;
-  --bg-subtle: #343b4a;
-  --bg-input: #343b4a;
-
-  --border-dim: rgba(255, 255, 255, 0.07);
-  --border-medium: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(141, 163, 255, 0.3);
-  --border-focus: #7f9aff;
-
-  --text-primary: #f1f4fb;
-  --text-secondary: #d6dbe8;
-  --text-muted: #a4adc2;
-  --text-hint: #727b8f;
-
-  --accent: #7f9aff;
-  --accent-strong: #6987ff;
-  --accent-soft: rgba(127, 154, 255, 0.34);
-  --accent-hover: #6f8eff;
-  --accent-subtle: rgba(127, 154, 255, 0.14);
-  --success: #3dd68c;
-  --warning: #f5a623;
-  --danger: #ff5555;
-  --usage-good: #4ade80;
-  --usage-warn: #fbbf24;
-  --usage-danger: #f87171;
-
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
-}
+@import "./styles/themes.css";
 
 /* ── Reset ─────────────────────────────────────────────────────── */
 *,
@@ -141,7 +55,7 @@ body {
 }
 .radix-select-trigger:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px var(--accent-subtle);
+  box-shadow: none;
 }
 .radix-select-content {
   background: var(--bg-card);
@@ -308,12 +222,12 @@ body {
 @keyframes rail-active-breathe {
   0%,
   100% {
-    box-shadow: 0 0 0 0px var(--accent-soft);
-    outline-color: var(--accent);
+    box-shadow: 0 0 0 0px var(--control-active-bg);
+    outline-color: var(--control-active-fg);
   }
   50% {
-    box-shadow: 0 0 0 4px var(--accent-soft);
-    outline-color: var(--accent-strong);
+    box-shadow: 0 0 0 4px var(--control-active-bg);
+    outline-color: var(--control-active-fg);
   }
 }
 .rail-active {
@@ -685,20 +599,20 @@ body {
   height: 20px;
   text-align: right;
   padding-right: 10px;
-  color: rgba(128, 128, 128, 0.35);
+  color: var(--code-line-number);
   user-select: none;
-  border-right: 1px solid rgba(128, 128, 128, 0.1);
+  border-right: 1px solid var(--code-line-divider);
   font-size: 11px;
   line-height: 20px;
   box-sizing: border-box;
 }
 
 .file-viewer-code .shiki .line:hover::before {
-  color: rgba(128, 128, 128, 0.6);
+  color: var(--code-line-number-hover);
 }
 
 .file-viewer-code .shiki .line:hover {
-  background: rgba(128, 128, 128, 0.05);
+  background: var(--code-line-hover-bg);
 }
 
 /* Makefile target run button */
@@ -799,7 +713,7 @@ body {
 }
 .cm-editor .cm-panel.cm-search .cm-textfield:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px var(--accent-subtle);
+  box-shadow: none;
 }
 .cm-editor .cm-panel.cm-search .cm-button {
   background: var(--bg-subtle);
@@ -839,7 +753,7 @@ body {
 }
 .cm-editor .cm-searchMatch-selected {
   background: var(--accent);
-  color: #fff;
+  color: var(--fg-on-accent);
   border-radius: 2px;
 }
 

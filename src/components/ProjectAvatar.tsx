@@ -28,7 +28,7 @@ export function ProjectAvatar({
         justifyContent: "center",
         fontSize: size * 0.38,
         fontWeight: 700,
-        color: "#fff",
+        color: "var(--fg-on-accent)",
         letterSpacing: 0.3,
         boxShadow: `0 2px 5px ${from}55`,
         ...extraStyle,

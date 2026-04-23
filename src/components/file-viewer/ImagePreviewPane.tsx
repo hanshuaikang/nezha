@@ -49,7 +49,7 @@ export function ImagePreviewPane({
         alignItems: "center",
         justifyContent: "center",
         background:
-          "linear-gradient(45deg, rgba(128,128,128,0.06) 25%, transparent 25%), linear-gradient(-45deg, rgba(128,128,128,0.06) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(128,128,128,0.06) 75%), linear-gradient(-45deg, transparent 75%, rgba(128,128,128,0.06) 75%)",
+          "linear-gradient(45deg, var(--image-checker-bg) 25%, transparent 25%), linear-gradient(-45deg, var(--image-checker-bg) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--image-checker-bg) 75%), linear-gradient(-45deg, transparent 75%, var(--image-checker-bg) 75%)",
         backgroundSize: "20px 20px",
         backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
       }}
@@ -73,7 +73,7 @@ export function ImagePreviewPane({
             maxHeight: "100%",
             objectFit: "contain",
             borderRadius: 8,
-            boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+            boxShadow: "var(--shadow-media)",
             background: "var(--bg-panel)",
           }}
         />

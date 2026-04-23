@@ -147,7 +147,7 @@ export function RunningView({
                 color: "var(--text-primary)",
                 background: "transparent",
                 border: "none",
-                borderBottom: "2px solid var(--accent)",
+                borderBottom: "2px solid var(--border-strong)",
                 borderRadius: 0,
                 padding: "0 2px",
                 outline: "none",

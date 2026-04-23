@@ -242,7 +242,7 @@ export function WelcomePage({
                         }}
                         onMouseEnter={(e) => {
                           (e.currentTarget as HTMLButtonElement).style.color =
-                            "var(--danger, #f87171)";
+                            "var(--danger)";
                         }}
                         onMouseLeave={(e) => {
                           (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
