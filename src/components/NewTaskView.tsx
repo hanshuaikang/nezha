@@ -23,6 +23,20 @@ interface PastedImage {
 
 type CrossProjectFileMap = Map<string, FileEntry[]>;
 
+interface ProjectConfig {
+  agent: {
+    default: string;
+    default_permission_mode?: string;
+    default_plan_mode?: boolean;
+    prompt_prefix?: string;
+    claude_version?: string;
+    codex_version?: string;
+  };
+  git: {
+    commit_prompt?: string;
+  };
+}
+
 function parseFileEntry(f: string): FileEntry {
   const parts = f.split("/");
   const name = parts[parts.length - 1];
@@ -63,6 +77,8 @@ export function NewTaskView({
   const [filesLoading, setFilesLoading] = useState(false);
   const [crossProjectFiles, setCrossProjectFiles] = useState<CrossProjectFileMap>(new Map());
   const loadedProjectIds = useRef<Set<string>>(new Set());
+  const projectConfigRef = useRef<ProjectConfig | null>(null);
+  const prefsReadyRef = useRef(false);
 
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -73,11 +89,26 @@ export function NewTaskView({
 
   // Load default agent and permission mode from project config when project changes
   useEffect(() => {
-    invoke<{ agent: { default: string; default_permission_mode?: string } }>(
-      "read_project_config",
-      { projectPath: project.path },
-    )
+    let cancelled = false;
+    prefsReadyRef.current = false;
+    const fallbackConfig: ProjectConfig = {
+      agent: {
+        default: "claude",
+        default_permission_mode: "ask",
+        default_plan_mode: false,
+        prompt_prefix: "",
+        claude_version: "",
+        codex_version: "",
+      },
+      git: {
+        commit_prompt: "",
+      },
+    };
+
+    invoke<ProjectConfig>("read_project_config", { projectPath: project.path })
       .then((cfg) => {
+        if (cancelled) return;
+        projectConfigRef.current = cfg;
         const defaultAgent = cfg.agent.default;
         if (defaultAgent === "claude" || defaultAgent === "codex") {
           setAgent(defaultAgent);
@@ -86,10 +117,65 @@ export function NewTaskView({
         if (defaultPerm === "ask" || defaultPerm === "auto_edit" || defaultPerm === "full_access") {
           setPermMode(defaultPerm);
         }
+        setPlanMode(Boolean(cfg.agent.default_plan_mode));
       })
-      .catch(() => {});
+      .catch(() => {
+        if (cancelled) return;
+        projectConfigRef.current = fallbackConfig;
+        setAgent("claude");
+        setPermMode("ask");
+        setPlanMode(false);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          prefsReadyRef.current = true;
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  useEffect(() => {
+    if (!prefsReadyRef.current) return;
+    let cancelled = false;
+    const persistDefaults = async () => {
+      const latestConfig = await invoke<ProjectConfig>("read_project_config", {
+        projectPath: project.path,
+      }).catch(() => projectConfigRef.current);
+      if (cancelled || !latestConfig) return;
+
+      const currentAgent = latestConfig.agent.default;
+      const currentPlanMode = Boolean(latestConfig.agent.default_plan_mode);
+      if (currentAgent === agent && currentPlanMode === planMode) {
+        projectConfigRef.current = latestConfig;
+        return;
+      }
+
+      const nextConfig: ProjectConfig = {
+        ...latestConfig,
+        agent: {
+          ...latestConfig.agent,
+          default: agent,
+          default_plan_mode: planMode,
+        },
+      };
+      projectConfigRef.current = nextConfig;
+      await invoke("write_project_config", { projectPath: project.path, config: nextConfig }).catch(
+        (e: unknown) => {
+          if (!cancelled) {
+            showToast(`Failed to save task defaults for this project: ${String(e)}`, "warning");
+          }
+        },
+      );
+    };
+
+    void persistDefaults();
+    return () => {
+      cancelled = true;
+    };
+  }, [agent, planMode, project.path, showToast]);
 
   const [hasMdFile, setHasMdFile] = useState<boolean | null>(null);
 

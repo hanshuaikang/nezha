@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
+use chrono::DateTime;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::TaskManager;
@@ -124,6 +126,17 @@ fn codex_sessions_roots(project_path: &str) -> Vec<PathBuf> {
         }
     }
     roots
+}
+
+fn emit_task_session(app: &AppHandle, task_id: &str, session_id: &str, session_path: &str) {
+    let _ = app.emit(
+        "task-session",
+        serde_json::json!({
+            "task_id": task_id,
+            "session_id": session_id,
+            "session_path": session_path
+        }),
+    );
 }
 
 fn collect_session_files_from_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
@@ -983,8 +996,8 @@ fn slug_matches_session_file(path: &Path, slug: &str) -> bool {
 
 fn find_codex_session_file(session_id: &str, project_path: &str) -> Option<PathBuf> {
     let suffix = format!("-{}.jsonl", session_id);
-    let files = collect_session_files_from_roots(&codex_sessions_roots(project_path));
-    files
+    let project_root = PathBuf::from(project_path).join(".codex").join("sessions");
+    let project_match = collect_session_files_from_roots(&[project_root])
         .into_iter()
         .filter(|p| {
             p.file_name()
@@ -992,7 +1005,178 @@ fn find_codex_session_file(session_id: &str, project_path: &str) -> Option<PathB
                 .map(|n| n.ends_with(&suffix))
                 .unwrap_or(false)
         })
+        .max_by_key(|p| session_modified_at(p));
+    if project_match.is_some() {
+        return project_match;
+    }
+
+    codex_sessions_roots(project_path)
+        .into_iter()
+        .skip(1)
+        .flat_map(|root| collect_session_files_from_roots(&[root]))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.ends_with(&suffix))
+                .unwrap_or(false)
+        })
         .max_by_key(|p| session_modified_at(p))
+}
+
+#[derive(Clone)]
+struct CodexSessionMeta {
+    session_id: String,
+    session_path: String,
+    cwd: String,
+    started_at_ms: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexTaskRecoveryHint {
+    task_id: String,
+    created_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexTaskRecoveredSession {
+    task_id: String,
+    session_id: String,
+    session_path: String,
+    started_at: i64,
+    delta_ms: i64,
+}
+
+fn normalize_path_for_compare(path: &str) -> String {
+    path.trim_end_matches(|c| c == '/' || c == '\\').to_string()
+}
+
+fn read_codex_session_meta(path: &Path) -> Option<CodexSessionMeta> {
+    use std::io::BufRead;
+    let file = File::open(path).ok()?;
+    let mut lines = BufReader::new(file).lines();
+    for _ in 0..64 {
+        let line = lines.next()?.ok()?;
+        let value = serde_json::from_str::<serde_json::Value>(&line).ok()?;
+        if value.get("type").and_then(|v| v.as_str()) != Some("session_meta") {
+            continue;
+        }
+        let payload = value.get("payload")?.as_object()?;
+        let session_id = payload.get("id").and_then(|v| v.as_str())?.to_string();
+        if !is_uuid_like(&session_id) {
+            return None;
+        }
+        let cwd = payload.get("cwd").and_then(|v| v.as_str())?.to_string();
+        let ts = value.get("timestamp").and_then(|v| v.as_str())?;
+        let started_at_ms = DateTime::parse_from_rfc3339(ts).ok()?.timestamp_millis();
+        return Some(CodexSessionMeta {
+            session_id,
+            session_path: path.to_string_lossy().into_owned(),
+            cwd,
+            started_at_ms,
+        });
+    }
+    None
+}
+
+fn recover_codex_sessions_for_tasks_sync(
+    project_path: String,
+    tasks: Vec<CodexTaskRecoveryHint>,
+) -> Vec<CodexTaskRecoveredSession> {
+    if tasks.is_empty() {
+        return Vec::new();
+    }
+
+    let mut task_hints = tasks;
+    task_hints.sort_by_key(|task| task.created_at);
+
+    let roots = codex_sessions_roots(&project_path);
+    let project_path_normalized = normalize_path_for_compare(&project_path);
+    let mut session_candidates: Vec<CodexSessionMeta> = collect_session_files_from_roots(&roots)
+        .into_iter()
+        .filter_map(|path| read_codex_session_meta(&path))
+        .filter(|meta| normalize_path_for_compare(&meta.cwd) == project_path_normalized)
+        .collect();
+    session_candidates.sort_by_key(|meta| meta.started_at_ms);
+
+    // 回填只用于兜底，避免错绑优先于“尽可能多恢复”。
+    // 允许 session 比任务创建晚最多 2 小时，或早最多 2 分钟（时钟抖动）。
+    const MAX_SESSION_MATCH_DELTA_MS: i64 = 1000 * 60 * 60 * 2;
+    const MAX_EARLY_START_MS: i64 = 1000 * 60 * 2;
+    let mut recovered = Vec::new();
+
+    for task in task_hints {
+        let best = session_candidates
+            .iter()
+            .enumerate()
+            .map(|(index, candidate)| {
+                let drift = candidate.started_at_ms - task.created_at;
+                (index, drift)
+            })
+            .filter(|(_, drift)| *drift >= -MAX_EARLY_START_MS)
+            .filter(|(_, drift)| drift.abs() <= MAX_SESSION_MATCH_DELTA_MS)
+            .min_by_key(|(_, delta)| *delta);
+
+        let Some((index, delta)) = best else {
+            continue;
+        };
+
+        let matched = session_candidates.remove(index);
+        recovered.push(CodexTaskRecoveredSession {
+            task_id: task.task_id,
+            session_id: matched.session_id,
+            session_path: matched.session_path,
+            started_at: matched.started_at_ms,
+            delta_ms: delta.abs(),
+        });
+    }
+
+    recovered
+}
+
+fn find_recent_codex_session_for_project(
+    project_path: &str,
+    min_started_at_ms: i64,
+) -> Option<CodexSessionMeta> {
+    let project_path_normalized = normalize_path_for_compare(project_path);
+    collect_session_files_from_roots(&codex_sessions_roots(project_path))
+        .into_iter()
+        .filter_map(|path| read_codex_session_meta(&path))
+        .filter(|meta| normalize_path_for_compare(&meta.cwd) == project_path_normalized)
+        .filter(|meta| meta.started_at_ms >= min_started_at_ms)
+        .max_by_key(|meta| meta.started_at_ms)
+}
+
+#[tauri::command]
+pub async fn recover_codex_sessions_for_tasks(
+    project_path: String,
+    tasks: Vec<CodexTaskRecoveryHint>,
+) -> Result<Vec<CodexTaskRecoveredSession>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        recover_codex_sessions_for_tasks_sync(project_path, tasks)
+    })
+    .await
+    .map_err(|e| format!("recover_codex_sessions_for_tasks failed: {e}"))
+}
+
+#[tauri::command]
+pub fn resolve_session_path(
+    project_path: String,
+    agent: String,
+    session_id: String,
+) -> Result<Option<String>, String> {
+    if session_id.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let path = if agent == "codex" {
+        find_codex_session_file(&session_id, &project_path)
+    } else {
+        find_claude_session_file(&session_id, &project_path)
+    };
+
+    Ok(path.map(|p| p.to_string_lossy().into_owned()))
 }
 
 // ── /status-based session discovery ──────────────────────────────────────────
@@ -1090,14 +1274,7 @@ pub(crate) fn register_and_watch_session(
         );
     }
 
-    let _ = app.emit(
-        "task-session",
-        serde_json::json!({
-            "task_id": task_id,
-            "session_id": session_id,
-            "session_path": path_string
-        }),
-    );
+    emit_task_session(app, task_id, session_id, &path_string);
 
     let app_clone = app.clone();
     let tid = task_id.to_string();
@@ -1124,10 +1301,10 @@ fn should_send_status_command(
 
     if is_codex {
         first_output_elapsed
-            .map(|elapsed| elapsed >= Duration::from_secs(1))
+            .map(|elapsed| elapsed >= Duration::from_millis(500))
             .unwrap_or(false)
-            // 兜底：若 Codex 长时间无输出，也不要无限等待
-            || start_elapsed >= Duration::from_secs(8)
+            // 兜底：无输出也尽早触发一次 /status，避免快速取消时拿不到 session id
+            || start_elapsed >= Duration::from_secs(2)
     } else {
         start_elapsed >= Duration::from_millis(1500)
     }
@@ -1186,6 +1363,7 @@ pub(crate) fn spawn_status_session_watcher(
             let pp2 = project_path.clone();
             let sid2 = sid.clone();
             thread::spawn(move || {
+                emit_task_session(&app2, &tid2, &sid2, "");
                 // 等待 Claude 创建 session 文件，最长 10 秒
                 register_and_watch_session(&app2, &tid2, &sid2, &pp2, false);
 
@@ -1225,10 +1403,12 @@ fn run_status_session_watcher(
     rx: mpsc::Receiver<String>,
 ) {
         let start_time = Instant::now();
+        let start_wall_ms = chrono::Utc::now().timestamp_millis();
         let mut status_sent = false;
         let mut status_sent_at: Option<Instant> = None;
         let mut status_send_count: u32 = 0;
         let mut first_output_at = None;
+        let mut discovered_session = false;
         let mut accumulated = String::new();
         // 发送 /status 后的独立缓冲，避免大量输出将 /status 响应挤出裁剪窗口
         let mut status_response_buf = String::new();
@@ -1294,7 +1474,9 @@ fn run_status_session_watcher(
                     };
 
                     if let Some(sid) = session_id {
+                        emit_task_session(&app, &task_id, &sid, "");
                         register_and_watch_session(&app, &task_id, &sid, &project_path, is_codex);
+                        discovered_session = true;
                         // Claude Code 的 /status 以全屏面板形式展示，需发送 ESC 关闭；
                         // Codex 无此面板，无需处理
                         if !is_codex {
@@ -1310,6 +1492,16 @@ fn run_status_session_watcher(
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+
+        if is_codex && !discovered_session {
+            if let Some(meta) = find_recent_codex_session_for_project(
+                &project_path,
+                start_wall_ms - 1000 * 60 * 2,
+            ) {
+                emit_task_session(&app, &task_id, &meta.session_id, "");
+                register_and_watch_session(&app, &task_id, &meta.session_id, &project_path, true);
             }
         }
 }

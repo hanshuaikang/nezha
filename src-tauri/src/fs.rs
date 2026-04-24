@@ -164,6 +164,7 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
                 use std::io::Write;
                 let mut cmd = std::process::Command::new("git");
                 crate::subprocess::configure_background_command(&mut cmd);
+                crate::app_settings::apply_proxy_env(&mut cmd);
                 cmd.args(["check-ignore", "--stdin"])
                     .current_dir(&project_path)
                     .stdin(std::process::Stdio::piped())
@@ -272,6 +273,7 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<String>, Str
     tauri::async_runtime::spawn_blocking(move || {
         let mut cmd = std::process::Command::new("git");
         crate::subprocess::configure_background_command(&mut cmd);
+        crate::app_settings::apply_proxy_env(&mut cmd);
         let output = cmd
             .args([
                 "-c",

@@ -5,7 +5,7 @@ import { permissionModeLabel } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
-import { shortenPath, getUsageColor } from "../utils";
+import { getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import s from "../styles";
@@ -232,6 +232,10 @@ export function RunningView({
             {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
             {permissionModeLabel(task.permissionMode, task.agent)}
           </span>
+          <span>·</span>
+          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+            Task #{task.id}
+          </span>
           {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
             ? usageSnapshot.claude.status === "available" && (
                 <>
@@ -255,22 +259,6 @@ export function RunningView({
               )
           )}
         </div>
-        {sessionPath && (
-          <div
-            title={sessionPath}
-            style={{
-              marginTop: 4,
-              fontSize: 11,
-              color: "var(--text-muted)",
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Session file: {shortenPath(sessionPath)}
-          </div>
-        )}
         {metrics && (
           <div
             style={{

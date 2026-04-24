@@ -28,6 +28,10 @@ pub struct AppSettings {
     pub claude_path: String,
     #[serde(default)]
     pub codex_path: String,
+    #[serde(default)]
+    pub proxy_url: String,
+    #[serde(default)]
+    pub enable_session_backfill: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -35,6 +39,8 @@ pub struct AgentLaunchSpec {
     pub program: String,
     pub extra_env: Vec<(String, String)>,
 }
+
+const SUPPORTED_PROXY_SCHEMES: &[&str] = &["http", "https", "socks5", "socks5h"];
 
 fn get_agent_configured_path(settings: &AppSettings, agent: &str) -> String {
     match agent {
@@ -270,14 +276,81 @@ fn resolve_agent_launch_spec_from_path(agent: &str, path: &str) -> AgentLaunchSp
 }
 
 fn get_agent_launch_spec_from_settings(settings: &AppSettings, agent: &str) -> AgentLaunchSpec {
-    resolve_agent_launch_spec_from_path(agent, &get_agent_configured_path(settings, agent))
+    let mut launch =
+        resolve_agent_launch_spec_from_path(agent, &get_agent_configured_path(settings, agent));
+    launch
+        .extra_env
+        .extend(proxy_env_vars_from_settings(settings));
+    launch
+}
+
+fn proxy_env_vars_from_settings(settings: &AppSettings) -> Vec<(String, String)> {
+    let proxy = settings.proxy_url.trim();
+    if proxy.is_empty() {
+        return Vec::new();
+    }
+
+    vec![("ALL_PROXY".to_string(), proxy.to_string())]
+}
+
+pub fn apply_proxy_env(cmd: &mut Command) {
+    for (key, value) in proxy_env_vars_from_settings(&load_settings_internal()) {
+        cmd.env(key, value);
+    }
+}
+
+pub fn apply_proxy_env_tokio(cmd: &mut tokio::process::Command) {
+    for (key, value) in proxy_env_vars_from_settings(&load_settings_internal()) {
+        cmd.env(key, value);
+    }
+}
+
+pub fn apply_proxy_to_reqwest_builder(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::ClientBuilder, String> {
+    let settings = load_settings_internal();
+    let proxy = settings.proxy_url.trim();
+    if proxy.is_empty() {
+        return Ok(builder);
+    }
+
+    let reqwest_proxy =
+        reqwest::Proxy::all(proxy).map_err(|e| format!("Invalid proxy configuration: {e}"))?;
+    Ok(builder.proxy(reqwest_proxy))
 }
 
 fn normalize_settings(settings: AppSettings) -> AppSettings {
     AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
+        proxy_url: settings.proxy_url.trim().to_string(),
+        enable_session_backfill: settings.enable_session_backfill,
     }
+}
+
+fn validate_proxy_url(proxy_url: &str) -> Result<(), String> {
+    if proxy_url.is_empty() {
+        return Ok(());
+    }
+
+    let parsed = reqwest::Url::parse(proxy_url)
+        .map_err(|_| "Proxy URL must be a valid absolute URL.".to_string())?;
+    if !SUPPORTED_PROXY_SCHEMES.contains(&parsed.scheme()) {
+        return Err(format!(
+            "Proxy URL scheme must be one of: {}.",
+            SUPPORTED_PROXY_SCHEMES.join(", ")
+        ));
+    }
+
+    if parsed.host_str().is_none() {
+        return Err("Proxy URL must include a hostname.".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_settings(settings: &AppSettings) -> Result<(), String> {
+    validate_proxy_url(&settings.proxy_url)
 }
 
 pub fn load_settings_internal() -> AppSettings {
@@ -290,6 +363,8 @@ pub fn load_settings_internal() -> AppSettings {
         let settings = normalize_settings(AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
+            proxy_url: String::new(),
+            enable_session_backfill: false,
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -329,6 +404,7 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = settings_path()?;
     let normalized = normalize_settings(settings);
+    validate_settings(&normalized)?;
     let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)?;
     clear_cached_versions();
@@ -337,9 +413,12 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
 
 #[tauri::command]
 pub fn detect_agent_paths() -> Result<AppSettings, String> {
+    let current = load_settings_internal();
     Ok(normalize_settings(AppSettings {
         claude_path: detect_path("claude"),
         codex_path: detect_path("codex"),
+        proxy_url: current.proxy_url,
+        enable_session_backfill: current.enable_session_backfill,
     }))
 }
 
@@ -429,7 +508,9 @@ pub fn detect_agent_versions() -> Result<AgentVersions, String> {
 
 #[tauri::command]
 pub fn detect_agent_versions_for_settings(settings: AppSettings) -> Result<AgentVersions, String> {
-    Ok(detect_versions_for_settings(&settings))
+    let normalized = normalize_settings(settings);
+    validate_settings(&normalized)?;
+    Ok(detect_versions_for_settings(&normalized))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

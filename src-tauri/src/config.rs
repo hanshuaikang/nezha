@@ -11,6 +11,8 @@ const DEFAULT_CONFIG: &str = r#"# Nezha project configuration
 default = "claude"
 # Default permission mode for new tasks: "ask", "auto_edit", or "full_access"
 default_permission_mode = "ask"
+# Whether new tasks start with plan mode enabled by default
+default_plan_mode = false
 # Text automatically prepended (followed by a newline) to every task prompt
 prompt_prefix = ""
 
@@ -29,6 +31,8 @@ pub struct AgentConfig {
     pub default: String,
     #[serde(default = "default_permission_mode")]
     pub default_permission_mode: String,
+    #[serde(default)]
+    pub default_plan_mode: bool,
     #[serde(default)]
     pub prompt_prefix: String,
     #[serde(default)]
@@ -58,6 +62,7 @@ impl Default for ProjectConfig {
             agent: AgentConfig {
                 default: "claude".to_string(),
                 default_permission_mode: "ask".to_string(),
+                default_plan_mode: false,
                 prompt_prefix: String::new(),
                 claude_version: String::new(),
                 codex_version: String::new(),

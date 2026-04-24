@@ -8,6 +8,7 @@ interface ProjectConfig {
   agent: {
     default: string;
     default_permission_mode: string;
+    default_plan_mode?: boolean;
     prompt_prefix: string;
     claude_version: string;
     codex_version: string;
@@ -174,6 +175,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
           agent: {
             default: agentDefault,
             default_permission_mode: defaultPermissionMode,
+            default_plan_mode: config?.agent.default_plan_mode ?? false,
             prompt_prefix: promptPrefix,
             claude_version: claudeVersion,
             codex_version: codexVersion,

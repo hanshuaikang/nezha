@@ -46,6 +46,84 @@ function createDefaultProjectViewState(): ProjectViewState {
   return { selectedTaskId: null, isNewTask: true };
 }
 
+function reconcileRecoveredTasks(loadedTasks: Task[]): Task[] {
+  return loadedTasks.map((task) => {
+    if (!isActiveTaskStatus(task.status)) {
+      return task;
+    }
+
+    return {
+      ...task,
+      status: "cancelled",
+      attentionRequestedAt: undefined,
+    };
+  });
+}
+
+function applyRecoveredSessionPaths(tasks: Task[], resolvedPaths: Record<string, string>): Task[] {
+  let changed = false;
+  const next = tasks.map((task) => {
+    const resolvedPath = resolvedPaths[task.id];
+    if (!resolvedPath) {
+      return task;
+    }
+    if (task.agent === "codex") {
+      if (task.codexSessionPath === resolvedPath) {
+        return task;
+      }
+      changed = true;
+      return { ...task, codexSessionPath: resolvedPath };
+    }
+    if (task.claudeSessionPath === resolvedPath) {
+      return task;
+    }
+    changed = true;
+    return { ...task, claudeSessionPath: resolvedPath };
+  });
+  return changed ? next : tasks;
+}
+
+interface RecoveredCodexSession {
+  taskId: string;
+  sessionId: string;
+  sessionPath: string;
+  startedAt: number;
+  deltaMs: number;
+}
+
+interface AppSettingsLite {
+  enable_session_backfill?: boolean;
+}
+
+function applyRecoveredCodexSessions(
+  tasks: Task[],
+  recovered: Record<string, { sessionId: string; sessionPath: string }>,
+): Task[] {
+  let changed = false;
+  const next = tasks.map((task) => {
+    if (task.agent !== "codex") {
+      return task;
+    }
+    const recoveredSession = recovered[task.id];
+    if (!recoveredSession) {
+      return task;
+    }
+    if (
+      task.codexSessionId === recoveredSession.sessionId &&
+      task.codexSessionPath === recoveredSession.sessionPath
+    ) {
+      return task;
+    }
+    changed = true;
+    return {
+      ...task,
+      codexSessionId: recoveredSession.sessionId,
+      codexSessionPath: recoveredSession.sessionPath,
+    };
+  });
+  return changed ? next : tasks;
+}
+
 function getSystemPrefersDark() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -129,6 +207,11 @@ function App() {
 
   useEffect(() => {
     async function init() {
+      const appSettings = await invoke<AppSettingsLite>("load_app_settings").catch(
+        () => ({ enable_session_backfill: false }),
+      );
+      const enableSessionBackfill = appSettings.enable_session_backfill === true;
+
       // Load projects from ~/.nezha/projects.json
       const loadedProjects = await invoke<Project[]>("load_projects");
       setProjects(loadedProjects);
@@ -137,11 +220,124 @@ function App() {
       const chunks = await Promise.all(
         loadedProjects.map((p) => invoke<Task[]>("load_project_tasks", { projectId: p.id })),
       );
-      setTasks(chunks.flat());
+      const loadedTasks = chunks.flat();
+      const reconciledTasks = reconcileRecoveredTasks(loadedTasks);
+      let hydratedTasks = reconciledTasks;
+
+      const dirtyProjectIds = new Set<string>();
+      for (let i = 0; i < loadedTasks.length; i++) {
+        if (loadedTasks[i].status !== reconciledTasks[i].status) {
+          dirtyProjectIds.add(loadedTasks[i].projectId);
+        }
+      }
+
+      const sessionLookupTasks = reconciledTasks.filter((task) => {
+        const sessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
+        const sessionPath = task.agent === "codex" ? task.codexSessionPath : task.claudeSessionPath;
+        return Boolean(sessionId && !sessionPath);
+      });
+      if (sessionLookupTasks.length > 0) {
+        const resolvedEntries = await Promise.all(
+          sessionLookupTasks.map(async (task) => {
+            const sessionId =
+              task.agent === "codex" ? task.codexSessionId ?? "" : task.claudeSessionId ?? "";
+            const projectPath =
+              loadedProjects.find((project) => project.id === task.projectId)?.path ?? "";
+            const sessionPath = await invoke<string | null>("resolve_session_path", {
+              projectPath,
+              agent: task.agent,
+              sessionId,
+            }).catch(() => null);
+            return [task.id, sessionPath ?? ""] as const;
+          }),
+        );
+        const resolvedPaths = Object.fromEntries(
+          resolvedEntries.filter(([, sessionPath]) => Boolean(sessionPath)),
+        );
+        hydratedTasks = applyRecoveredSessionPaths(reconciledTasks, resolvedPaths);
+        for (let i = 0; i < reconciledTasks.length; i++) {
+          const prevPath =
+            reconciledTasks[i].agent === "codex"
+              ? reconciledTasks[i].codexSessionPath
+              : reconciledTasks[i].claudeSessionPath;
+          const nextPath =
+            hydratedTasks[i].agent === "codex"
+              ? hydratedTasks[i].codexSessionPath
+              : hydratedTasks[i].claudeSessionPath;
+          if (prevPath !== nextPath) {
+            dirtyProjectIds.add(reconciledTasks[i].projectId);
+          }
+        }
+      }
+
+      if (enableSessionBackfill) {
+        const codexSessionBackfillByProject = new Map<string, Task[]>();
+        for (const task of hydratedTasks) {
+          if (
+            task.agent !== "codex" ||
+            task.status === "todo" ||
+            isActiveTaskStatus(task.status) ||
+            task.codexSessionId ||
+            task.codexSessionPath
+          ) {
+            continue;
+          }
+          const group = codexSessionBackfillByProject.get(task.projectId) ?? [];
+          group.push(task);
+          codexSessionBackfillByProject.set(task.projectId, group);
+        }
+        if (codexSessionBackfillByProject.size > 0) {
+          const recoveredSessions: Record<string, { sessionId: string; sessionPath: string }> = {};
+          const recoveredGroups = await Promise.all(
+            Array.from(codexSessionBackfillByProject.entries()).map(
+              async ([projectId, projectTasks]) => {
+                const projectPath =
+                  loadedProjects.find((project) => project.id === projectId)?.path ?? "";
+                const recovered = await invoke<RecoveredCodexSession[]>(
+                  "recover_codex_sessions_for_tasks",
+                  {
+                    projectPath,
+                    tasks: projectTasks.map((task) => ({
+                      taskId: task.id,
+                      createdAt: task.createdAt,
+                    })),
+                  },
+                ).catch(() => []);
+                return recovered;
+              },
+            ),
+          );
+          for (const recovered of recoveredGroups) {
+            for (const item of recovered) {
+              recoveredSessions[item.taskId] = {
+                sessionId: item.sessionId,
+                sessionPath: item.sessionPath,
+              };
+            }
+          }
+
+          const previousTasks = hydratedTasks;
+          hydratedTasks = applyRecoveredCodexSessions(hydratedTasks, recoveredSessions);
+          for (let i = 0; i < previousTasks.length; i++) {
+            if (
+              previousTasks[i].codexSessionId !== hydratedTasks[i].codexSessionId ||
+              previousTasks[i].codexSessionPath !== hydratedTasks[i].codexSessionPath
+            ) {
+              dirtyProjectIds.add(previousTasks[i].projectId);
+            }
+          }
+        }
+      }
+
+      setTasks(hydratedTasks);
+
+      for (const projectId of dirtyProjectIds) {
+        persistProjectTasks(projectId, hydratedTasks, showToast);
+      }
     }
 
     init().catch(console.error);
-  }, []);
+  }, [showToast]);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
   useEffect(() => {
@@ -483,15 +679,17 @@ function App() {
       const next = prev.map((task) => {
         if (task.id !== taskId) return task;
         if (task.agent === "claude") {
-          if (task.claudeSessionId === sessionId && task.claudeSessionPath === sessionPath)
+          const nextPath = sessionPath || task.claudeSessionPath || "";
+          if (task.claudeSessionId === sessionId && (task.claudeSessionPath || "") === nextPath)
             return task;
           changed = true;
-          return { ...task, claudeSessionId: sessionId, claudeSessionPath: sessionPath };
+          return { ...task, claudeSessionId: sessionId, claudeSessionPath: nextPath || undefined };
         } else {
-          if (task.codexSessionId === sessionId && task.codexSessionPath === sessionPath)
+          const nextPath = sessionPath || task.codexSessionPath || "";
+          if (task.codexSessionId === sessionId && (task.codexSessionPath || "") === nextPath)
             return task;
           changed = true;
-          return { ...task, codexSessionId: sessionId, codexSessionPath: sessionPath };
+          return { ...task, codexSessionId: sessionId, codexSessionPath: nextPath || undefined };
         }
       });
 

@@ -232,9 +232,10 @@ fn is_valid(notif: &RemoteNotification, app_version: &str) -> bool {
 // ── HTTP fetch (async, with strict guards) ───────────────────────────────────
 
 async fn fetch_remote() -> Result<Vec<RemoteNotification>, String> {
-    let client = reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::none()) // no redirects to prevent domain bypass
+        .redirect(reqwest::redirect::Policy::none()); // no redirects to prevent domain bypass
+    let client = crate::app_settings::apply_proxy_to_reqwest_builder(builder)?
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 

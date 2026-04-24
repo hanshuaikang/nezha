@@ -41,7 +41,12 @@ export const TaskListItem = memo(
             {displayTitle.slice(0, 70)}
             {displayTitle.length > 70 ? "…" : ""}
           </div>
-          <div style={s.taskCardSub}>{STATUS_LABEL[task.status]}</div>
+          <div style={s.taskCardSub}>
+            {STATUS_LABEL[task.status]}
+            <span style={{ marginLeft: 8, fontFamily: "var(--font-mono)", fontSize: 11 }}>
+              #{task.id}
+            </span>
+          </div>
         </div>
         <button
           type="button"

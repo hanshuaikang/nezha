@@ -34,6 +34,8 @@ type NavKey = "general" | "theme" | "about" | "claude" | "codex";
 interface AppSettings {
   claude_path: string;
   codex_path: string;
+  proxy_url: string;
+  enable_session_backfill: boolean;
 }
 
 interface AgentVersions {
@@ -42,6 +44,7 @@ interface AgentVersions {
 }
 
 type AgentKey = "claude" | "codex";
+const SUPPORTED_PROXY_PROTOCOLS = ["http:", "https:", "socks5:", "socks5h:"];
 
 const GITHUB_REPO_URL = "https://github.com/hanshuaikang/nezha";
 
@@ -71,6 +74,26 @@ function getAgentExecutablePlaceholder(agent: AgentKey): string {
   return agent === "claude"
     ? "claude or /usr/local/bin/claude"
     : "codex or /usr/local/bin/codex";
+}
+
+function getProxyUrlError(proxyUrl: string): string | null {
+  const trimmed = proxyUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!SUPPORTED_PROXY_PROTOCOLS.includes(parsed.protocol)) {
+      return "Use http://, https://, socks5://, or socks5h://";
+    }
+    if (!parsed.hostname) {
+      return "Proxy URL must include a hostname";
+    }
+    return null;
+  } catch {
+    return "Proxy URL must be a valid absolute URL";
+  }
 }
 
 const NAV_ITEMS: Array<{
@@ -535,8 +558,18 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
 // ── General Panel ─────────────────────────────────────────────────────────────
 
 function GeneralPanel() {
-  const [settings, setSettings] = useState<AppSettings>({ claude_path: "", codex_path: "" });
-  const [original, setOriginal] = useState<AppSettings>({ claude_path: "", codex_path: "" });
+  const [settings, setSettings] = useState<AppSettings>({
+    claude_path: "",
+    codex_path: "",
+    proxy_url: "",
+    enable_session_backfill: false,
+  });
+  const [original, setOriginal] = useState<AppSettings>({
+    claude_path: "",
+    codex_path: "",
+    proxy_url: "",
+    enable_session_backfill: false,
+  });
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",
     codex_version: "",
@@ -546,7 +579,10 @@ function GeneralPanel() {
   const [refreshingVersions, setRefreshingVersions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+
+  const proxyError = getProxyUrlError(settings.proxy_url);
+  const error = requestError ?? proxyError;
 
   async function loadVersions(nextSettings: AppSettings) {
     setRefreshingVersions(true);
@@ -555,8 +591,9 @@ function GeneralPanel() {
         settings: nextSettings,
       });
       setVersions(detected);
+      setRequestError(null);
     } catch (e) {
-      setError(String(e));
+      setRequestError(String(e));
     } finally {
       setRefreshingVersions(false);
     }
@@ -569,27 +606,35 @@ function GeneralPanel() {
         setOriginal(loadedSettings);
         await loadVersions(loadedSettings);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setRequestError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   async function handleDetect() {
     setDetectingPaths(true);
-    setError(null);
+    setRequestError(null);
     try {
       const detected = await invoke<AppSettings>("detect_agent_paths");
-      setSettings(detected);
-      await loadVersions(detected);
+      const merged = {
+        ...detected,
+        proxy_url: settings.proxy_url,
+        enable_session_backfill: settings.enable_session_backfill,
+      };
+      setSettings(merged);
+      await loadVersions(merged);
     } catch (e) {
-      setError(String(e));
+      setRequestError(String(e));
     } finally {
       setDetectingPaths(false);
     }
   }
 
   async function handleSave() {
+    if (proxyError) {
+      return;
+    }
     setSaving(true);
-    setError(null);
+    setRequestError(null);
     setSaved(false);
     try {
       await invoke("save_app_settings", { settings });
@@ -598,14 +643,17 @@ function GeneralPanel() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setError(String(e));
+      setRequestError(String(e));
     } finally {
       setSaving(false);
     }
   }
 
   const isDirty =
-    settings.claude_path !== original.claude_path || settings.codex_path !== original.codex_path;
+    settings.claude_path !== original.claude_path ||
+    settings.codex_path !== original.codex_path ||
+    settings.proxy_url !== original.proxy_url ||
+    settings.enable_session_backfill !== original.enable_session_backfill;
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -739,6 +787,72 @@ function GeneralPanel() {
               <span style={hintStyle}>Leave empty to use codex from the system PATH.</span>
             </div>
 
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Agent Proxy URL</label>
+              <input
+                style={inputStyle}
+                value={settings.proxy_url}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSettings((prev) => ({ ...prev, proxy_url: value }));
+                  if (requestError) {
+                    setRequestError(null);
+                  }
+                }}
+                placeholder="http://127.0.0.1:7890 or socks5://127.0.0.1:7890"
+                spellCheck={false}
+              />
+              <span
+                style={{
+                  ...hintStyle,
+                  color: proxyError ? "var(--danger)" : hintStyle.color,
+                }}
+              >
+                {proxyError ?? (
+                  <>
+                    When set, Nezha exports this value to Claude Code and Codex as ALL_PROXY
+                    during internal launches.
+                  </>
+                )}
+              </span>
+              {!proxyError && (
+                <span style={hintStyle}>
+                  Supported schemes: http, https, socks5, socks5h.
+                </span>
+              )}
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Session Backfill</label>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12.5,
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={settings.enable_session_backfill}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      enable_session_backfill: e.target.checked,
+                    }))
+                  }
+                />
+                Enable startup session backfill recovery
+              </label>
+              <span style={hintStyle}>
+                Disabled by default. Turn on only if you want Nezha to backfill missing session IDs
+                from local Codex session files at app startup.
+              </span>
+            </div>
+
             <div style={{ ...fieldStyle, marginBottom: 0 }}>
               <label style={labelStyle}>Installed Versions</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -791,9 +905,9 @@ function GeneralPanel() {
           </span>
         )}
         <button
-          style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
+          style={{ ...s.modalSaveBtn, opacity: saving || !isDirty || !!proxyError ? 0.5 : 1 }}
           onClick={handleSave}
-          disabled={saving || !isDirty}
+          disabled={saving || !isDirty || !!proxyError}
         >
           {saving ? "Saving..." : "Save"}
         </button>
