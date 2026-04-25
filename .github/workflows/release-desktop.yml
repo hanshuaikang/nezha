@@ -3,14 +3,40 @@ name: Release Desktop Builds
 on:
   push:
     tags:
-      - "*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  verify-version:
+    name: Verify version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check tag matches package.json / Cargo.toml / tauri.conf.json
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(jq -r .version package.json)
+          TAURI=$(jq -r .version src-tauri/tauri.conf.json)
+          CARGO=$(awk -F\" '/^version[[:space:]]*=/ {print $2; exit}' src-tauri/Cargo.toml)
+          echo "tag=$TAG package.json=$PKG tauri.conf.json=$TAURI Cargo.toml=$CARGO"
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$TAURI" ] || [ "$TAG" != "$CARGO" ]; then
+            echo "::error::Version mismatch — tag '$TAG' must equal package.json ($PKG), tauri.conf.json ($TAURI), and Cargo.toml ($CARGO)"
+            exit 1
+          fi
+
   build:
     name: Build ${{ matrix.name }}
+    needs: verify-version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -83,6 +109,8 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Download build artifacts
