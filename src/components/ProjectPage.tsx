@@ -134,6 +134,7 @@ export function ProjectPage({
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
+  const prevHadDiffRef = useRef(false);
 
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId === project.id),
@@ -152,8 +153,15 @@ export function ProjectPage({
     }
   }, [selectedTaskId, isNewTask]);
 
+  // diff viewer 打开/关闭时自动联动任务面板的折叠态，但只在 "无 diff → 有 diff" 或
+  // "有 diff → 无 diff" 跨界的那一刻同步一次。用户中途手动展/收，以及切换不同 diff
+  // 文件（openDiff 引用变化但仍是 truthy）都不会被覆盖。
   useEffect(() => {
-    setTaskPanelCollapsed(Boolean(openDiff));
+    const hasDiff = Boolean(openDiff);
+    if (hasDiff !== prevHadDiffRef.current) {
+      setTaskPanelCollapsed(hasDiff);
+      prevHadDiffRef.current = hasDiff;
+    }
   }, [openDiff]);
 
   const handleSelectTask = useCallback(
