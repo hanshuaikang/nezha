@@ -371,10 +371,13 @@ function App() {
   async function handleDeleteTask(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
-    const ok = await confirm(`Delete task "${task.prompt}"?`, {
-      title: "Delete Task",
-      kind: "warning",
-    });
+    const ok = await confirm(
+      `Delete task "${task.prompt.slice(0, 100)}${task.prompt.length > 100 ? "..." : ""}"?`,
+      {
+        title: "Delete Task",
+        kind: "warning",
+      },
+    );
     if (!ok) return;
     deleteTasks([taskId]);
   }
