@@ -34,7 +34,7 @@ Claude Code + Codex, Git, editing, and task management, all in one place.</p>
 </div>
 
 <p align="center">
-  <img src="docs/images/index.png" alt="Nezha Product Showcase" width="80%" />
+  <img src="docs/images/index.gif" alt="Nezha Product Showcase" width="80%" />
 </p>
 
 Nezha is an Agent-First Vibe Coding desktop application built for true parallel programming. It lets Claude Code and Codex run together across multiple projects, while unifying task lifecycle tracking, a native terminal experience, session playback, code browsing, and a complete Git workflow in one interface. Say goodbye to constantly toggling between terminals, editors, Git clients, and session logs. With just a few clicks, you can instantly switch contexts between different projects or tasks. Moreover, with an installation package size of just 7MB, Nezha completely eliminates the bulkiness associated with traditional IDEs.

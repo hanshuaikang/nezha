@@ -35,7 +35,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/index.png" alt="Nezha 产品图" width="80%" />
+  <img src="docs/images/index.gif" alt="Nezha 产品图" width="80%" />
 </p>
 
 Nezha 是一款专为 AI 编程场景打造的桌面应用。它把多项目管理、任务生命周期追踪、原生终端体验、会话回放、代码浏览和完整 Git 工作流整合到同一个界面里，让你不必在终端、编辑器、Git 工具和会话记录之间来回切换。只需要通过鼠标点击，就可以瞬间切换到不同的项目或任务。同时安装包只有 7M 大小，告别 IDE 的笨重。
