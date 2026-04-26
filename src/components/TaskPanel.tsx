@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Search, ChevronLeft, Plus, Trash2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Search,
+  ChevronLeft,
+  Plus,
+  Trash2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Moon,
+  Sun,
+} from "lucide-react";
 import type { Project, Task, ThemeMode } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
@@ -49,6 +58,7 @@ export function TaskPanel({
   onToggleCollapsed?: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const hasAttention = tasks.some((t) => t.status === "input_required");
 
   if (collapsed) {
     return (
@@ -57,22 +67,38 @@ export function TaskPanel({
           type="button"
           style={s.taskPanelExpandBtn}
           onClick={onToggleCollapsed}
-          title="Show tasks"
+          title={hasAttention ? "Show tasks (attention needed)" : "Show tasks"}
+          aria-label={hasAttention ? "Show tasks, attention needed" : "Show tasks"}
         >
           <PanelLeftOpen size={16} strokeWidth={2} />
+          {hasAttention && <span style={s.taskPanelAttentionDot} aria-hidden />}
         </button>
-        <ProjectAvatar name={project.name} size={24} />
-        <button
-          type="button"
-          style={{
-            ...s.taskPanelCollapsedNewBtn,
-            color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
-          }}
-          onClick={onNewTask}
-          title="New Task"
-        >
-          <Plus size={15} strokeWidth={2.4} />
-        </button>
+        <div style={s.taskPanelCollapsedBody}>
+          <ProjectAvatar name={project.name} size={24} />
+          <button
+            type="button"
+            style={{
+              ...s.taskPanelCollapsedNewBtn,
+              color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
+            }}
+            onClick={onNewTask}
+            title="New Task"
+            aria-label="New Task"
+          >
+            <Plus size={15} strokeWidth={2.4} />
+          </button>
+        </div>
+        <div style={s.taskPanelCollapsedFooter}>
+          <button
+            type="button"
+            style={s.taskPanelCollapsedSmallBtn}
+            onClick={onToggleTheme}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? <Sun size={14} strokeWidth={1.8} /> : <Moon size={14} strokeWidth={1.8} />}
+          </button>
+        </div>
       </div>
     );
   }

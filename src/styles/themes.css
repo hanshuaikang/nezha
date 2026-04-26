@@ -92,10 +92,23 @@
 
   --diff-add-bg: rgba(46, 160, 67, 0.12);
   --diff-add-fg: #1f8f46;
+  --diff-add-marker-bg: rgba(46, 160, 67, 0.22);
   --diff-delete-bg: rgba(248, 81, 73, 0.12);
   --diff-delete-fg: #c7352f;
+  --diff-delete-marker-bg: rgba(248, 81, 73, 0.22);
   --diff-hunk-bg: rgba(88, 166, 255, 0.08);
   --diff-hunk-fg: #2563eb;
+  --diff-meta-fg: #9aa3b2;
+  --diff-gutter-bg: rgba(15, 23, 42, 0.02);
+  --diff-empty-bg: rgba(15, 23, 42, 0.025);
+  --diff-status-added-fg: #1f8f46;
+  --diff-status-added-bg: rgba(46, 160, 67, 0.14);
+  --diff-status-deleted-fg: #c7352f;
+  --diff-status-deleted-bg: rgba(248, 81, 73, 0.14);
+  --diff-status-renamed-fg: #2563eb;
+  --diff-status-renamed-bg: rgba(88, 166, 255, 0.14);
+  --diff-status-modified-fg: #a46a0a;
+  --diff-status-modified-bg: rgba(214, 150, 32, 0.14);
 
   --code-line-number: rgba(128, 128, 128, 0.35);
   --code-line-number-hover: rgba(128, 128, 128, 0.6);
@@ -196,8 +209,21 @@ html.dark {
 
   --danger-fg: #f85149;
   --diff-add-fg: #3fb950;
+  --diff-add-marker-bg: rgba(46, 160, 67, 0.28);
   --diff-delete-fg: #f85149;
+  --diff-delete-marker-bg: rgba(248, 81, 73, 0.3);
   --diff-hunk-fg: #79c0ff;
+  --diff-meta-fg: #727b8f;
+  --diff-gutter-bg: rgba(255, 255, 255, 0.02);
+  --diff-empty-bg: rgba(255, 255, 255, 0.02);
+  --diff-status-added-fg: #3fb950;
+  --diff-status-added-bg: rgba(46, 160, 67, 0.2);
+  --diff-status-deleted-fg: #ff7070;
+  --diff-status-deleted-bg: rgba(248, 81, 73, 0.22);
+  --diff-status-renamed-fg: #79c0ff;
+  --diff-status-renamed-bg: rgba(88, 166, 255, 0.18);
+  --diff-status-modified-fg: #e8b23e;
+  --diff-status-modified-bg: rgba(234, 179, 8, 0.18);
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
