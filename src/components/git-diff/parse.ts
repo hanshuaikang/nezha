@@ -97,10 +97,17 @@ export function cleanDiffPath(raw: string, projectPath?: string): string {
   const unquoted = unquoteGitPath(raw);
   if (unquoted === "/dev/null") return unquoted;
   const withoutPrefix = unquoted.replace(/^a\//, "").replace(/^b\//, "");
-  if (projectPath && withoutPrefix.startsWith(`${projectPath}/`)) {
-    return withoutPrefix.slice(projectPath.length + 1);
+  if (/(^|\/)nezha-empty-[0-9a-f-]+\.tmp$/i.test(withoutPrefix)) {
+    return "/dev/null";
   }
-  return withoutPrefix;
+  const normalized =
+    projectPath?.startsWith("/") && withoutPrefix.startsWith(`${projectPath.slice(1)}/`)
+      ? `/${withoutPrefix}`
+      : withoutPrefix;
+  if (projectPath && normalized.startsWith(`${projectPath}/`)) {
+    return normalized.slice(projectPath.length + 1);
+  }
+  return normalized;
 }
 
 export function fileName(path: string): string {
