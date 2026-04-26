@@ -278,8 +278,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "toast.initProjectConfigFailed": "Failed to initialize project config: {error}",
     "toast.cancelTaskFailed": "Failed to cancel task: {error}",
     "toast.loadProjectFilesFailed": "Failed to load project file list, @ references unavailable: {error}",
-    "toast.saveProjectsFailed": "保存项目列表失败：{error}",
-    "toast.saveTasksFailed": "保存任务失败（项目 {projectId}）：{error}",
+    "toast.saveProjectsFailed": "Failed to save project list: {error}",
+    "toast.saveTasksFailed": "Failed to save tasks for project {projectId}: {error}",
   },
   zh: {
     "appSettings.title": "应用设置",
