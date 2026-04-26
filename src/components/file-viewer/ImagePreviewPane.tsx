@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertCircle } from "lucide-react";
+import { useI18n } from "../../i18n";
 
 function formatBytes(byteLength: number): string {
   if (byteLength < 1024) return `${byteLength} B`;
@@ -18,6 +19,7 @@ export function ImagePreviewPane({
   mimeType: string;
   byteLength: number;
 }) {
+  const { t } = useI18n();
   const [loadError, setLoadError] = useState(false);
 
   if (loadError) {
@@ -34,7 +36,7 @@ export function ImagePreviewPane({
         }}
       >
         <AlertCircle size={24} strokeWidth={1.5} />
-        <span style={{ fontSize: 12.5 }}>Image preview unavailable</span>
+        <span style={{ fontSize: 12.5 }}>{t("file.imagePreviewUnavailable")}</span>
       </div>
     );
   }

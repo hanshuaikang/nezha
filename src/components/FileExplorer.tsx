@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronRight, ChevronDown, RotateCcw } from "lucide-react";
 import { getFileColor } from "../utils";
 import { useToast } from "./Toast";
+import { useI18n } from "../i18n";
 
 interface FsEntry {
   name: string;
@@ -315,6 +316,7 @@ export function FileExplorer({
   active?: boolean;
   width?: number;
 }) {
+  const { t } = useI18n();
   const [nodes, setNodes] = useState<TreeNode[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -346,10 +348,10 @@ export function FileExplorer({
         await invoke("open_in_system_file_manager", { path, projectPath });
       } catch (error) {
         console.error("Failed to open file in system folder", error);
-        showToast(`Failed to open in system folder: ${String(error)}`);
+        showToast(t("file.failedOpenSystemFolder", { error: String(error) }));
       }
     },
-    [projectPath, showToast],
+    [projectPath, showToast, t],
   );
 
   const copyPath = useCallback(async (event: React.MouseEvent, path: string, withAt: boolean) => {
@@ -529,9 +531,9 @@ export function FileExplorer({
             onPointerDown={(e) => e.stopPropagation()}
           >
             {[
-              { label: "Open in System Folder", action: "open" as const },
-              { label: "Copy full path", withAt: false },
-              { label: "Copy @full path", withAt: true },
+              { label: t("file.openInSystemFolder"), action: "open" as const },
+              { label: t("file.copyFullPath"), withAt: false },
+              { label: t("file.copyAtFullPath"), withAt: true },
             ].map((item) => (
               <button
                 type="button"
@@ -597,11 +599,11 @@ export function FileExplorer({
             flex: 1,
           }}
         >
-          Files
+          {t("file.files")}
         </span>
         <button
           onClick={() => void refresh()}
-          title="Refresh"
+          title={t("common.refresh")}
           style={{
             background: "none",
             border: "none",
@@ -664,7 +666,7 @@ export function FileExplorer({
               textAlign: "center",
             }}
           >
-            Loading...
+            {t("common.loading")}
           </div>
         ) : flat.length === 0 ? (
           <div
@@ -675,7 +677,7 @@ export function FileExplorer({
               textAlign: "center",
             }}
           >
-            Empty directory
+            {t("file.emptyDirectory")}
           </div>
         ) : (
           <div style={{ height: flat.length * ROW_HEIGHT + 12, position: "relative" }}>

@@ -5,6 +5,7 @@ import { AppSettingsDialog } from "./AppSettingsDialog";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { UsagePopover } from "./UsagePopover";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 export function SidebarFooterActions({
@@ -20,6 +21,7 @@ export function SidebarFooterActions({
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
 }) {
+  const { t } = useI18n();
   const [showAppSettings, setShowAppSettings] = useState(false);
 
   return (
@@ -28,14 +30,14 @@ export function SidebarFooterActions({
         <NotificationBell />
         <button
           style={s.sidebarIconBtn}
-          title="App Settings"
+          title={t("appSettings.title")}
           onClick={() => setShowAppSettings(true)}
         >
           <Settings size={14} strokeWidth={1.6} color="var(--text-hint)" />
         </button>
         <button
           style={s.sidebarIconBtn}
-          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          title={isDark ? t("theme.switchToLight") : t("theme.switchToDark")}
           onClick={onToggleTheme}
         >
           {isDark ? (

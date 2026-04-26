@@ -3,6 +3,7 @@ import type { Task, AgentType, PermissionMode } from "../types";
 import { permissionModeLabel } from "../types";
 import { Play, Pencil } from "lucide-react";
 import { TaskEditDialog } from "./task-panel/TaskEditDialog";
+import { useI18n } from "../i18n";
 
 export function TodoTaskView({
   task,
@@ -16,6 +17,7 @@ export function TodoTaskView({
     updates: { prompt: string; agent: AgentType; permissionMode: PermissionMode },
   ) => void;
 }) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
@@ -62,11 +64,11 @@ export function TodoTaskView({
               textTransform: "uppercase",
             }}
           >
-            Pending Task
+            {t("task.pendingTask")}
           </div>
           {!editing && (
             <button
-              title="Edit task"
+              title={t("task.editTask")}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -160,7 +162,7 @@ export function TodoTaskView({
                 onClick={() => onRunTodo(task)}
               >
                 <Play size={11} strokeWidth={2} fill="currentColor" />
-                Run Now
+                {t("task.runNow")}
               </button>
             </div>
           </>

@@ -14,6 +14,7 @@ import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
 import { TaskList } from "./task-panel/TaskList";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 export function TaskPanel({
@@ -57,6 +58,7 @@ export function TaskPanel({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const hasAttention = tasks.some((t) => t.status === "input_required");
 
@@ -67,8 +69,8 @@ export function TaskPanel({
           type="button"
           style={s.taskPanelExpandBtn}
           onClick={onToggleCollapsed}
-          title={hasAttention ? "Show tasks (attention needed)" : "Show tasks"}
-          aria-label={hasAttention ? "Show tasks, attention needed" : "Show tasks"}
+          title={hasAttention ? t("task.showTasksAttention") : t("task.showTasks")}
+          aria-label={hasAttention ? t("task.showTasksAttentionAria") : t("task.showTasks")}
         >
           <PanelLeftOpen size={16} strokeWidth={2} />
           {hasAttention && <span style={s.taskPanelAttentionDot} aria-hidden />}
@@ -82,8 +84,8 @@ export function TaskPanel({
               color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
             }}
             onClick={onNewTask}
-            title="New Task"
-            aria-label="New Task"
+            title={t("task.newTask")}
+            aria-label={t("task.newTask")}
           >
             <Plus size={15} strokeWidth={2.4} />
           </button>
@@ -93,8 +95,8 @@ export function TaskPanel({
             type="button"
             style={s.taskPanelCollapsedSmallBtn}
             onClick={onToggleTheme}
-            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            title={isDark ? t("theme.switchToLight") : t("theme.switchToDark")}
+            aria-label={isDark ? t("theme.switchToLight") : t("theme.switchToDark")}
           >
             {isDark ? <Sun size={14} strokeWidth={1.8} /> : <Moon size={14} strokeWidth={1.8} />}
           </button>
@@ -107,7 +109,7 @@ export function TaskPanel({
     <div style={s.taskPanel}>
       {/* Project header */}
       <div style={s.panelHeader}>
-        <button style={s.backBtn} onClick={onBack} title="Switch project">
+        <button style={s.backBtn} onClick={onBack} title={t("task.switchProject")}>
           <ChevronLeft size={15} strokeWidth={2} />
         </button>
         <ProjectAvatar name={project.name} size={22} />
@@ -116,7 +118,7 @@ export function TaskPanel({
           type="button"
           style={s.panelCollapseBtn}
           onClick={onToggleCollapsed}
-          title="Hide tasks"
+          title={t("task.hideTasks")}
         >
           <PanelLeftClose size={15} strokeWidth={2} />
         </button>
@@ -127,7 +129,7 @@ export function TaskPanel({
         <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         <input
           style={s.panelSearchInput}
-          placeholder="Search tasks..."
+          placeholder={t("task.searchTasks")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -146,11 +148,11 @@ export function TaskPanel({
         onClick={onNewTask}
       >
         <Plus size={14} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>New Task</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{t("task.newTask")}</span>
       </button>
 
       <div style={s.taskActionsRow}>
-        <div style={s.taskActionsMeta}>{tasks.length} tasks</div>
+        <div style={s.taskActionsMeta}>{tasks.length} {t("task.tasks")}</div>
         <button
           type="button"
           style={{
@@ -162,7 +164,7 @@ export function TaskPanel({
           onClick={onDeleteAllTasks}
         >
           <Trash2 size={12} strokeWidth={2.2} />
-          <span>Clear all</span>
+          <span>{t("task.clearAll")}</span>
         </button>
       </div>
 

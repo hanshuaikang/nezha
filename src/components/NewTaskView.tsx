@@ -12,6 +12,7 @@ import {
 import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
+import { useI18n } from "../i18n";
 import claudeGif from "../assets/gif/claude.gif";
 import codexGif from "../assets/gif/codex.gif";
 import s from "../styles";
@@ -54,6 +55,7 @@ export function NewTaskView({
     immediate: boolean;
   }) => void;
 }) {
+  const { t } = useI18n();
   const { showToast } = useToast();
   const [agent, setAgent] = useState<AgentType>("claude");
   const [permMode, setPermMode] = useState<PermissionMode>("ask");
@@ -125,7 +127,7 @@ export function NewTaskView({
       })
       .catch((e: unknown) => {
         showToast(
-          `Failed to load project file list, @ references unavailable: ${String(e)}`,
+          t("toast.loadProjectFilesFailed", { error: String(e) }),
           "warning",
         );
       })
@@ -265,7 +267,7 @@ export function NewTaskView({
           alt=""
           style={s.newTaskClaudeGif}
         />
-        <span style={s.newTaskTitle}>What do you want to build today?</span>
+        <span style={s.newTaskTitle}>{t("newTask.title")}</span>
       </div>
 
       {/* Missing context file warning */}
@@ -274,7 +276,9 @@ export function NewTaskView({
           <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
             <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
-              No{" "}
+              {t("newTask.instructionsMissing", {
+                file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+              }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]}
               <code
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -286,11 +290,14 @@ export function NewTaskView({
               >
                 {agent === "claude" ? "CLAUDE.md" : "AGENTS.md"}
               </code>{" "}
-              found in this project.
+              {t("newTask.instructionsMissing", {
+                file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+              }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[1]}
             </span>{" "}
-            {agent === "claude"
-              ? "Add a CLAUDE.md to the project root to give Claude Code context about your codebase, conventions, and preferences — it will follow them on every task."
-              : "Add an AGENTS.md to the project root to give Codex context about your codebase, conventions, and preferences — it will follow them on every task."}
+            {t("newTask.addInstructions", {
+              file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+              agent: agent === "claude" ? "Claude Code" : "Codex",
+            })}
           </div>
         </div>
       )}

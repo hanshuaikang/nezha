@@ -8,6 +8,7 @@ import { SessionView } from "./SessionView";
 import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
+import { useI18n } from "../i18n";
 import s from "../styles";
 import { X, RotateCcw, Pencil } from "lucide-react";
 
@@ -64,6 +65,7 @@ export function RunningView({
   onRename: (name: string) => void;
   isDark: boolean;
 }) {
+  const { t } = useI18n();
   const isActive =
     task.status === "pending" || task.status === "running" || task.status === "input_required";
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
@@ -190,7 +192,7 @@ export function RunningView({
           {sessionPath && !editingTitle && (
             <button
               type="button"
-              title="Rename task"
+              title={t("task.renameTask")}
               style={{
                 ...s.taskRenameBtn,
                 flexShrink: 0,
@@ -210,13 +212,13 @@ export function RunningView({
         {isActive && (
           <button style={s.cancelBtn} onClick={onCancel}>
             <X size={12} strokeWidth={2.5} />
-            <span>Cancel</span>
+            <span>{t("running.cancel")}</span>
           </button>
         )}
         {!isActive && onResume && (task.claudeSessionId || task.codexSessionId) && (
           <button style={s.resumeBtn} onClick={onResume}>
             <RotateCcw size={12} strokeWidth={2.5} />
-            <span>Resume</span>
+            <span>{t("running.resume")}</span>
           </button>
         )}
       </div>
@@ -268,7 +270,7 @@ export function RunningView({
               whiteSpace: "nowrap",
             }}
           >
-            Session file: {shortenPath(sessionPath)}
+            {t("running.sessionFile", { path: shortenPath(sessionPath) })}
           </div>
         )}
         {metrics && (
@@ -280,7 +282,7 @@ export function RunningView({
               flexWrap: "wrap" as const,
             }}
           >
-            <MetricPill label="Duration" value={formatDuration(metrics.duration_secs)} />
+            <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
           </div>
         )}
       </div>
@@ -320,10 +322,10 @@ export function RunningView({
           <StatusIcon status={task.status} />
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {task.status === "done"
-              ? "Task completed"
+              ? t("task.completed")
               : task.status === "failed"
-                ? (task.failureReason ?? "Task failed")
-                : "Task cancelled"}
+                ? (task.failureReason ?? t("task.failed"))
+                : t("task.cancelled")}
           </span>
         </div>
       )}

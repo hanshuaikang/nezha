@@ -42,10 +42,15 @@ export const PERM_LABELS: Record<PermissionMode, string> = {
   full_access: "Full Access",
 };
 
-export function permissionModeLabel(mode: PermissionMode, agent?: AgentType): string {
+export function permissionModeLabel(
+  mode: PermissionMode,
+  agent?: AgentType,
+  askLabel = PERM_LABELS.ask,
+): string {
   if (agent === "codex" && mode === "auto_edit") {
     return "Auto Mode";
   }
+  if (mode === "ask") return askLabel;
   return PERM_LABELS[mode];
 }
 

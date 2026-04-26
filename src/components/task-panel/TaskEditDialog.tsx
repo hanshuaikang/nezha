@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { AgentType, PermissionMode } from "../../types";
 import { permissionModeLabel } from "../../types";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
 
 const AGENTS: AgentType[] = ["claude", "codex"];
@@ -20,6 +21,7 @@ export function TaskEditDialog({
   onSave: (updates: { prompt: string; agent: AgentType; permissionMode: PermissionMode }) => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   const [editPrompt, setEditPrompt] = useState(initialPrompt);
   const [editAgent, setEditAgent] = useState<AgentType>(initialAgent);
   const [editPermMode, setEditPermMode] = useState<PermissionMode>(initialPermMode);
@@ -79,7 +81,7 @@ export function TaskEditDialog({
           onClick={onCancel}
         >
           <X size={11} strokeWidth={2} />
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           style={{
@@ -105,7 +107,7 @@ export function TaskEditDialog({
             });
           }}
         >
-          Save
+          {t("common.save")}
         </button>
       </div>
     </>

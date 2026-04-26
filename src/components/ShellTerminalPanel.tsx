@@ -14,6 +14,7 @@ import {
   createSmartWriter,
 } from "./terminalShared";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
+import { useI18n } from "../i18n";
 import "@xterm/xterm/css/xterm.css";
 
 interface ShellOutputEvent {
@@ -235,6 +236,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     { projectPath, projectId, isActive = true, onClose, isDark, onReady, height = 240, onResizeStart },
     ref,
   ) {
+    const { t } = useI18n();
     const initialShellRef = useRef<ShellSession | null>(null);
     if (!initialShellRef.current) {
       initialShellRef.current = createShellSession(projectId, 1);
@@ -327,14 +329,14 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           }}
         >
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-            Terminal
+            {t("terminal.title")}
           </span>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
             {shells.length}/{MAX_SHELLS}
           </span>
           <button
             onClick={onClose}
-            title="Close terminals"
+            title={t("terminal.closeTerminals")}
             style={{
               background: "none",
               border: "none",
@@ -390,7 +392,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               <button
                 onClick={handleAddShell}
                 disabled={shells.length >= MAX_SHELLS}
-                title={shells.length >= MAX_SHELLS ? "Terminal limit reached" : "New terminal"}
+                title={shells.length >= MAX_SHELLS ? t("terminal.limitReached") : t("terminal.newTerminal")}
                 style={{
                   width: 20,
                   height: 20,
@@ -452,7 +454,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                         event.stopPropagation();
                         handleCloseShell(shell.id);
                       }}
-                      title={`Close ${shell.title}`}
+                      title={t("terminal.closeShell", { title: shell.title })}
                       style={{
                         background: "none",
                         border: "none",

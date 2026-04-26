@@ -11,6 +11,7 @@ import {
   Check,
 } from "lucide-react";
 import { getGitStatusColor } from "../utils";
+import { useI18n } from "../i18n";
 
 interface GitCommit {
   hash: string;
@@ -67,6 +68,7 @@ function fileDir(path: string): string {
 }
 
 export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 280 }: Props) {
+  const { t } = useI18n();
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GitRemoteCounts>({
     ahead: 0,
@@ -248,13 +250,13 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)", flex: 1 }}>
-            History
+            {t("git.history")}
           </span>
 
           <button
             onClick={handlePull}
             disabled={pulling}
-            title="Pull"
+            title={t("git.pull")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -269,12 +271,12 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               opacity: pulling ? 0.6 : 1,
             }}
           >
-            Pull ↓{remoteCounts.behind}
+            {t("git.pull")} ↓{remoteCounts.behind}
           </button>
           <button
             onClick={handlePush}
             disabled={pushing}
-            title="Push"
+            title={t("git.push")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -292,15 +294,15 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             {pushing ? (
               <>
                 <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                Pushing…
+                {t("git.pushing")}
               </>
             ) : (
-              <>Push ↑{remoteCounts.ahead}</>
+              <>{t("git.push")} ↑{remoteCounts.ahead}</>
             )}
           </button>
           <button
             onClick={() => refresh()}
-            title="Refresh"
+            title={t("common.refresh")}
             style={{
               background: "none",
               border: "none",
@@ -413,7 +415,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
           <input
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Search commits"
+            placeholder={t("git.searchCommits")}
             style={{
               flex: 1,
               border: "none",
@@ -461,7 +463,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               textAlign: "center",
             }}
           >
-            Loading…
+            {t("common.loadingEllipsis")}
           </div>
         )}
         {commits.map((commit) => {
@@ -484,7 +486,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               textAlign: "center",
             }}
           >
-            No commits found
+            {t("git.noCommitsFound")}
           </div>
         )}
       </div>
@@ -678,10 +680,15 @@ function CommitDetailPanel({
   loading: boolean;
   onFileClick?: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
 
   if (loading) {
-    return <div style={{ padding: 16, fontSize: 12, color: "var(--text-hint)" }}>Loading…</div>;
+    return (
+      <div style={{ padding: 16, fontSize: 12, color: "var(--text-hint)" }}>
+        {t("common.loadingEllipsis")}
+      </div>
+    );
   }
 
   return (
@@ -710,7 +717,9 @@ function CommitDetailPanel({
           {detail.message}
         </div>
         <div style={{ fontSize: 11, color: "var(--text-hint)" }}>
-          {detail.files.length} file{detail.files.length !== 1 ? "s" : ""} changed{" "}
+          {t(detail.files.length === 1 ? "common.fileChanged" : "common.filesChanged", {
+            count: detail.files.length,
+          })}{" "}
           <span style={{ color: "var(--diff-add-fg)" }}>+{detail.total_additions}</span>{" "}
           <span style={{ color: "var(--diff-delete-fg)" }}>-{detail.total_deletions}</span>
         </div>

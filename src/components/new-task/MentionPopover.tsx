@@ -1,6 +1,7 @@
 import { FileCode2, FileText, FolderOpen, ChevronRight } from "lucide-react";
 import type { Project } from "../../types";
 import { CODE_EXTS } from "../../utils";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
 
 export interface FileEntry {
@@ -39,6 +40,7 @@ export function MentionPopover({
   onSelectProject: (project: Project) => void;
   onSetMentionIndex: (index: number) => void;
 }) {
+  const { t } = useI18n();
   const fileItems = mentionItems.filter(
     (m): m is Extract<MentionItem, { kind: "file" }> => m.kind === "file",
   );
@@ -55,7 +57,7 @@ export function MentionPopover({
           <span>{activeCrossProject.name}</span>
           <ChevronRight size={10} style={{ opacity: 0.5 }} />
           <span style={{ opacity: 0.6 }}>
-            {mentionSearch.substring(mentionSearch.indexOf("/") + 1) || "all files"}
+            {mentionSearch.substring(mentionSearch.indexOf("/") + 1) || t("mention.allFiles")}
           </span>
         </div>
       )}
@@ -63,7 +65,7 @@ export function MentionPopover({
       {/* Loading */}
       {(filesLoading && !isCrossMode) || isCrossLoading ? (
         <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-hint)" }}>
-          Loading files…
+          {t("mention.loadingFiles")}
         </div>
       ) : null}
 
@@ -97,14 +99,18 @@ export function MentionPopover({
         !isCrossMode &&
         projectItems.length === 0 && (
           <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-hint)" }}>
-            {mentionSearch ? `No results for "${mentionSearch}"` : "Start typing to search files"}
+            {mentionSearch
+              ? t("mention.noResults", { query: mentionSearch })
+              : t("mention.startTyping")}
           </div>
         )}
       {!isCrossLoading && isCrossMode && fileItems.length === 0 && (
         <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-hint)" }}>
           {mentionSearch.substring(mentionSearch.indexOf("/") + 1)
-            ? `No files matching "${mentionSearch.substring(mentionSearch.indexOf("/") + 1)}"`
-            : "Start typing to search files"}
+            ? t("mention.noFilesMatching", {
+                query: mentionSearch.substring(mentionSearch.indexOf("/") + 1),
+              })
+            : t("mention.startTyping")}
         </div>
       )}
 
@@ -116,7 +122,7 @@ export function MentionPopover({
           )}
           <div style={s.mentionSeparator}>
             <FolderOpen size={10} />
-            <span>Other Projects</span>
+            <span>{t("mention.otherProjects")}</span>
           </div>
           {projectItems.map((item, pi) => {
             const globalIdx = fileItems.length + pi;

@@ -9,6 +9,7 @@ import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
 import { useTerminalManager } from "./hooks/useTerminalManager";
+import { useI18n } from "./i18n";
 import s from "./styles";
 import "./App.css";
 
@@ -20,20 +21,29 @@ function deriveProjectName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-function persistProjects(projects: Project[], onError: (msg: string) => void) {
+function persistProjects(
+  projects: Project[],
+  onError: (msg: string) => void,
+  formatError: (error: string) => string,
+) {
   invoke("save_projects", { projects }).catch((e: unknown) => {
     console.error(e);
-    onError(`保存项目列表失败：${String(e)}`);
+    onError(formatError(String(e)));
   });
 }
 
-function persistProjectTasks(projectId: string, allTasks: Task[], onError: (msg: string) => void) {
+function persistProjectTasks(
+  projectId: string,
+  allTasks: Task[],
+  onError: (msg: string) => void,
+  formatError: (error: string, projectId: string) => string,
+) {
   invoke("save_project_tasks", {
     projectId,
     tasks: allTasks.filter((t) => t.projectId === projectId),
   }).catch((e: unknown) => {
     console.error(e);
-    onError(`保存任务失败（项目 ${projectId}）：${String(e)}`);
+    onError(formatError(String(e), projectId));
   });
 }
 
@@ -57,6 +67,7 @@ function getInitialThemeMode(): ThemeMode {
 
 function App() {
   const { showToast } = useToast();
+  const { t } = useI18n();
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
@@ -69,6 +80,15 @@ function App() {
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
 
   const tm = useTerminalManager();
+
+  const formatSaveProjectsError = useCallback(
+    (error: string) => t("toast.saveProjectsFailed", { error }),
+    [t],
+  );
+  const formatSaveTasksError = useCallback(
+    (error: string, projectId: string) => t("toast.saveTasksFailed", { error, projectId }),
+    [t],
+  );
 
   const mountProject = useCallback((projectId: string) => {
     setMountedProjectIds((prev) => (prev.includes(projectId) ? prev : [...prev, projectId]));
@@ -177,14 +197,14 @@ function App() {
     const project: Project = { id: `${Date.now()}`, name, path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
       const next = [project, ...prev.filter((p) => p.path !== path)];
-      persistProjects(next, showToast);
+      persistProjects(next, showToast, formatSaveProjectsError);
       return next;
     });
     setActiveProject(project);
     mountProject(project.id);
     updateProjectView(project.id, createDefaultProjectViewState());
     invoke("init_project_config", { projectPath: path }).catch((e: unknown) => {
-      showToast(`Failed to initialize project config: ${String(e)}`, "warning");
+      showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
     });
   }
 
@@ -192,13 +212,13 @@ function App() {
     const updated = { ...project, lastOpenedAt: Date.now() };
     setProjects((prev) => {
       const next = prev.map((p) => (p.id === project.id ? updated : p));
-      persistProjects(next, showToast);
+      persistProjects(next, showToast, formatSaveProjectsError);
       return next;
     });
     setActiveProject(updated);
     mountProject(updated.id);
     invoke("init_project_config", { projectPath: project.path }).catch((e: unknown) => {
-      showToast(`Failed to initialize project config: ${String(e)}`, "warning");
+      showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
     });
   }
 
@@ -250,7 +270,7 @@ function App() {
     };
     setTasks((prev) => {
       const next = [task, ...prev];
-      persistProjectTasks(task.projectId, next, showToast);
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
     setActiveProject(project);
@@ -273,7 +293,7 @@ function App() {
           ? { ...t, status: "pending" as TaskStatus, attentionRequestedAt: undefined }
           : t,
       );
-      persistProjectTasks(task.projectId, next, showToast);
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
     tm.resetTaskTerminal(task.id);
@@ -285,7 +305,7 @@ function App() {
     const task = tasks.find((t) => t.id === taskId);
     const project = projects.find((p) => p.id === task?.projectId);
     invoke("cancel_task", { taskId, projectPath: project?.path ?? "" }).catch((e: unknown) => {
-      showToast(`Failed to cancel task: ${String(e)}`);
+      showToast(t("toast.cancelTaskFailed", { error: String(e) }));
     });
   }
 
@@ -303,7 +323,7 @@ function App() {
           ? { ...t, status: "pending" as TaskStatus, attentionRequestedAt: undefined }
           : t,
       );
-      persistProjectTasks(task.projectId, next, showToast);
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
     tm.resetTaskTerminal(taskId);
@@ -340,14 +360,16 @@ function App() {
           const proj = projects.find((p) => p.id === task.projectId);
           invoke("cancel_task", { taskId: task.id, projectPath: proj?.path ?? "" }).catch(
             (e: unknown) => {
-              showToast(`Failed to cancel task: ${String(e)}`);
+              showToast(t("toast.cancelTaskFailed", { error: String(e) }));
             },
           );
         });
 
       const next = prev.filter((task) => !toDelete.has(task.id));
       const affectedProjectIds = new Set(deletingTasks.map((t) => t.projectId));
-      affectedProjectIds.forEach((pid) => persistProjectTasks(pid, next, showToast));
+      affectedProjectIds.forEach((pid) =>
+        persistProjectTasks(pid, next, showToast, formatSaveTasksError),
+      );
       return next;
     });
 
@@ -371,13 +393,11 @@ function App() {
   async function handleDeleteTask(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
-    const ok = await confirm(
-      `Delete task "${task.prompt.slice(0, 100)}${task.prompt.length > 100 ? "..." : ""}"?`,
-      {
-        title: "Delete Task",
-        kind: "warning",
-      },
-    );
+    const promptPreview = `${task.prompt.slice(0, 100)}${task.prompt.length > 100 ? "..." : ""}`;
+    const ok = await confirm(t("task.deletePrompt", { prompt: promptPreview }), {
+      title: t("task.deleteTitle"),
+      kind: "warning",
+    });
     if (!ok) return;
     deleteTasks([taskId]);
   }
@@ -387,8 +407,8 @@ function App() {
       .filter((task) => task.projectId === project.id)
       .map((task) => task.id);
     if (projectTaskIds.length === 0) return;
-    const ok = await confirm(`Delete all ${projectTaskIds.length} tasks in ${project.name}?`, {
-      title: "Clear Tasks",
+    const ok = await confirm(t("task.clearPrompt", { count: projectTaskIds.length, project: project.name }), {
+      title: t("task.clearTitle"),
       kind: "warning",
     });
     if (!ok) return;
@@ -400,7 +420,7 @@ function App() {
       const task = prev.find((t) => t.id === taskId);
       if (!task) return prev;
       const next = prev.map((t) => (t.id === taskId ? { ...t, starred: !t.starred } : t));
-      persistProjectTasks(task.projectId, next, showToast);
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
   }
@@ -410,7 +430,7 @@ function App() {
       const task = prev.find((t) => t.id === taskId);
       if (!task) return prev;
       const next = prev.map((t) => (t.id === taskId ? { ...t, name: name || undefined } : t));
-      persistProjectTasks(task.projectId, next, showToast);
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
   }
@@ -423,7 +443,7 @@ function App() {
       const task = prev.find((t) => t.id === taskId);
       if (!task || task.status !== "todo") return prev;
       const next = prev.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
-      persistProjectTasks(task.projectId, next, showToast);
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
   }
@@ -431,8 +451,8 @@ function App() {
   async function handleDeleteProject(projectId: string) {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
-    const ok = await confirm(`Delete project "${project.name}" and all its task records?`, {
-      title: "Delete Project",
+    const ok = await confirm(t("task.deleteProjectPrompt", { project: project.name }), {
+      title: t("task.deleteProjectTitle"),
       kind: "warning",
     });
     if (!ok) return;
@@ -440,7 +460,7 @@ function App() {
     deleteTasks(projectTaskIds);
     setProjects((prev) => {
       const next = prev.filter((p) => p.id !== projectId);
-      persistProjects(next, showToast);
+      persistProjects(next, showToast, formatSaveProjectsError);
       return next;
     });
     setMountedProjectIds((prev) => prev.filter((id) => id !== projectId));
@@ -474,7 +494,7 @@ function App() {
 
       if (changed) {
         const task = next.find((t) => t.id === taskId);
-        if (task) persistProjectTasks(task.projectId, next, showToast);
+        if (task) persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       }
       return changed ? next : prev;
     });
@@ -500,7 +520,7 @@ function App() {
 
       if (changed) {
         const task = next.find((t) => t.id === taskId);
-        if (task) persistProjectTasks(task.projectId, next, showToast);
+        if (task) persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       }
       return changed ? next : prev;
     });

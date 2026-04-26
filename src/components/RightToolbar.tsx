@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { IconButton } from "./IconButton";
 import { Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
+import { useI18n } from "../i18n";
 
 export function RightToolbar({
   activePanel,
@@ -15,20 +16,21 @@ export function RightToolbar({
   onToggleTerminal: () => void;
   onOpenSettings: () => void;
 }) {
+  const { t } = useI18n();
   const buttons: Array<{
     key: "files" | "git-changes" | "git-history";
     icon: ReactNode;
     title: string;
   }> = [
-    { key: "files", icon: <Folder size={17} />, title: "File Explorer" },
-    { key: "git-changes", icon: <GitBranch size={17} />, title: "Git Changes" },
-    { key: "git-history", icon: <History size={17} />, title: "Git History" },
+    { key: "files", icon: <Folder size={17} />, title: t("toolbar.fileExplorer") },
+    { key: "git-changes", icon: <GitBranch size={17} />, title: t("toolbar.gitChanges") },
+    { key: "git-history", icon: <History size={17} />, title: t("toolbar.gitHistory") },
   ];
 
-  const placeholders = [{ icon: <Search size={17} />, title: "Search (coming soon)" }];
+  const placeholders = [{ icon: <Search size={17} />, title: t("toolbar.searchComingSoon") }];
 
   const footerItems = [
-    { icon: <Settings size={17} />, title: "Settings", disabled: false, onClick: onOpenSettings },
+    { icon: <Settings size={17} />, title: t("settings.title"), disabled: false, onClick: onOpenSettings },
   ];
 
   return (
@@ -59,7 +61,7 @@ export function RightToolbar({
 
       <IconButton
         icon={<Terminal size={17} />}
-        title="Terminal"
+        title={t("terminal.title")}
         active={terminalActive}
         onClick={onToggleTerminal}
       />
