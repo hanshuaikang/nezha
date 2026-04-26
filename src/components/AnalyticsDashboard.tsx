@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Project } from "../types";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 interface DayStats {
@@ -33,8 +34,6 @@ interface WeeklyAnalytics {
   projects: ProjectAnalytics[];
 }
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 function heatmapColor(count: number): string {
   if (count === 0) return "var(--bg-card)";
   if (count === 1) return "color-mix(in srgb, var(--accent) 22%, var(--bg-card))";
@@ -57,9 +56,9 @@ function formatDuration(secs: number): string {
   return `${Math.round(secs)}s`;
 }
 
-function getDayLabel(dateStr: string): string {
+function getDayLabel(dateStr: string, t: (key: string) => string): string {
   const d = new Date(dateStr + "T00:00:00");
-  return DAY_LABELS[d.getDay()];
+  return t(["day.sun", "day.mon", "day.tue", "day.wed", "day.thu", "day.fri", "day.sat"][d.getDay()]);
 }
 
 function isToday(dateStr: string): boolean {
@@ -76,6 +75,7 @@ function StatCard({ value, label }: { value: string; label: string }) {
 }
 
 export function AnalyticsDashboard({ projects: _projects }: { projects: Project[] }) {
+  const { t } = useI18n();
   const [data, setData] = useState<WeeklyAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +95,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
   if (loading) {
     return (
       <div style={{ ...s.analyticsPane, alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading...</div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{t("common.loading")}</div>
       </div>
     );
   }
@@ -103,7 +103,9 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
   if (error || !data) {
     return (
       <div style={{ ...s.analyticsPane, alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{error ?? "No data"}</div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          {error ?? t("common.noData")}
+        </div>
       </div>
     );
   }
@@ -117,8 +119,8 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
 
   return (
     <div style={s.analyticsPane}>
-      <div style={s.analyticsHeader}>Last 7 Days</div>
-      <div style={s.analyticsSubtitle}>Vibecoding activity overview</div>
+      <div style={s.analyticsHeader}>{t("analytics.last7Days")}</div>
+      <div style={s.analyticsSubtitle}>{t("analytics.subtitle")}</div>
 
       {/* Heatmap */}
       <div style={s.heatmapRow}>
@@ -134,7 +136,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
                 boxShadow: isToday(day.date) ? "0 0 0 2px var(--accent)" : undefined,
                 transform: day.task_count > 0 ? "scale(1.04)" : undefined,
               }}
-              title={`${day.date}: ${day.task_count} tasks`}
+              title={`${day.date}: ${day.task_count} ${t("task.tasks")}`}
             />
             <div
               style={{
@@ -143,7 +145,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
                 color: isToday(day.date) ? "var(--text-secondary)" : "var(--text-hint)",
               }}
             >
-              {getDayLabel(day.date)}
+              {getDayLabel(day.date, t)}
             </div>
             <div
               style={{
@@ -160,7 +162,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
 
       {/* Legend */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-        <span style={{ fontSize: 11, color: "var(--text-hint)" }}>Less</span>
+        <span style={{ fontSize: 11, color: "var(--text-hint)" }}>{t("analytics.less")}</span>
         {[0, 1, 3, 5, 8].map((n) => (
           <div
             key={n}
@@ -173,33 +175,33 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
             }}
           />
         ))}
-        <span style={{ fontSize: 11, color: "var(--text-hint)" }}>More</span>
+        <span style={{ fontSize: 11, color: "var(--text-hint)" }}>{t("analytics.more")}</span>
       </div>
 
       <div style={s.analyticsDivider} />
 
       {/* Stat cards */}
       <div style={s.statGrid}>
-        <StatCard value={String(data.total_tasks)} label="Total Tasks" />
-        <StatCard value={`${successRate}%`} label="Success Rate" />
-        <StatCard value={formatTokens(totalTokens)} label="Total Tokens" />
-        <StatCard value={String(data.total_tool_calls)} label="Tool Calls" />
+        <StatCard value={String(data.total_tasks)} label={t("analytics.totalTasks")} />
+        <StatCard value={`${successRate}%`} label={t("analytics.successRate")} />
+        <StatCard value={formatTokens(totalTokens)} label={t("analytics.totalTokens")} />
+        <StatCard value={String(data.total_tool_calls)} label={t("analytics.toolCalls")} />
       </div>
 
       {/* Agent + project row */}
       <div style={s.analyticsRow}>
         {/* Agent distribution */}
         <div style={s.analyticsCard}>
-          <div style={s.analyticsCardTitle}>Agent Distribution</div>
+          <div style={s.analyticsCardTitle}>{t("analytics.agentDistribution")}</div>
           {totalAgents === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text-hint)" }}>No data</div>
+            <div style={{ fontSize: 12, color: "var(--text-hint)" }}>{t("common.noData")}</div>
           ) : (
             <div style={s.agentBarWrap}>
               <div style={s.agentBarRow}>
                 <div style={s.agentBarMeta}>
                   <span>Claude Code</span>
                   <span>
-                    {data.claude_tasks} tasks ({claudePct}%)
+                    {data.claude_tasks} {t("task.tasks")} ({claudePct}%)
                   </span>
                 </div>
                 <div style={s.agentBarTrack}>
@@ -216,7 +218,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
                 <div style={s.agentBarMeta}>
                   <span>Codex</span>
                   <span>
-                    {data.codex_tasks} tasks ({codexPct}%)
+                    {data.codex_tasks} {t("task.tasks")} ({codexPct}%)
                   </span>
                 </div>
                 <div style={s.agentBarTrack}>
@@ -227,7 +229,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
               </div>
               {data.total_duration_secs > 0 && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
-                  Total duration:{" "}
+                  {t("analytics.totalDuration")}{" "}
                   <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>
                     {formatDuration(data.total_duration_secs)}
                   </span>
@@ -239,9 +241,9 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
 
         {/* Project ranking */}
         <div style={s.analyticsCard}>
-          <div style={s.analyticsCardTitle}>Project Ranking</div>
+          <div style={s.analyticsCardTitle}>{t("analytics.projectRanking")}</div>
           {data.projects.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text-hint)" }}>No data</div>
+            <div style={{ fontSize: 12, color: "var(--text-hint)" }}>{t("common.noData")}</div>
           ) : (
             <div style={s.projectRankList}>
               {data.projects.slice(0, 5).map((p, i) => {

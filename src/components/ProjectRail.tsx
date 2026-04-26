@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Plus, ChevronsRight } from "lucide-react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
+import { useI18n } from "../i18n";
 
 type ProjectStatus = "attention" | "running" | null;
 
@@ -92,6 +93,7 @@ function ProjectDrawer({
   onSwitch: (p: Project) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const drawerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,7 +135,7 @@ function ProjectDrawer({
           marginBottom: 4,
         }}
       >
-        Projects
+        {t("welcome.projects")}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "4px 8px 8px" }}>
         {projects.map((project) => {
@@ -219,6 +221,7 @@ export function ProjectRail({
   onSwitch: (project: Project) => void;
   onOpen: () => void;
 }) {
+  const { t } = useI18n();
   const [addHov, setAddHov] = useState(false);
   const [expandHov, setExpandHov] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -257,7 +260,7 @@ export function ProjectRail({
       <div style={{ flex: 1 }} />
 
       <button
-        title="Show all projects"
+        title={t("project.showAllProjects")}
         onClick={() => setDrawerOpen((v) => !v)}
         onMouseEnter={() => setExpandHov(true)}
         onMouseLeave={() => setExpandHov(false)}
@@ -290,7 +293,7 @@ export function ProjectRail({
       </button>
 
       <button
-        title="Open project"
+        title={t("welcome.openProject")}
         onClick={onOpen}
         onMouseEnter={() => setAddHov(true)}
         onMouseLeave={() => setAddHov(false)}

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Search, Plus, ChevronDown, X, Tag, Check, GitFork, GitBranch } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import * as Popover from "@radix-ui/react-popover";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
 
 interface GitBranchInfo {
@@ -21,6 +22,7 @@ function BranchDialog({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { t } = useI18n();
   const currentBranch = branches.find((b) => b.current);
   const [branchName, setBranchName] = useState("");
   const [fromBranch, setFromBranch] = useState(currentBranch?.name ?? "");
@@ -85,7 +87,7 @@ function BranchDialog({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <GitBranch size={16} strokeWidth={2} color="var(--accent)" />
-            <span style={s.branchDialogTitle}>Create Branch</span>
+            <span style={s.branchDialogTitle}>{t("branch.createBranch")}</span>
           </div>
           <button style={s.modalCloseBtn} onClick={onClose}>
             <X size={15} />
@@ -95,7 +97,7 @@ function BranchDialog({
         <div>
           <label style={{ ...s.modalLabel, display: "flex", alignItems: "center", gap: 5 }}>
             <Tag size={12} strokeWidth={2} color="var(--text-hint)" />
-            Branch name
+            {t("branch.branchName")}
           </label>
           <input
             style={s.branchInput}
@@ -109,7 +111,7 @@ function BranchDialog({
         <div>
           <label style={{ ...s.modalLabel, display: "flex", alignItems: "center", gap: 5 }}>
             <GitFork size={12} strokeWidth={2} color="var(--text-hint)" />
-            Based on
+            {t("branch.basedOn")}
           </label>
           <Popover.Root open={popoverOpen} onOpenChange={setPopoverOpen}>
             <Popover.Trigger asChild>
@@ -123,7 +125,7 @@ function BranchDialog({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {fromBranch || "Select branch…"}
+                  {fromBranch || t("branch.selectBranch")}
                 </span>
                 <ChevronDown
                   size={13}
@@ -150,7 +152,7 @@ function BranchDialog({
                   />
                   <input
                     className="branch-popover-search-input"
-                    placeholder="Search branches…"
+                    placeholder={t("branch.searchBranches")}
                     value={branchSearch}
                     onChange={(e) => setBranchSearch(e.target.value)}
                     onKeyDown={(e) => e.stopPropagation()}
@@ -165,7 +167,7 @@ function BranchDialog({
                 <div className="branch-popover-list">
                   {localBranches.length > 0 && (
                     <>
-                      <div className="branch-popover-group-label">Local</div>
+                      <div className="branch-popover-group-label">{t("branch.local")}</div>
                       {localBranches.map((b) => (
                         <button
                           key={b.name}
@@ -180,7 +182,7 @@ function BranchDialog({
                           />
                           <span className="branch-popover-item-name">
                             {b.name}
-                            {b.current ? " (current)" : ""}
+                            {b.current ? t("branch.current") : ""}
                           </span>
                           {fromBranch === b.name && (
                             <Check
@@ -232,7 +234,7 @@ function BranchDialog({
                         textAlign: "center",
                       }}
                     >
-                      No branches found
+                      {t("branch.noBranchesFound")}
                     </div>
                   )}
                 </div>
@@ -245,7 +247,7 @@ function BranchDialog({
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button style={s.modalCancelBtn} onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             style={{
@@ -256,7 +258,7 @@ function BranchDialog({
             disabled={!branchName.trim() || loading}
             onClick={handleCreate}
           >
-            {loading ? "Creating…" : "Create"}
+            {loading ? t("branch.creating") : t("branch.create")}
           </button>
         </div>
       </div>
@@ -271,6 +273,7 @@ export function BranchBar({
   projectPath: string;
   active?: boolean;
 }) {
+  const { t } = useI18n();
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [showDialog, setShowDialog] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -377,7 +380,7 @@ export function BranchBar({
               background: pickerOpen ? "var(--bg-hover)" : "var(--bg-card)",
               cursor: "pointer",
             }}
-            title="Switch branch"
+            title={t("branch.switchBranch")}
           >
             <GitBranch
               size={12}
@@ -385,7 +388,7 @@ export function BranchBar({
               color="var(--text-muted)"
               style={{ flexShrink: 0 }}
             />
-            <span style={s.branchBarName}>{currentBranch?.name ?? "detached HEAD"}</span>
+            <span style={s.branchBarName}>{currentBranch?.name ?? t("branch.detachedHead")}</span>
             <ChevronDown
               size={11}
               strokeWidth={2}
@@ -411,7 +414,7 @@ export function BranchBar({
               />
               <input
                 className="branch-popover-search-input"
-                placeholder="Switch to branch…"
+                placeholder={t("branch.switchToBranch")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => e.stopPropagation()}
@@ -428,7 +431,7 @@ export function BranchBar({
             <div className="branch-popover-list">
               {localBranches.length > 0 && (
                 <>
-                  <div className="branch-popover-group-label">Local</div>
+                  <div className="branch-popover-group-label">{t("branch.local")}</div>
                   {localBranches.map((b) => (
                     <button
                       key={b.name}
@@ -502,7 +505,7 @@ export function BranchBar({
                     textAlign: "center",
                   }}
                 >
-                  No branches found
+                  {t("branch.noBranchesFound")}
                 </div>
               )}
             </div>
@@ -532,7 +535,7 @@ export function BranchBar({
               }}
             >
               <Plus size={12} strokeWidth={2.5} color="var(--accent)" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: "var(--accent)" }}>New branch…</span>
+              <span style={{ fontSize: 12, color: "var(--accent)" }}>{t("branch.newBranch")}</span>
             </button>
           </Popover.Content>
         </Popover.Portal>

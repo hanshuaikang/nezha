@@ -2,6 +2,7 @@ import { useRef, useCallback } from "react";
 import type { Project } from "../../types";
 import { CODE_EXTS } from "../../utils";
 import type { FileEntry, CrossProjectRef, MentionItem } from "./MentionPopover";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
 
 const FILE_CODE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/></svg>`;
@@ -175,6 +176,7 @@ export function PromptEditor({
   onSetMentionIndex: (index: number) => void;
   onSubmit: (immediate: boolean) => void;
 }) {
+  const { t } = useI18n();
   const selectFile = useCallback(
     (file: FileEntry, crossProject?: CrossProjectRef) => {
       const editor = editorRef.current;
@@ -331,7 +333,7 @@ export function PromptEditor({
             fontFamily: "var(--font-ui)",
           }}
         >
-          Describe your task… type @ to mention a file
+          {t("newTask.promptPlaceholder")}
         </div>
       )}
       <div

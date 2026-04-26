@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import { marked } from "marked";
+import { useI18n } from "../i18n";
 
 interface SessionContent {
   type: "text" | "tool_use" | "thinking";
@@ -80,6 +81,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
 }
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   return (
     <div style={{ marginBottom: 6 }}>
@@ -99,7 +101,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
         }}
       >
         {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        <span>Thinking…</span>
+        <span>{t("session.thinking")}</span>
       </button>
       {expanded && (
         <div
@@ -228,6 +230,7 @@ function MessageBlock({ message }: { message: SessionMessage }) {
 }
 
 export function SessionView({ sessionPath }: { sessionPath: string }) {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -258,17 +261,17 @@ export function SessionView({ sessionPath }: { sessionPath: string }) {
     >
       {loading && (
         <div style={{ color: "var(--text-hint)", fontSize: 13, padding: "12px 0" }}>
-          Loading session…
+          {t("session.loading")}
         </div>
       )}
       {error && (
         <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "12px 0" }}>
-          Unable to load session: {error}
+          {t("session.unableToLoad", { error })}
         </div>
       )}
       {!loading && !error && messages.length === 0 && (
         <div style={{ color: "var(--text-hint)", fontSize: 13, padding: "12px 0" }}>
-          No messages found in session file.
+          {t("session.noMessages")}
         </div>
       )}
       {messages.map((msg, i) => (

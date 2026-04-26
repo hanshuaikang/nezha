@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { Task } from "../../types";
 import { TaskListItem } from "./TaskListItem";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
 
 export function TaskList({
@@ -22,6 +23,7 @@ export function TaskList({
   onToggleTaskStar: (id: string) => void;
   onRunTodo: (task: Task) => void;
 }) {
+  const { t } = useI18n();
   const filtered = useMemo(() => {
     if (!query.trim()) return tasks;
     const q = query.toLowerCase();
@@ -78,12 +80,12 @@ export function TaskList({
 
   return (
     <div style={s.taskListScroll}>
-      {tasks.length === 0 && <div style={s.taskListEmpty}>No tasks yet</div>}
-      {renderGroup("Needs Attention", attentionTasks)}
-      {renderGroup("Starred", starredTasks)}
-      {renderGroup("Todo", todoTasks, true)}
-      {renderGroup("Today", todayTasks)}
-      {renderGroup("Earlier", earlierTasks)}
+      {tasks.length === 0 && <div style={s.taskListEmpty}>{t("task.noTasksYet")}</div>}
+      {renderGroup(t("task.needsAttention"), attentionTasks)}
+      {renderGroup(t("task.starred"), starredTasks)}
+      {renderGroup(t("status.todo"), todoTasks, true)}
+      {renderGroup(t("task.today"), todayTasks)}
+      {renderGroup(t("task.earlier"), earlierTasks)}
     </div>
   );
 }

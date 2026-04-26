@@ -32,6 +32,7 @@ import { r } from "@codemirror/legacy-modes/mode/r";
 import type { Extension } from "@codemirror/state";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
 import type { OpenFileTab } from "../hooks/useProjectPanels";
+import { useI18n } from "../i18n";
 
 function isMarkdownFile(fileName: string): boolean {
   const ext = fileName.split(".").pop()?.toLowerCase();
@@ -204,6 +205,7 @@ function FilePreviewPane({
   isDark: boolean;
   previewMode: boolean;
 }) {
+  const { t } = useI18n();
   const [content, setContent] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<ImagePreviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -277,16 +279,16 @@ function FilePreviewPane({
 
   const saveLabel =
     saveStatus === "saving"
-      ? "Saving..."
+      ? t("file.saving")
       : saveStatus === "saved"
-        ? "Saved"
+        ? t("file.saved")
         : saveStatus === "error"
-          ? "Save failed"
+          ? t("file.saveFailed")
           : null;
   const statusLabel = isPreviewableImage
     ? imagePreview
-      ? `${imagePreview.mimeType} · Read-only`
-      : "Image preview"
+      ? `${imagePreview.mimeType} · ${t("file.readOnly")}`
+      : t("file.imagePreview")
     : saveLabel;
 
   return (
@@ -323,7 +325,7 @@ function FilePreviewPane({
               fontSize: 12,
             }}
           >
-            Loading...
+            {t("common.loading")}
           </div>
         )}
         {error && !loading && (
@@ -448,6 +450,7 @@ export function FileViewer({
   isDark: boolean;
   onRunMakeTarget?: (target: string) => void;
 }) {
+  const { t } = useI18n();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -573,7 +576,7 @@ export function FileViewer({
                     marginLeft: 2,
                   }}
                   role="button"
-                  aria-label={`Close ${tab.name}`}
+                  aria-label={t("file.closeTab", { name: tab.name })}
                 >
                   <X size={12} />
                 </span>
@@ -599,7 +602,7 @@ export function FileViewer({
                   [activeTab.path]: !prev[activeTab.path],
                 }))
               }
-              title={activePreviewMode ? "Edit" : "Preview"}
+              title={activePreviewMode ? t("common.edit") : t("common.preview")}
               style={{
                 background: "none",
                 border: "none",
@@ -618,14 +621,14 @@ export function FileViewer({
               onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
             >
               {activePreviewMode ? <PencilLine size={13} /> : <Eye size={13} />}
-              {activePreviewMode ? "Edit" : "Preview"}
+              {activePreviewMode ? t("common.edit") : t("common.preview")}
             </button>
           )}
           <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
             <Popover.Trigger asChild>
               <button
-                title="Tab actions"
-                aria-label="Tab actions"
+                title={t("file.tabActions")}
+                aria-label={t("file.tabActions")}
                 style={{
                   background: "none",
                   border: "none",
@@ -658,7 +661,7 @@ export function FileViewer({
                   }}
                   className="file-viewer-tab-menu-item"
                 >
-                  Close Other Tabs
+                  {t("file.closeOtherTabs")}
                 </button>
                 <button
                   type="button"
@@ -669,7 +672,7 @@ export function FileViewer({
                   }}
                   className="file-viewer-tab-menu-item"
                 >
-                  Close Tabs to the Right
+                  {t("file.closeTabsToRight")}
                 </button>
                 <button
                   type="button"
@@ -680,7 +683,7 @@ export function FileViewer({
                   }}
                   className="file-viewer-tab-menu-item"
                 >
-                  Close All Tabs
+                  {t("file.closeAllTabs")}
                 </button>
               </Popover.Content>
             </Popover.Portal>

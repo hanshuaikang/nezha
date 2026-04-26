@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ToastProvider } from "./components/Toast";
+import { I18nProvider } from "./i18n";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -59,9 +60,11 @@ class ErrorBoundary extends React.Component<
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </I18nProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );

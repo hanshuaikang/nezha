@@ -1,9 +1,28 @@
 import { useState, memo } from "react";
 import { Trash2, Star, Play } from "lucide-react";
 import type { Task } from "../../types";
-import { STATUS_LABEL } from "../../types";
 import { StatusIcon } from "../StatusIcon";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
+
+function statusLabelKey(status: Task["status"]): string {
+  switch (status) {
+    case "todo":
+      return "status.todo";
+    case "pending":
+      return "status.pending";
+    case "running":
+      return "status.running";
+    case "input_required":
+      return "status.inputRequired";
+    case "done":
+      return "status.done";
+    case "failed":
+      return "status.failed";
+    case "cancelled":
+      return "status.cancelled";
+  }
+}
 
 export const TaskListItem = memo(
   function TaskListItem({
@@ -21,6 +40,7 @@ export const TaskListItem = memo(
     onToggleStar: () => void;
     onRunTodo?: () => void;
   }) {
+    const { t } = useI18n();
     const [hov, setHov] = useState(false);
     const displayTitle = task.name ?? task.prompt;
     return (
@@ -41,12 +61,12 @@ export const TaskListItem = memo(
             {displayTitle.slice(0, 70)}
             {displayTitle.length > 70 ? "…" : ""}
           </div>
-          <div style={s.taskCardSub}>{STATUS_LABEL[task.status]}</div>
+          <div style={s.taskCardSub}>{t(statusLabelKey(task.status))}</div>
         </div>
         <button
           type="button"
-          aria-label={task.starred ? "Unstar task" : "Star task"}
-          title={task.starred ? "Unstar task" : "Star task"}
+          aria-label={task.starred ? t("task.unstar") : t("task.star")}
+          title={task.starred ? t("task.unstar") : t("task.star")}
           style={{
             ...s.taskStarBtn,
             opacity: task.starred ? 1 : hov ? 0.7 : 0,
@@ -63,8 +83,8 @@ export const TaskListItem = memo(
         {onRunTodo && (
           <button
             type="button"
-            aria-label="Run Now"
-            title="Run Now"
+            aria-label={t("task.runNow")}
+            title={t("task.runNow")}
             style={{ ...s.taskPlayBtn, opacity: hov ? 1 : 0.5 }}
             onClick={(e) => {
               e.stopPropagation();
@@ -76,8 +96,8 @@ export const TaskListItem = memo(
         )}
         <button
           type="button"
-          aria-label="Delete task"
-          title="Delete task"
+          aria-label={t("task.deleteTask")}
+          title={t("task.deleteTask")}
           style={{
             ...s.taskDeleteBtn,
             opacity: hov ? 1 : 0,

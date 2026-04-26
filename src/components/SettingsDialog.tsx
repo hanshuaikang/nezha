@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
 import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 interface ProjectConfig {
@@ -25,7 +26,7 @@ interface AgentVersions {
 type NavKey = "project";
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string }> = [
-  { key: "project", label: "Project Settings" },
+  { key: "project", label: "settings.projectSettings" },
 ];
 
 // Custom select dropdown component
@@ -118,6 +119,7 @@ function Select({
 }
 
 function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClose: () => void }) {
+  const { t } = useI18n();
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [agentDefault, setAgentDefault] = useState("claude");
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
@@ -193,7 +195,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     <>
       <div style={s.settingsBody}>
         {!config && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>Loading...</div>
+          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
         )}
         {error && (
           <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>
@@ -201,11 +203,11 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         {config && (
           <>
             <div style={s.modalSection}>
-              <div style={s.modalSectionTitle}>Agent</div>
+              <div style={s.modalSectionTitle}>{t("settings.agent")}</div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
-                  Default Agent
-                  <span style={s.modalLabelHint}>Default agent used when creating new tasks</span>
+                  {t("settings.defaultAgent")}
+                  <span style={s.modalLabelHint}>{t("settings.defaultAgentHint")}</span>
                 </label>
                 <Select
                   value={agentDefault}
@@ -218,9 +220,9 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
               </div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
-                  Default Permission Mode
+                  {t("settings.defaultPermissionMode")}
                   <span style={s.modalLabelHint}>
-                    Default permission mode used when creating new tasks
+                    {t("settings.defaultPermissionModeHint")}
                   </span>
                 </label>
                 <Select
@@ -234,8 +236,8 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
               </div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
-                  Prompt Prefix
-                  <span style={s.modalLabelHint}>Automatically prepended to every task prompt</span>
+                  {t("settings.promptPrefix")}
+                  <span style={s.modalLabelHint}>{t("settings.promptPrefixHint")}</span>
                 </label>
                 <textarea
                   style={s.modalTextarea}
@@ -243,14 +245,14 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                   onChange={(e) => setPromptPrefix(e.target.value)}
                   rows={3}
                   spellCheck={false}
-                  placeholder="e.g. Reply in Chinese."
+                  placeholder={t("settings.promptPrefixPlaceholder")}
                 />
               </div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
-                  Agent Versions
+                  {t("settings.agentVersions")}
                   <span style={s.modalLabelHint}>
-                    Auto-detected tool versions (used for feature detection)
+                    {t("settings.agentVersionsHint")}
                   </span>
                 </label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -262,7 +264,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                       style={s.modalInput}
                       value={claudeVersion}
                       onChange={(e) => setClaudeVersion(e.target.value)}
-                      placeholder="Not detected"
+                      placeholder={t("common.notDetected")}
                       spellCheck={false}
                     />
                   </div>
@@ -274,7 +276,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                       style={s.modalInput}
                       value={codexVersion}
                       onChange={(e) => setCodexVersion(e.target.value)}
-                      placeholder="Not detected"
+                      placeholder={t("common.notDetected")}
                       spellCheck={false}
                     />
                   </div>
@@ -290,22 +292,22 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                     }}
                     onClick={autoDetectVersions}
                     disabled={detecting}
-                    title="Re-detect agent versions"
+                    title={t("settings.redetectVersions")}
                   >
                     <RefreshCw size={13} style={detecting ? { animation: "spin 1s linear infinite" } : undefined} />
-                    {detecting ? "Detecting..." : "Detect"}
+                    {detecting ? t("appSettings.detecting") : t("settings.detect")}
                   </button>
                 </div>
               </div>
             </div>
 
             <div style={s.modalSection}>
-              <div style={s.modalSectionTitle}>Git</div>
+              <div style={s.modalSectionTitle}>{t("settings.git")}</div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
-                  Commit Prompt
+                  {t("settings.commitPrompt")}
                   <span style={s.modalLabelHint}>
-                    System prompt used when AI generates commit messages
+                    {t("settings.commitPromptHint")}
                   </span>
                 </label>
                 <textarea
@@ -322,14 +324,14 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
       </div>
       <div style={s.settingsFooter}>
         <button style={s.modalCancelBtn} onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           style={{ ...s.modalSaveBtn, opacity: saving ? 0.6 : 1 }}
           onClick={handleSave}
           disabled={saving || !config}
         >
-          {saving ? "Saving..." : "Save"}
+          {saving ? t("common.saving") : t("common.save")}
         </button>
       </div>
     </>
@@ -343,20 +345,21 @@ export function SettingsDialog({
   projectPath: string;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("project");
 
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.target === e.currentTarget) onClose();
   }
 
-  const activeLabel = NAV_ITEMS.find((n) => n.key === activeNav)?.label ?? "";
+  const activeLabel = t(NAV_ITEMS.find((n) => n.key === activeNav)?.label ?? "");
 
   return (
     <div style={s.modalOverlay} onClick={handleOverlayClick}>
       <div style={s.modalBox}>
         {/* Left nav */}
         <div style={s.settingsNav}>
-          <div style={s.settingsNavTitle}>Settings</div>
+          <div style={s.settingsNavTitle}>{t("settings.title")}</div>
           {NAV_ITEMS.map((item) => (
             <button
               key={item.key}
@@ -369,7 +372,7 @@ export function SettingsDialog({
               onClick={() => setActiveNav(item.key)}
             >
               <FolderOpen size={14} />
-              {item.label}
+              {t(item.label)}
             </button>
           ))}
         </div>
@@ -378,7 +381,7 @@ export function SettingsDialog({
         <div style={s.settingsContent}>
           <div style={s.settingsContentHeader}>
             <span style={s.settingsContentTitle}>{activeLabel}</span>
-            <button style={s.modalCloseBtn} onClick={onClose} title="Close">
+            <button style={s.modalCloseBtn} onClick={onClose} title={t("common.close")}>
               <X size={16} strokeWidth={2} />
             </button>
           </div>

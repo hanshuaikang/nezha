@@ -5,12 +5,15 @@ import {
   X,
   Pencil,
   Check,
+  ChevronDown,
   RefreshCw,
   ExternalLink,
   Star,
   Monitor,
 } from "lucide-react";
+import * as Select from "@radix-ui/react-select";
 import type { ThemeMode } from "../types";
+import { useI18n, type AppLanguage } from "../i18n";
 import { APP_PLATFORM } from "../platform";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -75,24 +78,24 @@ function getAgentExecutablePlaceholder(agent: AgentKey): string {
 
 const NAV_ITEMS: Array<{
   key: NavKey;
-  label: string;
+  labelKey: string;
   logo?: string;
   filePath?: string;
   lang?: string;
 }> = [
-  { key: "general", label: "General" },
-  { key: "theme", label: "Theme" },
-  { key: "about", label: "About", logo: appLogo },
+  { key: "general", labelKey: "appSettings.general" },
+  { key: "theme", labelKey: "appSettings.theme" },
+  { key: "about", labelKey: "appSettings.about", logo: appLogo },
   {
     key: "claude",
-    label: "Claude Code",
+    labelKey: "Claude Code",
     logo: claudeLogo,
     filePath: getAgentSettingsFilePath("claude"),
     lang: "json",
   },
   {
     key: "codex",
-    label: "Codex",
+    labelKey: "Codex",
     logo: chatgptLogo,
     filePath: getAgentSettingsFilePath("codex"),
     lang: "toml",
@@ -106,11 +109,14 @@ interface ThemePanelProps {
 }
 
 function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePanelProps) {
+  const { t } = useI18n();
   const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
+  const currentModeLabel = systemPrefersDark ? t("theme.dark") : t("theme.light");
+  const manualModeLabel = themeMode === "dark" ? t("theme.dark") : t("theme.light");
   const selectedLabel =
     themeMode === "system"
-      ? `Following system · ${systemPrefersDark ? "Dark" : "Light"}`
-      : `Manual · ${themeMode === "dark" ? "Dark" : "Light"}`;
+      ? t("theme.followingSystem", { mode: currentModeLabel })
+      : t("theme.manual", { mode: manualModeLabel });
 
   function handleSystemThemeToggle() {
     onThemeModeChange(themeMode === "system" ? "light" : "system");
@@ -173,7 +179,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
         onKeyDown={(event) => handleManualThemeKeyDown(mode, event)}
         role="radio"
         aria-checked={selected}
-        aria-label={`${title} theme`}
+        aria-label={title}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -421,7 +427,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
         onClick={handleSystemThemeToggle}
         role="switch"
         aria-checked={themeMode === "system"}
-        aria-label="Follow system theme"
+        aria-label={t("theme.followSystemAria")}
         style={{
           display: "flex",
           alignItems: "center",
@@ -477,7 +483,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
             }}
           >
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-              Follow System
+              {t("theme.followSystem")}
             </span>
           </div>
         </div>
@@ -503,25 +509,25 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
-          Manual Theme
+          {t("theme.manualTheme")}
         </div>
         <div
           style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}
           role="radiogroup"
-          aria-label="Manual theme"
+          aria-label={t("theme.manualThemeAria")}
         >
           {renderThemeOption({
             mode: "dark",
-            title: "Dark",
-            description: "Always use the dark interface.",
+            title: t("theme.dark"),
+            description: t("theme.darkDescription"),
             previewBackground: "#11151d",
             previewBorder: "rgba(255,255,255,0.08)",
             previewAccent: "#f1f4fb",
           })}
           {renderThemeOption({
             mode: "light",
-            title: "Light",
-            description: "Always use the light interface.",
+            title: t("theme.light"),
+            description: t("theme.lightDescription"),
             previewBackground: "#f5f7fb",
             previewBorder: "rgba(23,27,36,0.08)",
             previewAccent: "#171b24",
@@ -535,6 +541,7 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
 // ── General Panel ─────────────────────────────────────────────────────────────
 
 function GeneralPanel() {
+  const { language, setLanguage, t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({ claude_path: "", codex_path: "" });
   const [original, setOriginal] = useState<AppSettings>({ claude_path: "", codex_path: "" });
   const [versions, setVersions] = useState<AgentVersions>({
@@ -641,6 +648,13 @@ function GeneralPanel() {
     marginTop: 3,
   };
 
+  const languageOptions: Array<{ value: AppLanguage; label: string }> = [
+    { value: "en", label: t("language.english") },
+    { value: "zh", label: t("language.chinese") },
+  ];
+  const selectedLanguageLabel =
+    languageOptions.find((option) => option.value === language)?.label ?? language;
+
   return (
     <>
       <div
@@ -657,9 +671,80 @@ function GeneralPanel() {
         )}
 
         {loading ? (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>Loading...</div>
+          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
         ) : (
           <>
+            <div style={{ ...fieldStyle, marginBottom: 20 }}>
+              <label style={labelStyle}>{t("appSettings.appLanguage")}</label>
+              <Select.Root value={language} onValueChange={(value) => setLanguage(value as AppLanguage)}>
+                <Select.Trigger
+                  aria-label={t("appSettings.appLanguage")}
+                  style={{
+                    width: 220,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    padding: "7px 10px",
+                    background: "var(--bg-input)",
+                    border: "1px solid var(--border-medium)",
+                    borderRadius: 7,
+                    color: "var(--text-primary)",
+                    fontSize: 12.5,
+                    fontFamily: "var(--font-ui)",
+                    cursor: "pointer",
+                    outline: "none",
+                  }}
+                >
+                  <Select.Value>{selectedLanguageLabel}</Select.Value>
+                  <Select.Icon>
+                    <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+                  </Select.Icon>
+                </Select.Trigger>
+                <Select.Portal>
+                  <Select.Content
+                    position="popper"
+                    sideOffset={4}
+                    style={{
+                      minWidth: 220,
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--border-medium)",
+                      borderRadius: 8,
+                      boxShadow: "var(--shadow-popover)",
+                      padding: 4,
+                      zIndex: 3000,
+                    }}
+                  >
+                    <Select.Viewport>
+                      {languageOptions.map((option) => (
+                        <Select.Item
+                          key={option.value}
+                          value={option.value}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "7px 8px",
+                            borderRadius: 5,
+                            color: "var(--text-primary)",
+                            fontSize: 12.5,
+                            cursor: "pointer",
+                            outline: "none",
+                          }}
+                        >
+                          <Select.ItemText>{option.label}</Select.ItemText>
+                          <Select.ItemIndicator style={{ marginLeft: "auto", display: "flex" }}>
+                            <Check size={13} color="var(--accent)" />
+                          </Select.ItemIndicator>
+                        </Select.Item>
+                      ))}
+                    </Select.Viewport>
+                  </Select.Content>
+                </Select.Portal>
+              </Select.Root>
+              <span style={hintStyle}>{t("appSettings.languageHint")}</span>
+            </div>
+
             <div
               style={{
                 display: "flex",
@@ -669,7 +754,7 @@ function GeneralPanel() {
               }}
             >
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-                Agent Installation Paths
+                {t("appSettings.agentPaths")}
               </span>
               <div style={{ display: "flex", gap: 8 }}>
                 <button
@@ -690,7 +775,7 @@ function GeneralPanel() {
                   disabled={detectingPaths}
                 >
                   <RefreshCw size={12} className={detectingPaths ? "spin" : undefined} />
-                  {detectingPaths ? "Detecting..." : "Auto Detect"}
+                  {detectingPaths ? t("appSettings.detecting") : t("appSettings.autoDetect")}
                 </button>
                 <button
                   style={{
@@ -710,13 +795,15 @@ function GeneralPanel() {
                   disabled={refreshingVersions}
                 >
                   <RefreshCw size={12} className={refreshingVersions ? "spin" : undefined} />
-                  {refreshingVersions ? "Refreshing..." : "Refresh Versions"}
+                  {refreshingVersions
+                    ? t("appSettings.refreshing")
+                    : t("appSettings.refreshVersions")}
                 </button>
               </div>
             </div>
 
             <div style={fieldStyle}>
-              <label style={labelStyle}>Claude Code Path</label>
+              <label style={labelStyle}>{t("appSettings.claudePath")}</label>
               <input
                 style={inputStyle}
                 value={settings.claude_path}
@@ -724,11 +811,11 @@ function GeneralPanel() {
                 placeholder={getAgentExecutablePlaceholder("claude")}
                 spellCheck={false}
               />
-              <span style={hintStyle}>Leave empty to use claude from the system PATH.</span>
+              <span style={hintStyle}>{t("appSettings.claudePathHint")}</span>
             </div>
 
             <div style={fieldStyle}>
-              <label style={labelStyle}>Codex Path</label>
+              <label style={labelStyle}>{t("appSettings.codexPath")}</label>
               <input
                 style={inputStyle}
                 value={settings.codex_path}
@@ -736,11 +823,11 @@ function GeneralPanel() {
                 placeholder={getAgentExecutablePlaceholder("codex")}
                 spellCheck={false}
               />
-              <span style={hintStyle}>Leave empty to use codex from the system PATH.</span>
+              <span style={hintStyle}>{t("appSettings.codexPathHint")}</span>
             </div>
 
             <div style={{ ...fieldStyle, marginBottom: 0 }}>
-              <label style={labelStyle}>Installed Versions</label>
+              <label style={labelStyle}>{t("appSettings.installedVersions")}</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
@@ -750,7 +837,7 @@ function GeneralPanel() {
                     style={inputStyle}
                     value={versions.claude_version}
                     readOnly
-                    placeholder="Not detected"
+                    placeholder={t("common.notDetected")}
                     spellCheck={false}
                   />
                 </div>
@@ -762,13 +849,13 @@ function GeneralPanel() {
                     style={inputStyle}
                     value={versions.codex_version}
                     readOnly
-                    placeholder="Not detected"
+                    placeholder={t("common.notDetected")}
                     spellCheck={false}
                   />
                 </div>
               </div>
               <span style={hintStyle}>
-                Versions are detected from the configured executable path or the system PATH.
+                {t("appSettings.versionsHint")}
               </span>
             </div>
           </>
@@ -787,7 +874,7 @@ function GeneralPanel() {
               marginRight: "auto",
             }}
           >
-            <Check size={12} /> Saved
+            <Check size={12} /> {t("common.saved")}
           </span>
         )}
         <button
@@ -795,7 +882,7 @@ function GeneralPanel() {
           onClick={handleSave}
           disabled={saving || !isDirty}
         >
-          {saving ? "Saving..." : "Save"}
+          {saving ? t("common.saving") : t("common.save")}
         </button>
       </div>
     </>
@@ -803,13 +890,14 @@ function GeneralPanel() {
 }
 
 function AboutPanel() {
+  const { t } = useI18n();
   const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
     getVersion()
       .then((version) => setAppVersion(version))
-      .catch(() => setAppVersion("Unknown"));
-  }, []);
+      .catch(() => setAppVersion(t("common.unknown")));
+  }, [t]);
 
   return (
     <div
@@ -846,13 +934,15 @@ function AboutPanel() {
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>NeZha</div>
             <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}>
-              Desktop task manager for AI coding agents
+              {t("appSettings.nezhaDescription")}
             </div>
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>Version</div>
+              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+                {t("appSettings.version")}
+              </div>
               <div
                 style={{
                   fontSize: 12.5,
@@ -860,12 +950,14 @@ function AboutPanel() {
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                {appVersion || "Loading..."}
+                {appVersion || t("common.loading")}
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>GitHub</div>
+              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+                {t("appSettings.github")}
+              </div>
               <a
                 href={GITHUB_REPO_URL}
                 target="_blank"
@@ -901,7 +993,7 @@ function AboutPanel() {
           >
             <Star size={14} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
-              If you think NeZha is helpful, please consider starring this project on GitHub.
+              {t("appSettings.starHint")}
             </span>
           </div>
         </div>
@@ -937,6 +1029,7 @@ function AgentConfigPanel({
   lang: string;
   isDark: boolean;
 }) {
+  const { t } = useI18n();
   const [resolvedFilePath, setResolvedFilePath] = useState(filePath);
   const [fileState, setFileState] = useState<FileState>({ status: "loading" });
   const [original, setOriginal] = useState("");
@@ -1069,7 +1162,7 @@ function AgentConfigPanel({
               onClick={() => setEditing(true)}
             >
               <Pencil size={12} />
-              Edit
+              {t("common.edit")}
             </button>
           )}
           {saved && (
@@ -1082,7 +1175,7 @@ function AgentConfigPanel({
                 color: "var(--success)",
               }}
             >
-              <Check size={12} /> Saved
+              <Check size={12} /> {t("common.saved")}
             </span>
           )}
         </div>
@@ -1093,17 +1186,17 @@ function AgentConfigPanel({
 
         {highlightError && fileState.status === "loaded" && !editing && (
           <div style={{ color: "var(--text-hint)", fontSize: 12, marginBottom: 10 }}>
-            Syntax highlighting is unavailable. Showing plain text instead.
+            {t("appSettings.syntaxHighlightUnavailable")}
           </div>
         )}
 
         {fileState.status === "loading" && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>Loading...</div>
+          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
         )}
 
         {fileState.status === "missing" && (
           <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
-            Config file not found: {resolvedFilePath}
+            {t("appSettings.configFileNotFound", { path: resolvedFilePath })}
           </div>
         )}
 
@@ -1166,14 +1259,14 @@ function AgentConfigPanel({
       {editing && (
         <div style={s.settingsFooter}>
           <button style={s.modalCancelBtn} onClick={handleCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
             onClick={handleSave}
             disabled={saving || !isDirty}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? t("common.saving") : t("common.save")}
           </button>
         </div>
       )}
@@ -1196,6 +1289,7 @@ export function AppSettingsDialog({
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
 }) {
+  const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
 
   function handleOverlayClick(e: React.MouseEvent) {
@@ -1203,13 +1297,14 @@ export function AppSettingsDialog({
   }
 
   const activeItem = NAV_ITEMS.find((n) => n.key === activeNav)!;
+  const activeLabel = t(activeItem.labelKey);
 
   return (
     <div style={s.modalOverlay} onClick={handleOverlayClick}>
       <div style={s.modalBox}>
         {/* Left nav */}
         <div style={s.settingsNav}>
-          <div style={s.settingsNavTitle}>App Settings</div>
+          <div style={s.settingsNavTitle}>{t("appSettings.title")}</div>
           {NAV_ITEMS.map((item) => (
             <button
               key={item.key}
@@ -1242,7 +1337,7 @@ export function AppSettingsDialog({
                   ⚙
                 </span>
               )}
-              {item.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>
@@ -1261,9 +1356,9 @@ export function AppSettingsDialog({
               ) : (
                 <span style={{ fontSize: 15 }}>⚙</span>
               )}
-              <span style={s.settingsContentTitle}>{activeItem.label}</span>
+              <span style={s.settingsContentTitle}>{activeLabel}</span>
             </div>
-            <button style={s.modalCloseBtn} onClick={onClose} title="Close">
+            <button style={s.modalCloseBtn} onClick={onClose} title={t("common.close")}>
               <X size={16} strokeWidth={2} />
             </button>
           </div>

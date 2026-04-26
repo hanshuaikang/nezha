@@ -6,6 +6,7 @@ import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { AnalyticsDashboard } from "./AnalyticsDashboard";
+import { useI18n, pluralKey } from "../i18n";
 import s from "../styles";
 
 function SidebarItem({
@@ -38,6 +39,7 @@ function SidebarItem({
 }
 
 function WelcomeEmpty({ hasProjects, onOpen }: { hasProjects: boolean; onOpen: () => void }) {
+  const { t } = useI18n();
   return (
     <div style={s.emptyState}>
       <div style={{ marginBottom: 14, opacity: 0.4 }}>
@@ -46,16 +48,16 @@ function WelcomeEmpty({ hasProjects, onOpen }: { hasProjects: boolean; onOpen: (
       <div
         style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}
       >
-        {hasProjects ? "No matching projects" : "No projects yet"}
+        {hasProjects ? t("welcome.noMatchingProjects") : t("welcome.noProjectsYet")}
       </div>
       {!hasProjects && (
         <>
           <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 20 }}>
-            Open a local Git repository to get started
+            {t("welcome.openLocalRepo")}
           </div>
           <button style={s.emptyOpenBtn} onClick={onOpen}>
             <FolderOpen size={14} strokeWidth={2} />
-            Open project folder...
+            {t("welcome.openProjectFolder")}
           </button>
         </>
       )}
@@ -84,6 +86,7 @@ export function WelcomePage({
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [hov, setHov] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -107,22 +110,22 @@ export function WelcomePage({
             </div>
             <div>
               <div style={s.sidebarBrandTitle}>Nezha</div>
-              <div style={s.sidebarBrandMeta}>Agent Workspace</div>
+              <div style={s.sidebarBrandMeta}>{t("welcome.agentWorkspace")}</div>
             </div>
           </div>
 
           <nav style={s.sidebarNav}>
-            <div style={s.sidebarSectionTitle}>Workspace</div>
+            <div style={s.sidebarSectionTitle}>{t("welcome.workspace")}</div>
             <SidebarItem
               icon={<Layers size={15} />}
-              label="Projects"
+              label={t("welcome.projects")}
               active={view === "projects"}
               onClick={() => setView("projects")}
             />
             {ENABLE_USAGE_INSIGHTS ? (
               <SidebarItem
                 icon={<BarChart2 size={15} />}
-                label="Analytics"
+                label={t("welcome.analytics")}
                 active={view === "analytics"}
                 onClick={() => setView("analytics")}
               />
@@ -160,7 +163,7 @@ export function WelcomePage({
                 />
                 <input
                   style={s.searchInput}
-                  placeholder="Search projects"
+                  placeholder={t("welcome.searchProjects")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onFocus={() => setSearchFocused(true)}
@@ -172,18 +175,22 @@ export function WelcomePage({
               <div style={s.actionRow}>
                 <button style={s.primaryActionBtn} onClick={onOpen}>
                   <Plus size={14} strokeWidth={2.3} />
-                  <span>Open project</span>
+                  <span>{t("welcome.openProject")}</span>
                 </button>
               </div>
             </div>
 
             <div style={s.projectSectionHeader}>
               <div>
-                <div style={s.projectSectionTitle}>Projects</div>
+                <div style={s.projectSectionTitle}>{t("welcome.projects")}</div>
                 <div style={s.projectSectionCaption}>
                   {query.trim()
-                    ? `${filtered.length} result${filtered.length !== 1 ? "s" : ""} found`
-                    : `${projects.length} project${projects.length !== 1 ? "s" : ""}`}
+                    ? t(pluralKey("welcome.resultCount", "welcome.resultCountPlural", filtered.length), {
+                        count: filtered.length,
+                      })
+                    : t(pluralKey("welcome.projectCount", "welcome.projectCountPlural", projects.length), {
+                        count: projects.length,
+                      })}
                 </div>
               </div>
             </div>
@@ -223,7 +230,7 @@ export function WelcomePage({
                           {p.branch}
                         </span>
                       ) : (
-                        <span style={s.projectTag}>LOCAL</span>
+                        <span style={s.projectTag}>{t("welcome.local")}</span>
                       )}
 
                       <button
@@ -251,7 +258,7 @@ export function WelcomePage({
                           e.stopPropagation();
                           onDeleteProject(p.id);
                         }}
-                        title="Delete project"
+                        title={t("welcome.deleteProject")}
                       >
                         <Trash2 size={14} strokeWidth={1.8} />
                       </button>

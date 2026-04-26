@@ -4,6 +4,22 @@ import { ChevronDown, ChevronRight, FileCode } from "lucide-react";
 import s from "../../styles";
 import type { DiffFile, DiffHunk, DiffRow, DiffViewMode } from "./types";
 import { fileDir, fileName, lineMarker, rowTone, statusStyle } from "./parse";
+import { useI18n } from "../../i18n";
+
+function diffStatusLabelKey(status: DiffFile["status"]): string {
+  switch (status) {
+    case "added":
+      return "git.added";
+    case "deleted":
+      return "git.deleted";
+    case "renamed":
+      return "git.renamed";
+    case "copied":
+      return "git.copied";
+    case "modified":
+      return "git.fileModified";
+  }
+}
 
 const UNIFIED_GRID: CSSProperties = {
   display: "grid",
@@ -238,6 +254,7 @@ function DiffHunkView({
 }
 
 export function DiffFileBlock({ file, viewMode }: { file: DiffFile; viewMode: DiffViewMode }) {
+  const { t } = useI18n();
   const dir = fileDir(file.displayPath);
   const name = fileName(file.displayPath);
   const isSplit = viewMode === "split";
@@ -251,7 +268,7 @@ export function DiffFileBlock({ file, viewMode }: { file: DiffFile; viewMode: Di
         style={s.diffFileHeader}
         onClick={() => setCollapsed((v) => !v)}
         aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expand file" : "Collapse file"}
+        aria-label={collapsed ? t("git.expandFile") : t("git.collapseFile")}
       >
         {collapsed ? (
           <ChevronRight size={14} color="var(--text-hint)" />
@@ -274,17 +291,17 @@ export function DiffFileBlock({ file, viewMode }: { file: DiffFile; viewMode: Di
           </>
         )}
         <span style={{ ...s.diffStatusBadge, color: status.fg, background: status.bg }}>
-          {status.label}
+          {t(diffStatusLabelKey(file.status))}
         </span>
       </button>
 
       {!collapsed && (
         <div style={s.diffFileBody}>
           {file.isBinary ? (
-            <div style={s.diffFileEmpty}>Binary file not shown</div>
+            <div style={s.diffFileEmpty}>{t("git.binaryFileNotShown")}</div>
           ) : file.hunks.length === 0 ? (
             <div style={s.diffFileEmpty}>
-              {file.headerLines.length > 0 ? file.headerLines.join("\n") : "No textual changes"}
+              {file.headerLines.length > 0 ? file.headerLines.join("\n") : t("git.noTextualChanges")}
             </div>
           ) : (
             file.hunks.map((hunk, index) => (

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw, Filter, GitCommit, Sparkles, ChevronRight, ChevronDown } from "lucide-react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import { getGitStatusColor, getGitStatusLabel } from "../utils";
+import { useI18n } from "../i18n";
 
 interface GitFileChange {
   path: string;
@@ -31,6 +32,7 @@ export function GitChanges({
   onFileSelect,
   width = 280,
 }: Props) {
+  const { t } = useI18n();
   const [changes, setChanges] = useState<GitFileChange[]>([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"task" | "all">("all");
@@ -171,11 +173,11 @@ export function GitChanges({
         }}
       >
         <span style={{ flex: 1, fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>
-          Changes
+          {t("git.changes")}
         </span>
         <button
           onClick={refresh}
-          title="Refresh"
+          title={t("common.refresh")}
           style={{
             background: "none",
             border: "none",
@@ -190,7 +192,7 @@ export function GitChanges({
           <RefreshCw size={13} className={loading ? "spin" : ""} />
         </button>
         <button
-          title="Filter"
+          title={t("git.filter")}
           style={{
             background: "none",
             border: "none",
@@ -229,7 +231,7 @@ export function GitChanges({
             color: tab === "task" ? "var(--control-selected-fg)" : "var(--text-muted)",
           }}
         >
-          Current Task {taskCount}
+          {t("git.currentTask")} {taskCount}
         </button>
         <button
           onClick={() => setTab("all")}
@@ -244,7 +246,7 @@ export function GitChanges({
             color: tab === "all" ? "var(--control-selected-fg)" : "var(--text-muted)",
           }}
         >
-          All {allCount}
+          {t("git.all")} {allCount}
         </button>
       </div>
 
@@ -276,7 +278,7 @@ export function GitChanges({
               textAlign: "center",
             }}
           >
-            No changes
+            {t("git.noChanges")}
           </div>
         )}
 
@@ -284,7 +286,7 @@ export function GitChanges({
         {trackedFiles.length > 0 && (
           <>
             <TopSectionHeader
-              label="Changes"
+              label={t("git.changes")}
               count={trackedFiles.length}
               collapsed={trackedCollapsed}
               onToggleCollapse={() => setTrackedCollapsed((v) => !v)}
@@ -294,10 +296,10 @@ export function GitChanges({
                 {stagedFiles.length > 0 && (
                   <>
                     <SectionHeader
-                      label="Staged"
+                      label={t("git.staged")}
                       count={stagedFiles.length}
                       actionIcon="−"
-                      actionTitle="Unstage All"
+                      actionTitle={t("git.unstageAll")}
                       onAction={handleUnstageAll}
                     />
                     {stagedFiles.map((c) => (
@@ -315,10 +317,10 @@ export function GitChanges({
                 {unstagedFiles.length > 0 && (
                   <>
                     <SectionHeader
-                      label="Modified"
+                      label={t("git.modified")}
                       count={unstagedFiles.length}
                       actionIcon="+"
-                      actionTitle="Stage All"
+                      actionTitle={t("git.stageAll")}
                       onAction={handleStageAll}
                     />
                     {unstagedFiles.map((c) => (
@@ -342,7 +344,7 @@ export function GitChanges({
         {untrackedFiles.length > 0 && (
           <>
             <TopSectionHeader
-              label="Untracked Files"
+              label={t("git.untrackedFiles")}
               count={untrackedFiles.length}
               collapsed={untrackedCollapsed}
               onToggleCollapse={() => setUntrackedCollapsed((v) => !v)}
@@ -371,7 +373,7 @@ export function GitChanges({
             }}
             onFocus={() => setTextareaFocused(true)}
             onBlur={() => setTextareaFocused(false)}
-            placeholder="Commit message…"
+            placeholder={t("git.commitMessage")}
             rows={3}
             style={{
               width: "100%",
@@ -395,7 +397,7 @@ export function GitChanges({
           <button
             onClick={handleGenerateMsg}
             disabled={generatingMsg}
-            title="Generate commit message with AI"
+            title={t("git.generateCommitMessage")}
             style={{
               position: "absolute",
               top: 6,
@@ -416,7 +418,7 @@ export function GitChanges({
         </div>
         {commitMsgError && (
           <div style={{ fontSize: 11.5, color: "var(--danger-fg)", marginTop: 3, paddingLeft: 2 }}>
-            Please enter a commit message
+            {t("git.enterCommitMessage")}
           </div>
         )}
         <div style={{ marginTop: 3, display: "flex" }}>
@@ -439,7 +441,7 @@ export function GitChanges({
             }}
           >
             <GitCommit size={13} />
-            {committing ? "Committing…" : "Commit"}
+            {committing ? t("git.committing") : t("git.commit")}
           </button>
         </div>
       </div>
@@ -586,6 +588,7 @@ function FileRow({
   onFileClick: () => void;
   onToggle: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const name = fileName(change.path);
   const dir = fileDir(change.path);
@@ -640,7 +643,7 @@ function FileRow({
       {hovered && (
         <button
           onClick={onToggle}
-          title={change.staged ? "Unstage" : "Stage"}
+          title={change.staged ? t("git.unstage") : t("git.stage")}
           style={{
             flexShrink: 0,
             background: "var(--bg-card)",

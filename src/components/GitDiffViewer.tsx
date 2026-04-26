@@ -3,9 +3,10 @@ import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Columns2, FileCode, Rows3, X } from "lucide-react";
 import { DiffFileBlock } from "./git-diff/DiffFileBlock";
-import { parseDiff, plural } from "./git-diff/parse";
+import { parseDiff } from "./git-diff/parse";
 import type { DiffViewMode } from "./git-diff/types";
 import { load, save } from "../utils";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 const VIEW_MODE_KEY = "nezha.diffViewMode";
@@ -59,6 +60,7 @@ export function GitDiffViewer({
   title,
   onClose,
 }: Props) {
+  const { t } = useI18n();
   const [diff, setDiff] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,23 +125,27 @@ export function GitDiffViewer({
         <div style={s.diffHeaderTitleWrap}>
           <div style={s.diffHeaderTitle}>{title}</div>
           <div style={s.diffHeaderMeta}>
-            <span>{plural(parsedFiles.length, "changed file")}</span>
+            <span>
+              {t(parsedFiles.length === 1 ? "common.fileChanged" : "common.filesChanged", {
+                count: parsedFiles.length,
+              })}
+            </span>
             <span style={s.diffAddCount}>+{totalAdditions}</span>
             <span style={s.diffDeleteCount}>-{totalDeletions}</span>
           </div>
         </div>
 
-        <div style={s.diffViewToggle} role="group" aria-label="Diff view mode">
+        <div style={s.diffViewToggle} role="group" aria-label={t("git.diffViewMode")}>
           <ViewToggleButton
             active={viewMode === "unified"}
-            title="Single column diff"
+            title={t("git.singleColumnDiff")}
             onClick={() => setViewMode("unified")}
           >
             <Rows3 size={15} />
           </ViewToggleButton>
           <ViewToggleButton
             active={viewMode === "split"}
-            title="Two column diff"
+            title={t("git.twoColumnDiff")}
             onClick={() => setViewMode("split")}
           >
             <Columns2 size={15} />
@@ -149,8 +155,8 @@ export function GitDiffViewer({
         <button
           type="button"
           onClick={onClose}
-          title="Close diff"
-          aria-label="Close diff"
+          title={t("git.closeDiff")}
+          aria-label={t("git.closeDiff")}
           style={s.diffCloseBtn}
         >
           <X size={15} />
@@ -159,11 +165,11 @@ export function GitDiffViewer({
 
       <div style={s.diffContent}>
         {loading ? (
-          <div style={s.diffStateMessage}>Loading diff…</div>
+          <div style={s.diffStateMessage}>{t("git.loadingDiff")}</div>
         ) : error ? (
           <div style={s.diffStateError}>{error}</div>
         ) : diff.trim() === "" ? (
-          <div style={s.diffStateMessage}>No changes</div>
+          <div style={s.diffStateMessage}>{t("git.noChanges")}</div>
         ) : (
           <div style={s.diffFileList}>
             {parsedFiles.map((file, index) => (

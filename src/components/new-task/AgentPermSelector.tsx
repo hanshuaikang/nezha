@@ -12,6 +12,7 @@ import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
 import type { AgentType, PermissionMode } from "../../types";
 import { permissionModeLabel } from "../../types";
+import { useI18n } from "../../i18n";
 import s from "../../styles";
 import claudeLogo from "../../assets/claude.svg";
 import chatgptLogo from "../../assets/chatgpt.svg";
@@ -70,6 +71,7 @@ export function AgentPermSelector({
   onAddImages: (dataUrls: string[]) => void;
   onSubmit: (immediate: boolean) => void;
 }) {
+  const { t } = useI18n();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const canSend = !isEmpty || hasImages;
 
@@ -91,7 +93,7 @@ export function AgentPermSelector({
       <div style={s.toolbarLeft}>
         <Popover.Root>
           <Popover.Trigger asChild>
-            <button style={s.toolbarPlusBtn} aria-label="More compose actions">
+            <button style={s.toolbarPlusBtn} aria-label={t("newTask.moreComposeActions")}>
               <Plus size={16} strokeWidth={1.9} />
             </button>
           </Popover.Trigger>
@@ -122,7 +124,7 @@ export function AgentPermSelector({
                 onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
               >
                 <ImageIcon size={15} strokeWidth={2} color="var(--text-muted)" />
-                Images
+                {t("newTask.images")}
               </button>
 
               <div style={s.toolbarMenuSeparator} />
@@ -145,7 +147,7 @@ export function AgentPermSelector({
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <MapIcon size={15} strokeWidth={2} color="var(--text-muted)" />
-                  Plan mode
+                  {t("newTask.planMode")}
                 </span>
                 <span
                   style={{
@@ -166,7 +168,7 @@ export function AgentPermSelector({
         </Popover.Root>
 
         <Select.Root value={agent} onValueChange={(v) => onSetAgent(v as AgentType)}>
-          <Select.Trigger style={s.toolbarBtn} aria-label="Agent">
+          <Select.Trigger style={s.toolbarBtn} aria-label={t("settings.agent")}>
             <img
               src={agentIcon(agent)}
               style={{
@@ -208,7 +210,7 @@ export function AgentPermSelector({
         </Select.Root>
 
         <Select.Root value={permMode} onValueChange={(v) => onSetPermMode(v as PermissionMode)}>
-          <Select.Trigger style={s.toolbarBtn} aria-label="Permission mode">
+          <Select.Trigger style={s.toolbarBtn} aria-label={t("settings.defaultPermissionMode")}>
             <Hand size={14} strokeWidth={2} color="var(--text-muted)" />
             <Select.Value />
             <Select.Icon>
@@ -228,7 +230,9 @@ export function AgentPermSelector({
                     onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
                     onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
                   >
-                    <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
+                    <Select.ItemText>
+                      {permissionModeLabel(perm, agent)}
+                    </Select.ItemText>
                   </Select.Item>
                 ))}
               </Select.Viewport>
@@ -254,7 +258,7 @@ export function AgentPermSelector({
           }}
         >
           <ArrowUp size={13} strokeWidth={2.1} />
-          <span>Send</span>
+          <span>{t("newTask.send")}</span>
           <kbd style={s.kbd}>⌘↵</kbd>
         </button>
         <Popover.Root>
@@ -293,14 +297,14 @@ export function AgentPermSelector({
                     cursor: hasImages ? "not-allowed" : "pointer",
                     opacity: hasImages ? 0.4 : 1,
                   }}
-                  title={hasImages ? "含图片的任务须立即发送" : undefined}
+                  title={hasImages ? t("newTask.imagesMustSend") : undefined}
                   onClick={() => {
                     if (hasImages) return;
                     if (!isEmpty) onSubmit(false);
                   }}
                 >
                   <BookmarkPlus size={13} strokeWidth={2} color="var(--text-muted)" />
-                  Save as Todo
+                  {t("newTask.saveAsTodo")}
                 </button>
               </Popover.Close>
             </Popover.Content>

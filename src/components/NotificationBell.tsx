@@ -3,6 +3,7 @@ import { Bell, X, ExternalLink, Check, CheckCheck, Info, AlertTriangle, AlertCir
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { NotificationItem, NotificationResult } from "../types";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 function LevelIcon({ level }: { level: string }) {
@@ -23,6 +24,7 @@ function NotificationEntry({
   item: NotificationItem;
   onMarkRead: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [hov, setHov] = useState(false);
 
   const handleClick = async () => {
@@ -108,7 +110,7 @@ function NotificationEntry({
       </div>
       {!item.isRead && (
         <button
-          title="Mark as read"
+          title={t("notification.markAsRead")}
           onClick={(e) => {
             e.stopPropagation();
             onMarkRead(item.id);
@@ -134,6 +136,7 @@ function NotificationEntry({
 }
 
 export function NotificationBell() {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<NotificationResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -151,13 +154,13 @@ export function NotificationBell() {
           ? err
           : err instanceof Error
             ? err.message
-            : "Failed to load notifications";
+            : t("notification.loadingFailed");
       setError(message);
       console.error("Failed to load notifications:", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchNotifications();
@@ -217,7 +220,7 @@ export function NotificationBell() {
           ...s.sidebarIconBtn,
           opacity: isActive ? 1 : 0.5,
         }}
-        title="Notifications"
+        title={t("notification.title")}
         onClick={() => setOpen((v) => !v)}
       >
         <Bell size={14} strokeWidth={1.6} color={bellColor} />
@@ -282,7 +285,7 @@ export function NotificationBell() {
                   flex: 1,
                 }}
               >
-                Notifications
+                {t("notification.title")}
                 {unreadCount > 0 && (
                   <span
                     style={{
@@ -292,13 +295,13 @@ export function NotificationBell() {
                       color: "var(--text-muted)",
                     }}
                   >
-                    ({unreadCount} unread)
+                    ({unreadCount} {t("notification.unread")})
                   </span>
                 )}
               </span>
               {unreadCount > 0 && (
                 <button
-                  title="Mark all as read"
+                  title={t("notification.markAllAsRead")}
                   onClick={handleMarkAllRead}
                   style={{
                     background: "none",
@@ -315,7 +318,7 @@ export function NotificationBell() {
                 </button>
               )}
               <button
-                title="Close"
+                title={t("common.close")}
                 onClick={() => setOpen(false)}
                 style={s.modalCloseBtn}
               >
@@ -338,7 +341,7 @@ export function NotificationBell() {
                     color: "var(--text-hint)",
                   }}
                 >
-                  Loading...
+                  {t("common.loading")}
                 </div>
               ) : error && !result ? (
                 <div
@@ -361,7 +364,7 @@ export function NotificationBell() {
                     color: "var(--text-hint)",
                   }}
                 >
-                  No notifications
+                  {t("notification.noNotifications")}
                 </div>
               ) : (
                 result.notifications.map((item) => (
