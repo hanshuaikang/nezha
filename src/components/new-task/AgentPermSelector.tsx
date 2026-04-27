@@ -54,6 +54,7 @@ export function AgentPermSelector({
   planMode,
   isEmpty,
   hasImages,
+  sendShortcutLabel,
   onSetAgent,
   onSetPermMode,
   onTogglePlanMode,
@@ -65,6 +66,7 @@ export function AgentPermSelector({
   planMode: boolean;
   isEmpty: boolean;
   hasImages: boolean;
+  sendShortcutLabel: string;
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
   onTogglePlanMode: () => void;
@@ -259,7 +261,7 @@ export function AgentPermSelector({
         >
           <ArrowUp size={13} strokeWidth={2.1} />
           <span>{t("newTask.send")}</span>
-          <kbd style={s.kbd}>⌘↵</kbd>
+          <kbd style={s.kbd}>{sendShortcutLabel}</kbd>
         </button>
         <Popover.Root>
           <Popover.Trigger asChild>

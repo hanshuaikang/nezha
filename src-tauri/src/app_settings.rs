@@ -11,6 +11,17 @@ use crate::storage::atomic_write;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+fn default_send_shortcut() -> String {
+    "mod_enter".to_string()
+}
+
+fn normalize_send_shortcut(value: String) -> String {
+    match value.as_str() {
+        "enter" | "mod_enter" => value,
+        _ => default_send_shortcut(),
+    }
+}
+
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static CACHED_CODEX_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 
@@ -22,12 +33,24 @@ pub fn get_login_shell_path() -> &'static str {
     crate::platform::login_shell_path()
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default)]
     pub claude_path: String,
     #[serde(default)]
     pub codex_path: String,
+    #[serde(default = "default_send_shortcut")]
+    pub send_shortcut: String,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            claude_path: String::new(),
+            codex_path: String::new(),
+            send_shortcut: default_send_shortcut(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -277,6 +300,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
     AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
+        send_shortcut: normalize_send_shortcut(settings.send_shortcut),
     }
 }
 
@@ -290,6 +314,7 @@ pub fn load_settings_internal() -> AppSettings {
         let settings = normalize_settings(AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
+            send_shortcut: default_send_shortcut(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -319,8 +344,10 @@ pub fn get_agent_launch_spec(agent: &str) -> AgentLaunchSpec {
 }
 
 #[tauri::command]
-pub fn load_app_settings() -> Result<AppSettings, String> {
-    Ok(load_settings_internal())
+pub async fn load_app_settings() -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(load_settings_internal)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -337,10 +364,10 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
 
 #[tauri::command]
 pub fn detect_agent_paths() -> Result<AppSettings, String> {
-    Ok(normalize_settings(AppSettings {
-        claude_path: detect_path("claude"),
-        codex_path: detect_path("codex"),
-    }))
+    let mut settings = load_settings_internal();
+    settings.claude_path = detect_path("claude");
+    settings.codex_path = detect_path("codex");
+    Ok(normalize_settings(settings))
 }
 
 fn detect_version(launch: &AgentLaunchSpec) -> Option<String> {
@@ -420,16 +447,20 @@ pub fn claude_version_gte(saved_version: &str, min_version: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn detect_agent_versions() -> Result<AgentVersions, String> {
-    Ok(AgentVersions {
+pub async fn detect_agent_versions() -> Result<AgentVersions, String> {
+    tokio::task::spawn_blocking(|| AgentVersions {
         claude_version: detect_claude_version().unwrap_or_default(),
         codex_version: detect_codex_version().unwrap_or_default(),
     })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn detect_agent_versions_for_settings(settings: AppSettings) -> Result<AgentVersions, String> {
-    Ok(detect_versions_for_settings(&settings))
+pub async fn detect_agent_versions_for_settings(settings: AppSettings) -> Result<AgentVersions, String> {
+    tokio::task::spawn_blocking(move || detect_versions_for_settings(&settings))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

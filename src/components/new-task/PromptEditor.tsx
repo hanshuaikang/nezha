@@ -3,6 +3,8 @@ import type { Project } from "../../types";
 import { CODE_EXTS } from "../../utils";
 import type { FileEntry, CrossProjectRef, MentionItem } from "./MentionPopover";
 import { useI18n } from "../../i18n";
+import { APP_PLATFORM } from "../../platform";
+import { shouldSubmitPromptKey, type SendShortcut } from "../../shortcuts";
 import s from "../../styles";
 
 const FILE_CODE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/></svg>`;
@@ -162,6 +164,7 @@ export function PromptEditor({
   onSelectFile,
   onSelectProject,
   onSetMentionIndex,
+  sendShortcut,
   onSubmit,
 }: {
   editorRef: React.RefObject<HTMLDivElement | null>;
@@ -174,6 +177,7 @@ export function PromptEditor({
   onSelectFile: (file: FileEntry, crossProject?: CrossProjectRef) => void;
   onSelectProject: (project: Project) => void;
   onSetMentionIndex: (index: number) => void;
+  sendShortcut: SendShortcut;
   onSubmit: (immediate: boolean) => void;
 }) {
   const { t } = useI18n();
@@ -284,7 +288,7 @@ export function PromptEditor({
         return;
       }
     }
-    if (e.metaKey && e.key === "Enter") {
+    if (!isComposingRef.current && shouldSubmitPromptKey(e, sendShortcut, APP_PLATFORM)) {
       e.preventDefault();
       onSubmit(true);
     }
