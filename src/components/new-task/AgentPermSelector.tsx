@@ -1,6 +1,5 @@
 import { useRef } from "react";
 import {
-  ArrowUp,
   BookmarkPlus,
   ChevronDown,
   Hand,
@@ -14,6 +13,7 @@ import type { AgentType, PermissionMode } from "../../types";
 import { permissionModeLabel } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
+import { renderShortcutKeys } from "../app-settings/shared";
 import claudeLogo from "../../assets/claude.svg";
 import chatgptLogo from "../../assets/chatgpt.svg";
 
@@ -54,6 +54,8 @@ export function AgentPermSelector({
   planMode,
   isEmpty,
   hasImages,
+  sendShortcutKeys,
+  newlineShortcutKeys,
   onSetAgent,
   onSetPermMode,
   onTogglePlanMode,
@@ -65,6 +67,8 @@ export function AgentPermSelector({
   planMode: boolean;
   isEmpty: boolean;
   hasImages: boolean;
+  sendShortcutKeys: string[];
+  newlineShortcutKeys: string[];
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
   onTogglePlanMode: () => void;
@@ -74,6 +78,7 @@ export function AgentPermSelector({
   const { t } = useI18n();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const canSend = !isEmpty || hasImages;
+  const sendShortcutLabel = sendShortcutKeys.join("");
 
   async function handleImageFiles(files: FileList | null) {
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
@@ -230,19 +235,39 @@ export function AgentPermSelector({
                     onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
                     onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
                   >
-                    <Select.ItemText>
-                      {permissionModeLabel(perm, agent)}
-                    </Select.ItemText>
+                    <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
                   </Select.Item>
                 ))}
               </Select.Viewport>
             </Select.Content>
           </Select.Portal>
         </Select.Root>
-
       </div>
 
       <div style={s.toolbarSpacer} />
+
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          flexShrink: 0,
+          color: "var(--text-hint)",
+          fontSize: 12.5,
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {renderShortcutKeys(sendShortcutKeys)}
+        <span style={{ display: "inline-flex", alignItems: "center", lineHeight: 1 }}>
+          {t("newTask.send")}
+        </span>
+        <span style={{ opacity: 0.55 }}>/</span>
+        {renderShortcutKeys(newlineShortcutKeys)}
+        <span style={{ display: "inline-flex", alignItems: "center", lineHeight: 1 }}>
+          {t("newTask.newLine")}
+        </span>
+      </div>
 
       <div style={s.sendSplit}>
         <button
@@ -257,9 +282,8 @@ export function AgentPermSelector({
             if (canSend) onSubmit(true);
           }}
         >
-          <ArrowUp size={13} strokeWidth={2.1} />
           <span>{t("newTask.send")}</span>
-          <kbd style={s.kbd}>⌘↵</kbd>
+          <kbd style={s.kbd}>{sendShortcutLabel}</kbd>
         </button>
         <Popover.Root>
           <Popover.Trigger asChild>
@@ -280,12 +304,7 @@ export function AgentPermSelector({
             </button>
           </Popover.Trigger>
           <Popover.Portal>
-            <Popover.Content
-              side="bottom"
-              align="end"
-              sideOffset={6}
-              style={s.toolbarMenuContent}
-            >
+            <Popover.Content side="bottom" align="end" sideOffset={6} style={s.toolbarMenuContent}>
               <Popover.Close asChild>
                 <button
                   style={{

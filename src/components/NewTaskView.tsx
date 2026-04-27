@@ -13,6 +13,14 @@ import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
 import { useI18n } from "../i18n";
+import { APP_PLATFORM } from "../platform";
+import {
+  DEFAULT_SEND_SHORTCUT,
+  getNewlineShortcutKeys,
+  getSendShortcutKeys,
+  normalizeSendShortcut,
+  type SendShortcut,
+} from "../shortcuts";
 import claudeGif from "../assets/gif/claude.gif";
 import codexGif from "../assets/gif/codex.gif";
 import s from "../styles";
@@ -70,8 +78,21 @@ export function NewTaskView({
   const [mentionIndex, setMentionIndex] = useState(0);
   const [isEmpty, setIsEmpty] = useState(true);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
+  const [sendShortcut, setSendShortcut] = useState<SendShortcut>(DEFAULT_SEND_SHORTCUT);
 
   const { editorRef, isComposingRef, handle: editorHandle } = usePromptEditor();
+
+  useEffect(() => {
+    function loadSendShortcut() {
+      invoke<{ send_shortcut?: string }>("load_app_settings")
+        .then((settings) => setSendShortcut(normalizeSendShortcut(settings.send_shortcut)))
+        .catch(() => setSendShortcut(DEFAULT_SEND_SHORTCUT));
+    }
+
+    loadSendShortcut();
+    window.addEventListener("nezha:app-settings-changed", loadSendShortcut);
+    return () => window.removeEventListener("nezha:app-settings-changed", loadSendShortcut);
+  }, []);
 
   // Load default agent and permission mode from project config when project changes
   useEffect(() => {
@@ -338,6 +359,7 @@ export function NewTaskView({
             setMentionIndex(0);
           }}
           onSetMentionIndex={setMentionIndex}
+          sendShortcut={sendShortcut}
           onSubmit={handleSubmit}
         />
 
@@ -354,6 +376,8 @@ export function NewTaskView({
           planMode={planMode}
           isEmpty={isEmpty}
           hasImages={pastedImages.length > 0}
+          sendShortcutKeys={getSendShortcutKeys(sendShortcut, APP_PLATFORM)}
+          newlineShortcutKeys={getNewlineShortcutKeys(sendShortcut, APP_PLATFORM)}
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}
           onTogglePlanMode={() => setPlanMode((v) => !v)}
