@@ -1,12 +1,12 @@
 import { useRef } from "react";
 import {
-  ArrowUp,
   BookmarkPlus,
   ChevronDown,
   Hand,
   Image as ImageIcon,
   Map as MapIcon,
   Plus,
+  ArrowUp,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
@@ -54,6 +54,7 @@ export function AgentPermSelector({
   planMode,
   isEmpty,
   hasImages,
+  sendShortcutKeys,
   onSetAgent,
   onSetPermMode,
   onTogglePlanMode,
@@ -65,6 +66,7 @@ export function AgentPermSelector({
   planMode: boolean;
   isEmpty: boolean;
   hasImages: boolean;
+  sendShortcutKeys: string[];
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
   onTogglePlanMode: () => void;
@@ -74,6 +76,7 @@ export function AgentPermSelector({
   const { t } = useI18n();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const canSend = !isEmpty || hasImages;
+  const sendShortcutLabel = sendShortcutKeys.join("");
 
   async function handleImageFiles(files: FileList | null) {
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
@@ -230,16 +233,13 @@ export function AgentPermSelector({
                     onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
                     onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
                   >
-                    <Select.ItemText>
-                      {permissionModeLabel(perm, agent)}
-                    </Select.ItemText>
+                    <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
                   </Select.Item>
                 ))}
               </Select.Viewport>
             </Select.Content>
           </Select.Portal>
         </Select.Root>
-
       </div>
 
       <div style={s.toolbarSpacer} />
@@ -259,7 +259,7 @@ export function AgentPermSelector({
         >
           <ArrowUp size={13} strokeWidth={2.1} />
           <span>{t("newTask.send")}</span>
-          <kbd style={s.kbd}>⌘↵</kbd>
+          <kbd style={s.kbd}>{sendShortcutLabel}</kbd>
         </button>
         <Popover.Root>
           <Popover.Trigger asChild>
@@ -280,12 +280,7 @@ export function AgentPermSelector({
             </button>
           </Popover.Trigger>
           <Popover.Portal>
-            <Popover.Content
-              side="bottom"
-              align="end"
-              sideOffset={6}
-              style={s.toolbarMenuContent}
-            >
+            <Popover.Content side="bottom" align="end" sideOffset={6} style={s.toolbarMenuContent}>
               <Popover.Close asChild>
                 <button
                   style={{
