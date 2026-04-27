@@ -762,3 +762,34 @@ body {
   contain: layout paint style;
   isolation: isolate;
 }
+
+/* ── Range Slider (Font Scale) ──────────────────────────────────── */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--primary-action-bg);
+  border: 2px solid var(--control-knob-bg);
+  box-shadow: var(--shadow-switch-thumb);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--primary-action-bg);
+  border: 2px solid var(--control-knob-bg);
+  box-shadow: var(--shadow-switch-thumb);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-medium);
+}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
-import type { ThemeMode } from "../types";
+import type { ThemeMode, TerminalFontSize } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
@@ -14,12 +14,16 @@ export function SidebarFooterActions({
   systemPrefersDark,
   onThemeModeChange,
   onToggleTheme,
+  terminalFontSize,
+  onTerminalFontSizeChange,
 }: {
   isDark: boolean;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }) {
   const { t } = useI18n();
   const [showAppSettings, setShowAppSettings] = useState(false);
@@ -55,6 +59,8 @@ export function SidebarFooterActions({
           themeMode={themeMode}
           systemPrefersDark={systemPrefersDark}
           onThemeModeChange={onThemeModeChange}
+          terminalFontSize={terminalFontSize}
+          onTerminalFontSizeChange={onTerminalFontSizeChange}
           onClose={() => setShowAppSettings(false)}
         />
       )}

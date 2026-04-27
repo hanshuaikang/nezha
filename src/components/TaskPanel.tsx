@@ -9,7 +9,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode } from "../types";
+import type { Project, Task, ThemeMode, TerminalFontSize } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -34,6 +34,8 @@ export function TaskPanel({
   systemPrefersDark,
   onThemeModeChange,
   onToggleTheme,
+  terminalFontSize,
+  onTerminalFontSizeChange,
   active = true,
   collapsed = false,
   onToggleCollapsed,
@@ -54,6 +56,8 @@ export function TaskPanel({
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   active?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -188,6 +192,8 @@ export function TaskPanel({
           systemPrefersDark={systemPrefersDark}
           onThemeModeChange={onThemeModeChange}
           onToggleTheme={onToggleTheme}
+          terminalFontSize={terminalFontSize}
+          onTerminalFontSizeChange={onTerminalFontSizeChange}
         />
       </div>
     </div>
