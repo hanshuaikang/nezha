@@ -8,7 +8,7 @@ import type {
   ThemeMode,
 } from "../types";
 import { TaskPanel } from "./TaskPanel";
-import { NewTaskView } from "./NewTaskView";
+import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
 import { FileExplorer } from "./FileExplorer";
 import { FileViewer } from "./FileViewer";
@@ -135,6 +135,10 @@ export function ProjectPage({
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
   const prevHadDiffRef = useRef(false);
+  const newTaskDraftRef = useRef<NewTaskDraft | null>(null);
+  const handleCacheNewTaskDraft = useCallback((draft: NewTaskDraft | null) => {
+    newTaskDraftRef.current = draft;
+  }, []);
 
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId === project.id),
@@ -315,36 +319,21 @@ export function ProjectPage({
                 isDark={isDark}
                 onRunMakeTarget={handleRunMakeTarget}
               />
-            ) : !isNewTask && selectedTask && selectedTask.status === ("todo" as TaskStatus) ? (
+            ) : isNewTask || !selectedTask ? (
+              <NewTaskView
+                project={project}
+                otherProjects={otherProjects}
+                onSubmit={onSubmitTask}
+                initialDraft={newTaskDraftRef.current}
+                onCacheDraft={handleCacheNewTaskDraft}
+              />
+            ) : selectedTask.status === ("todo" as TaskStatus) ? (
               <TodoTaskView
                 task={selectedTask}
                 onRunTodo={onRunTodoTask}
                 onUpdateTodo={onUpdateTodo}
               />
             ) : null}
-
-            {/* NewTaskView 始终挂载以保留草稿（输入文本、附件、agent 选择等），
-                仅当不在新建任务态时通过 visibility 隐藏。*/}
-            {(() => {
-              const showNewTask = !openDiff && openFiles.length === 0 && (isNewTask || !selectedTask);
-              return (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    visibility: showNewTask ? "visible" : "hidden",
-                    pointerEvents: showNewTask ? "auto" : "none",
-                  }}
-                >
-                  <NewTaskView
-                    project={project}
-                    otherProjects={otherProjects}
-                    onSubmit={onSubmitTask}
-                  />
-                </div>
-              );
-            })()}
           </ErrorBoundary>
 
           {/* Background terminals */}
