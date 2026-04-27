@@ -12,7 +12,8 @@ import {
   Monitor,
 } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
-import type { ThemeMode } from "../types";
+import type { ThemeMode, TerminalFontSize } from "../types";
+import { TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_STEP, clampTerminalFontSize } from "../types";
 import { useI18n, type AppLanguage } from "../i18n";
 import { APP_PLATFORM } from "../platform";
 import s from "../styles";
@@ -106,9 +107,11 @@ interface ThemePanelProps {
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }
 
-function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePanelProps) {
+function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange, terminalFontSize, onTerminalFontSizeChange }: ThemePanelProps) {
   const { t } = useI18n();
   const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
   const currentModeLabel = systemPrefersDark ? t("theme.dark") : t("theme.light");
@@ -532,6 +535,72 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
             previewBorder: "rgba(23,27,36,0.08)",
             previewAccent: "#171b24",
           })}
+        </div>
+      </div>
+
+      {/* Font Scale */}
+      <div
+        style={{
+          padding: "16px 18px",
+          borderRadius: 12,
+          border: "1px solid var(--border-dim)",
+          background: "var(--bg-subtle)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+              {t("theme.terminalFontSize")}
+            </span>
+            <span style={{ fontSize: 11.5, color: "var(--text-hint)", lineHeight: 1.45 }}>
+              {t("theme.terminalFontSizeHint")}
+            </span>
+          </div>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              borderRadius: 999,
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-medium)",
+              color: "var(--text-secondary)",
+              fontFamily: "var(--font-mono)",
+              overflow: "hidden",
+            }}
+          >
+            <input
+              type="number"
+              min={TERMINAL_FONT_SIZE_MIN}
+              max={TERMINAL_FONT_SIZE_MAX}
+              step={TERMINAL_FONT_SIZE_STEP}
+              value={terminalFontSize}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!isNaN(v)) onTerminalFontSizeChange(clampTerminalFontSize(v));
+              }}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                e.target.value = String(clampTerminalFontSize(v));
+                onTerminalFontSizeChange(clampTerminalFontSize(v));
+              }}
+              style={{
+                width: 36,
+                padding: "4px 0",
+                border: "none",
+                background: "transparent",
+                color: "var(--text-secondary)",
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: "var(--font-mono)",
+                textAlign: "center",
+                outline: "none",
+                appearance: "textfield",
+                MozAppearance: "textfield",
+              }}
+            />
+
+          </div>
         </div>
       </div>
     </div>
@@ -1282,12 +1351,16 @@ export function AppSettingsDialog({
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
+  terminalFontSize,
+  onTerminalFontSizeChange,
 }: {
   onClose: () => void;
   isDark: boolean;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
@@ -1371,6 +1444,8 @@ export function AppSettingsDialog({
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={onThemeModeChange}
+              terminalFontSize={terminalFontSize}
+              onTerminalFontSizeChange={onTerminalFontSizeChange}
             />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />

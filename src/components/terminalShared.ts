@@ -129,13 +129,13 @@ export interface InitTerminalResult {
  * 创建 xterm Terminal 实例并加载通用 addon（FitAddon, Unicode11, WebGL）。
  * 调用方负责 term.open(container)。
  */
-export function initTerminal(isDark: boolean, scrollback = 1000): InitTerminalResult {
+export function initTerminal(isDark: boolean, scrollback = 1000, terminalFontSize = 12): InitTerminalResult {
   const term = new Terminal({
     convertEol: false,
     scrollback,
     cursorBlink: true,
     fontFamily: "monospace",
-    fontSize: 12,
+    fontSize: terminalFontSize,
     theme: isDark ? DARK_THEME : LIGHT_THEME,
     allowProposedApi: true,
   });
@@ -178,4 +178,16 @@ export function safeFit(
   } catch {
     return null;
   }
+}
+
+/**
+ * 更新终端字体大小并重新 fit，返回新的 { cols, rows } 或 null。
+ */
+export function applyTerminalFontSize(
+  term: Terminal,
+  fitAddon: FitAddon,
+  terminalFontSize: number,
+): { cols: number; rows: number } | null {
+  term.options.fontSize = terminalFontSize;
+  return safeFit(fitAddon, term);
 }

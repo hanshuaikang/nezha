@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import type { TerminalFontSize } from "../types";
 import {
   DARK_THEME,
   LIGHT_THEME,
@@ -12,6 +13,7 @@ import {
   loadWebglAddon,
   safeFit,
   createSmartWriter,
+  applyTerminalFontSize,
 } from "./terminalShared";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { useI18n } from "../i18n";
@@ -41,6 +43,7 @@ interface Props {
   isActive?: boolean;
   onClose: () => void;
   isDark: boolean;
+  terminalFontSize: TerminalFontSize;
   onReady?: () => void;
   height?: number;
   onResizeStart?: (e: React.MouseEvent) => void;
@@ -60,18 +63,21 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   projectPath: string;
   isActive: boolean;
   isDark: boolean;
+  terminalFontSize: TerminalFontSize;
   onReady?: () => void;
 }>(
-  function ShellTerminalInstance({ shellId, projectPath, isActive, isDark, onReady }, ref) {
+  function ShellTerminalInstance({ shellId, projectPath, isActive, isDark, terminalFontSize, onReady }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const isDarkRef = useRef(isDark);
     const isActiveRef = useRef(isActive);
+    const terminalFontSizeRef = useRef(terminalFontSize);
     const onReadyRef = useRef(onReady);
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
     isDarkRef.current = isDark;
     isActiveRef.current = isActive;
+    terminalFontSizeRef.current = terminalFontSize;
     onReadyRef.current = onReady;
 
     useImperativeHandle(
@@ -91,7 +97,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
 
-      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000);
+      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000, terminalFontSizeRef.current);
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
@@ -214,6 +220,18 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       }
     }, [isDark]);
 
+    useEffect(() => {
+      if (!terminalRef.current || !fitAddonRef.current) return;
+      const s = applyTerminalFontSize(terminalRef.current, fitAddonRef.current, terminalFontSize);
+      if (s) {
+        const last = lastSizeRef.current;
+        if (!last || last.cols !== s.cols || last.rows !== s.rows) {
+          lastSizeRef.current = { cols: s.cols, rows: s.rows };
+          invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        }
+      }
+    }, [terminalFontSize, shellId]);
+
     return (
       <div
         ref={containerRef}
@@ -233,7 +251,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
 export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
   function ShellTerminalPanel(
-    { projectPath, projectId, isActive = true, onClose, isDark, onReady, height = 240, onResizeStart },
+    { projectPath, projectId, isActive = true, onClose, isDark, terminalFontSize, onReady, height = 240, onResizeStart },
     ref,
   ) {
     const { t } = useI18n();
@@ -363,6 +381,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 projectPath={projectPath}
                 isActive={isActive && activeShellId === shell.id}
                 isDark={isDark}
+                terminalFontSize={terminalFontSize}
                 onReady={onReady}
               />
             ))}
