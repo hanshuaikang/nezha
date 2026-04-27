@@ -9,7 +9,11 @@ import {
   type CrossProjectRef,
   type MentionItem,
 } from "./new-task/MentionPopover";
-import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
+import {
+  PromptEditor,
+  usePromptEditor,
+  type PromptEditorContent,
+} from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
 import { useI18n } from "../i18n";
@@ -90,11 +94,21 @@ export function NewTaskView({
   );
 
   const { editorRef, isComposingRef, handle: editorHandle } = usePromptEditor();
+  const editorContentRef = useRef<PromptEditorContent>({
+    html: initialDraft?.promptHtml ?? "",
+    text: (initialDraft?.promptHtml ?? "").replace(/<[^>]+>/g, ""),
+    hasChips: !!initialDraft?.promptHtml?.includes("data-file-path"),
+  });
 
   // Restore prompt HTML from draft on mount (DOM-level state outside React).
   useEffect(() => {
     if (initialDraft?.promptHtml && editorRef.current) {
       editorRef.current.innerHTML = initialDraft.promptHtml;
+      editorContentRef.current = {
+        html: editorRef.current.innerHTML,
+        text: editorRef.current.textContent || "",
+        hasChips: !!editorRef.current.querySelector("[data-file-path]"),
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -113,19 +127,14 @@ export function NewTaskView({
         onCacheDraft(null);
         return;
       }
-      // Reading editorRef.current at unmount is intentional: we need the latest
-      // DOM state at the moment the component is being torn down.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      const editor = editorRef.current;
-      const text = (editor?.textContent || "").trim();
-      const hasChips = !!editor?.querySelector("[data-file-path]");
       const data = draftDataRef.current;
-      if (!text && !hasChips && data.pastedImages.length === 0) {
+      const editorContent = editorContentRef.current;
+      if (!editorContent.text.trim() && !editorContent.hasChips && data.pastedImages.length === 0) {
         onCacheDraft(null);
         return;
       }
       onCacheDraft({
-        promptHtml: editor?.innerHTML ?? "",
+        promptHtml: editorContent.html,
         agent: data.agent,
         permMode: data.permMode,
         planMode: data.planMode,
@@ -137,6 +146,7 @@ export function NewTaskView({
 
   // Load default agent and permission mode from project config when project changes
   useEffect(() => {
+    if (initialDraft) return;
     invoke<{ agent: { default: string; default_permission_mode?: string } }>(
       "read_project_config",
       { projectPath: project.path },
@@ -392,6 +402,9 @@ export function NewTaskView({
           }}
           onSetMentionIndex={setMentionIndex}
           onSubmit={handleSubmit}
+          onContentChange={(content) => {
+            editorContentRef.current = content;
+          }}
         />
 
         {/* Image previews */}
