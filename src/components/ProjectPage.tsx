@@ -8,7 +8,7 @@ import type {
   ThemeMode,
 } from "../types";
 import { TaskPanel } from "./TaskPanel";
-import { NewTaskView } from "./NewTaskView";
+import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
 import { FileExplorer } from "./FileExplorer";
 import { FileViewer } from "./FileViewer";
@@ -135,6 +135,10 @@ export function ProjectPage({
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
   const prevHadDiffRef = useRef(false);
+  const newTaskDraftRef = useRef<NewTaskDraft | null>(null);
+  const handleCacheNewTaskDraft = useCallback((draft: NewTaskDraft | null) => {
+    newTaskDraftRef.current = draft;
+  }, []);
 
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId === project.id),
@@ -320,6 +324,8 @@ export function ProjectPage({
                 project={project}
                 otherProjects={otherProjects}
                 onSubmit={onSubmitTask}
+                initialDraft={newTaskDraftRef.current}
+                onCacheDraft={handleCacheNewTaskDraft}
               />
             ) : selectedTask.status === ("todo" as TaskStatus) ? (
               <TodoTaskView

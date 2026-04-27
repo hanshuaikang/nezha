@@ -9,7 +9,11 @@ import {
   type CrossProjectRef,
   type MentionItem,
 } from "./new-task/MentionPopover";
-import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
+import {
+  PromptEditor,
+  usePromptEditor,
+  type PromptEditorContent,
+} from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
 import { useI18n } from "../i18n";
@@ -20,6 +24,14 @@ import s from "../styles";
 interface PastedImage {
   id: string;
   dataUrl: string;
+}
+
+export interface NewTaskDraft {
+  promptHtml: string;
+  agent: AgentType;
+  permMode: PermissionMode;
+  planMode: boolean;
+  pastedImages: PastedImage[];
 }
 
 type CrossProjectFileMap = Map<string, FileEntry[]>;
@@ -44,6 +56,8 @@ export function NewTaskView({
   project,
   otherProjects = [],
   onSubmit,
+  initialDraft,
+  onCacheDraft,
 }: {
   project: Project;
   otherProjects?: Project[];
@@ -54,12 +68,14 @@ export function NewTaskView({
     images: string[];
     immediate: boolean;
   }) => void;
+  initialDraft?: NewTaskDraft | null;
+  onCacheDraft?: (draft: NewTaskDraft | null) => void;
 }) {
   const { t } = useI18n();
   const { showToast } = useToast();
-  const [agent, setAgent] = useState<AgentType>("claude");
-  const [permMode, setPermMode] = useState<PermissionMode>("ask");
-  const [planMode, setPlanMode] = useState(false);
+  const [agent, setAgent] = useState<AgentType>(initialDraft?.agent ?? "claude");
+  const [permMode, setPermMode] = useState<PermissionMode>(initialDraft?.permMode ?? "ask");
+  const [planMode, setPlanMode] = useState(initialDraft?.planMode ?? false);
 
   const [allFiles, setAllFiles] = useState<FileEntry[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -68,13 +84,69 @@ export function NewTaskView({
 
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
-  const [isEmpty, setIsEmpty] = useState(true);
-  const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
+  const [pastedImages, setPastedImages] = useState<PastedImage[]>(
+    initialDraft?.pastedImages ?? [],
+  );
+  const [isEmpty, setIsEmpty] = useState(
+    () =>
+      !(initialDraft?.promptHtml ?? "").replace(/<[^>]+>/g, "").trim() &&
+      (initialDraft?.pastedImages.length ?? 0) === 0,
+  );
 
   const { editorRef, isComposingRef, handle: editorHandle } = usePromptEditor();
+  const editorContentRef = useRef<PromptEditorContent>({
+    html: initialDraft?.promptHtml ?? "",
+    text: (initialDraft?.promptHtml ?? "").replace(/<[^>]+>/g, ""),
+    hasChips: !!initialDraft?.promptHtml?.includes("data-file-path"),
+  });
+
+  // Restore prompt HTML from draft on mount (DOM-level state outside React).
+  useEffect(() => {
+    if (initialDraft?.promptHtml && editorRef.current) {
+      editorRef.current.innerHTML = initialDraft.promptHtml;
+      editorContentRef.current = {
+        html: editorRef.current.innerHTML,
+        text: editorRef.current.textContent || "",
+        hasChips: !!editorRef.current.querySelector("[data-file-path]"),
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cache draft on unmount so reopening the new-task view restores work in progress.
+  // Cleared after submit to avoid re-restoring the just-sent prompt.
+  const submittedRef = useRef(false);
+  const draftDataRef = useRef({ agent, permMode, planMode, pastedImages });
+  useEffect(() => {
+    draftDataRef.current = { agent, permMode, planMode, pastedImages };
+  }, [agent, permMode, planMode, pastedImages]);
+  useEffect(() => {
+    return () => {
+      if (!onCacheDraft) return;
+      if (submittedRef.current) {
+        onCacheDraft(null);
+        return;
+      }
+      const data = draftDataRef.current;
+      const editorContent = editorContentRef.current;
+      if (!editorContent.text.trim() && !editorContent.hasChips && data.pastedImages.length === 0) {
+        onCacheDraft(null);
+        return;
+      }
+      onCacheDraft({
+        promptHtml: editorContent.html,
+        agent: data.agent,
+        permMode: data.permMode,
+        planMode: data.planMode,
+        pastedImages: data.pastedImages,
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load default agent and permission mode from project config when project changes
   useEffect(() => {
+    if (initialDraft) return;
     invoke<{ agent: { default: string; default_permission_mode?: string } }>(
       "read_project_config",
       { projectPath: project.path },
@@ -105,16 +177,6 @@ export function NewTaskView({
       .then(() => setHasMdFile(true))
       .catch(() => setHasMdFile(false));
   }, [project.path, agent]);
-
-  // Reset editor when project changes
-  useEffect(() => {
-    editorHandle.clear();
-    setIsEmpty(true);
-    setMentionSearch(null);
-    setPastedImages([]);
-    setCrossProjectFiles(new Map());
-    loadedProjectIds.current.clear();
-  }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load current project file list
   useEffect(() => {
@@ -223,6 +285,7 @@ export function NewTaskView({
   function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
     if (!text && pastedImages.length === 0) return;
+    submittedRef.current = true;
     const finalPrompt = planMode && text ? `${text}\n\nPlease use plan mode.` : text;
     onSubmit({
       prompt: finalPrompt,
@@ -339,6 +402,9 @@ export function NewTaskView({
           }}
           onSetMentionIndex={setMentionIndex}
           onSubmit={handleSubmit}
+          onContentChange={(content) => {
+            editorContentRef.current = content;
+          }}
         />
 
         {/* Image previews */}
