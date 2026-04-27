@@ -18,9 +18,9 @@ const CODEX_ATTEMPT_TIMEOUT_SECS: u64 = 10;
 const CLAUDE_429_BACKOFF_SECS: u64 = 300; // 5 分钟
 
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(CLAUDE_TIMEOUT_SECS))
-        .build()
+    let builder = reqwest::Client::builder().timeout(Duration::from_secs(CLAUDE_TIMEOUT_SECS));
+    crate::app_settings::apply_proxy_to_reqwest_builder(builder)
+        .and_then(|builder| builder.build().map_err(|e| e.to_string()))
         .unwrap_or_else(|_| reqwest::Client::new())
 });
 
