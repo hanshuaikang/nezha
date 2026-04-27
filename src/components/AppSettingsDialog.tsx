@@ -37,6 +37,7 @@ type NavKey = "general" | "theme" | "about" | "claude" | "codex";
 interface AppSettings {
   claude_path: string;
   codex_path: string;
+  proxy_url: string;
 }
 
 interface AgentVersions {
@@ -45,6 +46,7 @@ interface AgentVersions {
 }
 
 type AgentKey = "claude" | "codex";
+const SUPPORTED_PROXY_PROTOCOLS = ["http:", "https:", "socks5:", "socks5h:"];
 
 const GITHUB_REPO_URL = "https://github.com/hanshuaikang/nezha";
 
@@ -74,6 +76,26 @@ function getAgentExecutablePlaceholder(agent: AgentKey): string {
   return agent === "claude"
     ? "claude or /usr/local/bin/claude"
     : "codex or /usr/local/bin/codex";
+}
+
+function getProxyUrlError(proxyUrl: string, t: (key: string) => string): string | null {
+  const trimmed = proxyUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!SUPPORTED_PROXY_PROTOCOLS.includes(parsed.protocol)) {
+      return t("appSettings.proxyErrorProtocol");
+    }
+    if (!parsed.hostname) {
+      return t("appSettings.proxyErrorHostname");
+    }
+    return null;
+  } catch {
+    return t("appSettings.proxyErrorUrl");
+  }
 }
 
 const NAV_ITEMS: Array<{
@@ -542,8 +564,16 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
 
 function GeneralPanel() {
   const { language, setLanguage, t } = useI18n();
-  const [settings, setSettings] = useState<AppSettings>({ claude_path: "", codex_path: "" });
-  const [original, setOriginal] = useState<AppSettings>({ claude_path: "", codex_path: "" });
+  const [settings, setSettings] = useState<AppSettings>({
+    claude_path: "",
+    codex_path: "",
+    proxy_url: "",
+  });
+  const [original, setOriginal] = useState<AppSettings>({
+    claude_path: "",
+    codex_path: "",
+    proxy_url: "",
+  });
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",
     codex_version: "",
@@ -553,7 +583,10 @@ function GeneralPanel() {
   const [refreshingVersions, setRefreshingVersions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+
+  const proxyError = getProxyUrlError(settings.proxy_url, t);
+  const error = requestError ?? proxyError;
 
   async function loadVersions(nextSettings: AppSettings) {
     setRefreshingVersions(true);
@@ -562,8 +595,9 @@ function GeneralPanel() {
         settings: nextSettings,
       });
       setVersions(detected);
+      setRequestError(null);
     } catch (e) {
-      setError(String(e));
+      setRequestError(String(e));
     } finally {
       setRefreshingVersions(false);
     }
@@ -576,27 +610,34 @@ function GeneralPanel() {
         setOriginal(loadedSettings);
         await loadVersions(loadedSettings);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setRequestError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   async function handleDetect() {
     setDetectingPaths(true);
-    setError(null);
+    setRequestError(null);
     try {
       const detected = await invoke<AppSettings>("detect_agent_paths");
-      setSettings(detected);
-      await loadVersions(detected);
+      const merged = {
+        ...detected,
+        proxy_url: settings.proxy_url,
+      };
+      setSettings(merged);
+      await loadVersions(merged);
     } catch (e) {
-      setError(String(e));
+      setRequestError(String(e));
     } finally {
       setDetectingPaths(false);
     }
   }
 
   async function handleSave() {
+    if (proxyError) {
+      return;
+    }
     setSaving(true);
-    setError(null);
+    setRequestError(null);
     setSaved(false);
     try {
       await invoke("save_app_settings", { settings });
@@ -605,14 +646,16 @@ function GeneralPanel() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setError(String(e));
+      setRequestError(String(e));
     } finally {
       setSaving(false);
     }
   }
 
   const isDirty =
-    settings.claude_path !== original.claude_path || settings.codex_path !== original.codex_path;
+    settings.claude_path !== original.claude_path ||
+    settings.codex_path !== original.codex_path ||
+    settings.proxy_url !== original.proxy_url;
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -826,6 +869,40 @@ function GeneralPanel() {
               <span style={hintStyle}>{t("appSettings.codexPathHint")}</span>
             </div>
 
+            <div style={fieldStyle}>
+              <label style={labelStyle}>{t("appSettings.agentProxyUrl")}</label>
+              <input
+                style={inputStyle}
+                value={settings.proxy_url}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSettings((prev) => ({ ...prev, proxy_url: value }));
+                  if (requestError) {
+                    setRequestError(null);
+                  }
+                }}
+                placeholder={t("appSettings.agentProxyPlaceholder")}
+                spellCheck={false}
+              />
+              <span
+                style={{
+                  ...hintStyle,
+                  color: proxyError ? "var(--danger)" : hintStyle.color,
+                }}
+              >
+                {proxyError ?? (
+                  <>
+                    {t("appSettings.agentProxyHint")}
+                  </>
+                )}
+              </span>
+              {!proxyError && (
+                <span style={hintStyle}>
+                  {t("appSettings.agentProxySchemes")}
+                </span>
+              )}
+            </div>
+
             <div style={{ ...fieldStyle, marginBottom: 0 }}>
               <label style={labelStyle}>{t("appSettings.installedVersions")}</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -878,9 +955,9 @@ function GeneralPanel() {
           </span>
         )}
         <button
-          style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
+          style={{ ...s.modalSaveBtn, opacity: saving || !isDirty || !!proxyError ? 0.5 : 1 }}
           onClick={handleSave}
-          disabled={saving || !isDirty}
+          disabled={saving || !isDirty || !!proxyError}
         >
           {saving ? t("common.saving") : t("common.save")}
         </button>

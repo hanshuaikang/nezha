@@ -38,6 +38,7 @@ fn run_git<S: AsRef<std::ffi::OsStr>>(
 
     let mut cmd = std::process::Command::new("git");
     crate::subprocess::configure_background_command(&mut cmd);
+    crate::app_settings::apply_proxy_env(&mut cmd);
     cmd.args(args)
         .current_dir(project_path)
         .output()
@@ -66,6 +67,7 @@ async fn run_git_with_timeout(
 
     let mut cmd = tokio::process::Command::new("git");
     crate::subprocess::configure_background_tokio_command(&mut cmd);
+    crate::app_settings::apply_proxy_env_tokio(&mut cmd);
     let mut child = cmd
         .args(&args)
         .current_dir(&project_path)
