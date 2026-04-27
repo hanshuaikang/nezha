@@ -136,6 +136,12 @@ export interface PromptEditorHandle {
   focus: () => void;
 }
 
+export interface PromptEditorContent {
+  html: string;
+  text: string;
+  hasChips: boolean;
+}
+
 export function usePromptEditor() {
   const editorRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -163,6 +169,7 @@ export function PromptEditor({
   onSelectProject,
   onSetMentionIndex,
   onSubmit,
+  onContentChange,
 }: {
   editorRef: React.RefObject<HTMLDivElement | null>;
   isComposingRef: React.MutableRefObject<boolean>;
@@ -175,8 +182,19 @@ export function PromptEditor({
   onSelectProject: (project: Project) => void;
   onSetMentionIndex: (index: number) => void;
   onSubmit: (immediate: boolean) => void;
+  onContentChange?: (content: PromptEditorContent) => void;
 }) {
   const { t } = useI18n();
+  const captureContent = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    onContentChange?.({
+      html: editor.innerHTML,
+      text: editor.textContent || "",
+      hasChips: !!editor.querySelector("[data-file-path]"),
+    });
+  }, [editorRef, onContentChange]);
+
   const selectFile = useCallback(
     (file: FileEntry, crossProject?: CrossProjectRef) => {
       const editor = editorRef.current;
@@ -204,9 +222,10 @@ export function PromptEditor({
 
       onSelectFile(file, crossProject);
       onSetIsEmpty(false);
+      captureContent();
       editor.focus();
     },
-    [editorRef, onSelectFile, onSetIsEmpty],
+    [captureContent, editorRef, onSelectFile, onSetIsEmpty],
   );
 
   const selectProject = useCallback(
@@ -233,9 +252,10 @@ export function PromptEditor({
       sel.addRange(newRange);
 
       onSelectProject(proj);
+      captureContent();
       editor.focus();
     },
-    [editorRef, onSelectProject],
+    [captureContent, editorRef, onSelectProject],
   );
 
   function updateMentionState() {
@@ -253,6 +273,7 @@ export function PromptEditor({
     const text = editor.textContent || "";
     const hasChips = !!editor.querySelector("[data-file-path]");
     onSetIsEmpty(!text.trim() && !hasChips);
+    captureContent();
     if (!isComposingRef.current) {
       onUpdateMention();
     }
@@ -312,6 +333,7 @@ export function PromptEditor({
     sel.removeAllRanges();
     sel.addRange(range);
     onSetIsEmpty(false);
+    captureContent();
     onUpdateMention();
   }
 
