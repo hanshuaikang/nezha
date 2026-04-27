@@ -1,6 +1,6 @@
 import type { SendShortcut } from "../../shortcuts";
 
-export type NavKey = "general" | "theme" | "shortcuts" | "about" | "claude" | "codex";
+export type NavKey = "app" | "agents" | "about";
 
 export interface AppSettings {
   claude_path: string;

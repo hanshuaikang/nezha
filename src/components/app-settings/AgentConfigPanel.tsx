@@ -35,11 +35,13 @@ export function AgentConfigPanel({
   filePath,
   lang,
   isDark,
+  embedded = false,
 }: {
   agentKey: AgentKey;
   filePath: string;
   lang: string;
   isDark: boolean;
+  embedded?: boolean;
 }) {
   const { t } = useI18n();
   const [resolvedFilePath, setResolvedFilePath] = useState(filePath);
@@ -131,157 +133,171 @@ export function AgentConfigPanel({
 
   const isDirty = fileState.status === "loaded" && fileState.content !== original;
 
-  return (
-    <>
-      <div
-        style={{
-          ...s.settingsBody,
-          display: "flex",
-          flexDirection: "column",
-          gap: 0,
-          padding: "14px 20px",
-        }}
-      >
-        {/* File path + edit button row */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div
+  const body = (
+    <div
+      style={{
+        ...(embedded ? {} : s.settingsBody),
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        padding: embedded ? 0 : "14px 20px",
+        minHeight: embedded ? 300 : undefined,
+      }}
+    >
+      {/* File path + edit button row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <div
+          style={{
+            fontSize: 11.5,
+            color: "var(--text-hint)",
+            fontFamily: "var(--font-mono)",
+            background: "var(--bg-subtle)",
+            border: "1px solid var(--border-dim)",
+            borderRadius: 6,
+            padding: "4px 9px",
+          }}
+        >
+          {resolvedFilePath}
+        </div>
+        {fileState.status === "loaded" && !editing && (
+          <button
             style={{
-              fontSize: 11.5,
-              color: "var(--text-hint)",
-              fontFamily: "var(--font-mono)",
-              background: "var(--bg-subtle)",
-              border: "1px solid var(--border-dim)",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 10px",
+              background: "none",
+              border: "1px solid var(--border-medium)",
               borderRadius: 6,
-              padding: "4px 9px",
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+            }}
+            onClick={() => setEditing(true)}
+          >
+            <Pencil size={12} />
+            {t("common.edit")}
+          </button>
+        )}
+        {saved && (
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              color: "var(--success)",
             }}
           >
-            {resolvedFilePath}
-          </div>
-          {fileState.status === "loaded" && !editing && (
-            <button
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "4px 10px",
-                background: "none",
-                border: "1px solid var(--border-medium)",
-                borderRadius: 6,
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                cursor: "pointer",
-              }}
-              onClick={() => setEditing(true)}
-            >
-              <Pencil size={12} />
-              {t("common.edit")}
-            </button>
-          )}
-          {saved && (
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 12,
-                color: "var(--success)",
-              }}
-            >
-              <Check size={12} /> {t("common.saved")}
-            </span>
-          )}
-        </div>
-
-        {error && (
-          <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 10 }}>{error}</div>
-        )}
-
-        {highlightError && fileState.status === "loaded" && !editing && (
-          <div style={{ color: "var(--text-hint)", fontSize: 12, marginBottom: 10 }}>
-            {t("appSettings.syntaxHighlightUnavailable")}
-          </div>
-        )}
-
-        {fileState.status === "loading" && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
-        )}
-
-        {fileState.status === "missing" && (
-          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
-            {t("appSettings.configFileNotFound", { path: resolvedFilePath })}
-          </div>
-        )}
-
-        {fileState.status === "loaded" && !editing && (
-          highlighted ? (
-            <div
-              className="file-viewer-code"
-              style={{
-                flex: 1,
-                minHeight: 0,
-                overflowY: "auto",
-                borderRadius: 8,
-                border: "1px solid var(--border-dim)",
-                fontSize: 12.5,
-              }}
-              dangerouslySetInnerHTML={{ __html: highlighted }}
-            />
-          ) : (
-            <pre
-              style={{
-                flex: 1,
-                minHeight: 0,
-                margin: 0,
-                overflow: "auto",
-                padding: "14px 16px",
-                borderRadius: 8,
-                border: "1px solid var(--border-dim)",
-                background: "var(--bg-panel)",
-                color: "var(--text-primary)",
-                fontSize: 12.5,
-                fontFamily: "var(--font-mono)",
-                lineHeight: 1.6,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-              dangerouslySetInnerHTML={{ __html: escapeHtml(fileState.content) }}
-            />
-          )
-        )}
-
-        {fileState.status === "loaded" && editing && (
-          <textarea
-            autoFocus
-            style={{
-              ...s.modalTextarea,
-              flex: 1,
-              width: "100%",
-              minHeight: 300,
-              resize: "none",
-              boxSizing: "border-box",
-              caretColor: "var(--text-primary)",
-            }}
-            value={fileState.content}
-            onChange={(e) => setFileState({ status: "loaded", content: e.target.value })}
-            spellCheck={false}
-          />
+            <Check size={12} /> {t("common.saved")}
+          </span>
         )}
       </div>
 
-      {editing && (
-        <div style={s.settingsFooter}>
-          <button style={s.modalCancelBtn} onClick={handleCancel}>
-            {t("common.cancel")}
-          </button>
-          <button
-            style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
-            onClick={handleSave}
-            disabled={saving || !isDirty}
-          >
-            {saving ? t("common.saving") : t("common.save")}
-          </button>
+      {error && (
+        <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 10 }}>{error}</div>
+      )}
+
+      {highlightError && fileState.status === "loaded" && !editing && (
+        <div style={{ color: "var(--text-hint)", fontSize: 12, marginBottom: 10 }}>
+          {t("appSettings.syntaxHighlightUnavailable")}
         </div>
       )}
+
+      {fileState.status === "loading" && !error && (
+        <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
+      )}
+
+      {fileState.status === "missing" && (
+        <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+          {t("appSettings.configFileNotFound", { path: resolvedFilePath })}
+        </div>
+      )}
+
+      {fileState.status === "loaded" &&
+        !editing &&
+        (highlighted ? (
+          <div
+            className="file-viewer-code"
+            style={{
+              flex: 1,
+              minHeight: 220,
+              maxHeight: embedded ? 340 : undefined,
+              overflowY: "auto",
+              borderRadius: 8,
+              border: "1px solid var(--border-dim)",
+              fontSize: 12.5,
+            }}
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <pre
+            style={{
+              flex: 1,
+              minHeight: 220,
+              maxHeight: embedded ? 340 : undefined,
+              margin: 0,
+              overflow: "auto",
+              padding: "14px 16px",
+              borderRadius: 8,
+              border: "1px solid var(--border-dim)",
+              background: "var(--bg-panel)",
+              color: "var(--text-primary)",
+              fontSize: 12.5,
+              fontFamily: "var(--font-mono)",
+              lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+            dangerouslySetInnerHTML={{ __html: escapeHtml(fileState.content) }}
+          />
+        ))}
+
+      {fileState.status === "loaded" && editing && (
+        <textarea
+          autoFocus
+          style={{
+            ...s.modalTextarea,
+            flex: 1,
+            width: "100%",
+            minHeight: embedded ? 260 : 300,
+            resize: "none",
+            boxSizing: "border-box",
+            caretColor: "var(--text-primary)",
+          }}
+          value={fileState.content}
+          onChange={(e) => setFileState({ status: "loaded", content: e.target.value })}
+          spellCheck={false}
+        />
+      )}
+    </div>
+  );
+
+  const footer = editing && (
+    <div
+      style={{
+        ...s.settingsFooter,
+        padding: embedded ? "12px 0 0" : s.settingsFooter.padding,
+        borderTop: embedded ? "none" : s.settingsFooter.borderTop,
+      }}
+    >
+      <button style={s.modalCancelBtn} onClick={handleCancel}>
+        {t("common.cancel")}
+      </button>
+      <button
+        style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
+        onClick={handleSave}
+        disabled={saving || !isDirty}
+      >
+        {saving ? t("common.saving") : t("common.save")}
+      </button>
+    </div>
+  );
+
+  return (
+    <>
+      {body}
+      {footer}
     </>
   );
 }

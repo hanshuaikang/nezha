@@ -1,18 +1,46 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type React from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ChevronDown, RefreshCw } from "lucide-react";
-import * as Select from "@radix-ui/react-select";
-import { useI18n, type AppLanguage } from "../../i18n";
+import { Check, RefreshCw } from "lucide-react";
 import { DEFAULT_SEND_SHORTCUT, normalizeSendShortcut } from "../../shortcuts";
 import s from "../../styles";
+import { AgentConfigPanel } from "./AgentConfigPanel";
+import { getAgentExecutablePlaceholder, getAgentSettingsFilePath } from "./shared";
 import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings } from "./types";
-import { getAgentExecutablePlaceholder } from "./shared";
+import { useI18n } from "../../i18n";
 
 const AUTO_VERSION_DETECT_DELAY_MS = 350;
 
-export function GeneralPanel() {
-  const { language, setLanguage, t } = useI18n();
+const sectionStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  paddingBottom: 20,
+  borderBottom: "1px solid var(--border-dim)",
+};
+
+const sectionTitleStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "var(--text-primary)",
+  marginBottom: 2,
+};
+
+const labelStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-secondary)",
+  marginBottom: 5,
+  display: "block",
+};
+
+const hintStyle: CSSProperties = {
+  fontSize: 11,
+  color: "var(--text-hint)",
+  marginTop: 3,
+};
+
+export function AgentSettingsPanel({ isDark }: { isDark: boolean }) {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({
     claude_path: "",
     codex_path: "",
@@ -61,8 +89,12 @@ export function GeneralPanel() {
   useEffect(() => {
     invoke<AppSettings>("load_app_settings")
       .then((loadedSettings) => {
-        setSettings(loadedSettings);
-        setOriginal(loadedSettings);
+        const normalized = {
+          ...loadedSettings,
+          send_shortcut: normalizeSendShortcut(loadedSettings.send_shortcut),
+        };
+        setSettings(normalized);
+        setOriginal(normalized);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoadingSettings(false));
@@ -86,7 +118,7 @@ export function GeneralPanel() {
         ...settings,
         claude_path: detected.claude_path,
         codex_path: detected.codex_path,
-        send_shortcut: normalizeSendShortcut(detected.send_shortcut),
+        send_shortcut: normalizeSendShortcut(settings.send_shortcut),
       };
       setSettings(nextSettings);
       await loadVersions(nextSettings);
@@ -122,10 +154,16 @@ export function GeneralPanel() {
     }
   }
 
+  function clearVersions() {
+    versionRequestIdRef.current += 1;
+    setRefreshingVersions(false);
+    setVersions({ claude_version: "", codex_version: "" });
+  }
+
   const isDirty =
     settings.claude_path !== original.claude_path || settings.codex_path !== original.codex_path;
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle: CSSProperties = {
     width: "100%",
     padding: "7px 10px",
     background: "var(--bg-input)",
@@ -138,149 +176,41 @@ export function GeneralPanel() {
     boxSizing: "border-box",
   };
 
-  const pathInputStyle: React.CSSProperties = {
+  const pathInputStyle: CSSProperties = {
     ...inputStyle,
     opacity: loadingSettings ? 0.65 : 1,
     cursor: loadingSettings ? "wait" : "text",
   };
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "var(--text-secondary)",
-    marginBottom: 5,
-    display: "block",
-  };
-
-  const fieldStyle: React.CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
-    marginBottom: 18,
-  };
-
-  const hintStyle: React.CSSProperties = {
-    fontSize: 11,
-    color: "var(--text-hint)",
-    marginTop: 3,
-  };
-
-  const languageOptions: Array<{ value: AppLanguage; label: string }> = [
-    { value: "en", label: t("language.english") },
-    { value: "zh", label: t("language.chinese") },
-  ];
-  const selectedLanguageLabel =
-    languageOptions.find((option) => option.value === language)?.label ?? language;
-
-  function clearVersions() {
-    versionRequestIdRef.current += 1;
-    setRefreshingVersions(false);
-    setVersions({ claude_version: "", codex_version: "" });
-  }
-
   return (
-    <>
-      <div
-        style={{
-          ...s.settingsBody,
-          display: "flex",
-          flexDirection: "column",
-          gap: 0,
-          padding: "20px 20px 14px",
-        }}
-      >
-        {error && (
-          <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 14 }}>{error}</div>
-        )}
+    <div
+      style={{
+        ...s.settingsBody,
+        display: "flex",
+        flexDirection: "column",
+        gap: 20,
+        padding: "20px",
+      }}
+    >
+      {error && (
+        <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: -4 }}>{error}</div>
+      )}
 
-        <div style={{ ...fieldStyle, marginBottom: 20 }}>
-          <label style={labelStyle}>{t("appSettings.appLanguage")}</label>
-          <Select.Root
-            value={language}
-            onValueChange={(value) => setLanguage(value as AppLanguage)}
-          >
-            <Select.Trigger
-              aria-label={t("appSettings.appLanguage")}
-              style={{
-                width: 220,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-                padding: "7px 10px",
-                background: "var(--bg-input)",
-                border: "1px solid var(--border-medium)",
-                borderRadius: 7,
-                color: "var(--text-primary)",
-                fontSize: 12.5,
-                fontFamily: "var(--font-ui)",
-                cursor: "pointer",
-                outline: "none",
-              }}
-            >
-              <Select.Value>{selectedLanguageLabel}</Select.Value>
-              <Select.Icon>
-                <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
-              </Select.Icon>
-            </Select.Trigger>
-            <Select.Portal>
-              <Select.Content
-                position="popper"
-                sideOffset={4}
-                style={{
-                  minWidth: 220,
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border-medium)",
-                  borderRadius: 8,
-                  boxShadow: "var(--shadow-popover)",
-                  padding: 4,
-                  zIndex: 3000,
-                }}
-              >
-                <Select.Viewport>
-                  {languageOptions.map((option) => (
-                    <Select.Item
-                      key={option.value}
-                      value={option.value}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "7px 8px",
-                        borderRadius: 5,
-                        color: "var(--text-primary)",
-                        fontSize: 12.5,
-                        cursor: "pointer",
-                        outline: "none",
-                      }}
-                    >
-                      <Select.ItemText>{option.label}</Select.ItemText>
-                      <Select.ItemIndicator style={{ marginLeft: "auto", display: "flex" }}>
-                        <Check size={13} color="var(--accent)" />
-                      </Select.ItemIndicator>
-                    </Select.Item>
-                  ))}
-                </Select.Viewport>
-              </Select.Content>
-            </Select.Portal>
-          </Select.Root>
-          <span style={hintStyle}>{t("appSettings.languageHint")}</span>
-        </div>
-
+      <section style={sectionStyle}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: 18,
+            gap: 12,
           }}
         >
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-            {t("appSettings.agentPaths")}
-          </span>
+          <h3 style={sectionTitleStyle}>{t("appSettings.agentPaths")}</h3>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {loadingSettings && (
-              <span style={{ color: "var(--text-hint)", fontSize: 12 }}>{t("common.loading")}</span>
+              <span style={{ color: "var(--text-hint)", fontSize: 12 }}>
+                {t("common.loading")}
+              </span>
             )}
             <button
               style={{
@@ -320,12 +250,14 @@ export function GeneralPanel() {
               disabled={refreshingVersions}
             >
               <RefreshCw size={12} className={refreshingVersions ? "spin" : undefined} />
-              {refreshingVersions ? t("appSettings.refreshing") : t("appSettings.refreshVersions")}
+              {refreshingVersions
+                ? t("appSettings.refreshing")
+                : t("appSettings.refreshVersions")}
             </button>
           </div>
         </div>
 
-        <div style={fieldStyle}>
+        <div>
           <label style={labelStyle}>{t("appSettings.claudePath")}</label>
           <input
             style={pathInputStyle}
@@ -338,10 +270,10 @@ export function GeneralPanel() {
             disabled={loadingSettings}
             spellCheck={false}
           />
-          <span style={hintStyle}>{t("appSettings.claudePathHint")}</span>
+          <div style={hintStyle}>{t("appSettings.claudePathHint")}</div>
         </div>
 
-        <div style={fieldStyle}>
+        <div>
           <label style={labelStyle}>{t("appSettings.codexPath")}</label>
           <input
             style={pathInputStyle}
@@ -354,10 +286,10 @@ export function GeneralPanel() {
             disabled={loadingSettings}
             spellCheck={false}
           />
-          <span style={hintStyle}>{t("appSettings.codexPathHint")}</span>
+          <div style={hintStyle}>{t("appSettings.codexPathHint")}</div>
         </div>
 
-        <div style={{ ...fieldStyle, marginBottom: 0 }}>
+        <div>
           <label style={labelStyle}>{t("appSettings.installedVersions")}</label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
@@ -383,33 +315,54 @@ export function GeneralPanel() {
               />
             </div>
           </div>
-          <span style={hintStyle}>{t("appSettings.versionsHint")}</span>
+          <div style={hintStyle}>{t("appSettings.versionsHint")}</div>
         </div>
-      </div>
 
-      <div style={s.settingsFooter}>
-        {saved && (
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 12,
-              color: "var(--success)",
-              marginRight: "auto",
-            }}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+          {saved && (
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                color: "var(--success)",
+              }}
+            >
+              <Check size={12} /> {t("common.saved")}
+            </span>
+          )}
+          <button
+            style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
+            onClick={handleSave}
+            disabled={loadingSettings || saving || !isDirty}
           >
-            <Check size={12} /> {t("common.saved")}
-          </span>
-        )}
-        <button
-          style={{ ...s.modalSaveBtn, opacity: saving || !isDirty ? 0.5 : 1 }}
-          onClick={handleSave}
-          disabled={loadingSettings || saving || !isDirty}
-        >
-          {saving ? t("common.saving") : t("common.save")}
-        </button>
-      </div>
-    </>
+            {saving ? t("common.saving") : t("common.save")}
+          </button>
+        </div>
+      </section>
+
+      <section style={sectionStyle}>
+        <h3 style={sectionTitleStyle}>Claude Code</h3>
+        <AgentConfigPanel
+          agentKey="claude"
+          filePath={getAgentSettingsFilePath("claude")}
+          lang="json"
+          isDark={isDark}
+          embedded
+        />
+      </section>
+
+      <section style={{ ...sectionStyle, paddingBottom: 0, borderBottom: "none" }}>
+        <h3 style={sectionTitleStyle}>Codex</h3>
+        <AgentConfigPanel
+          agentKey="codex"
+          filePath={getAgentSettingsFilePath("codex")}
+          lang="toml"
+          isDark={isDark}
+          embedded
+        />
+      </section>
+    </div>
   );
 }

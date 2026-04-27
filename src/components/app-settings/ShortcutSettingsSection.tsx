@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronDown } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
@@ -13,8 +12,13 @@ import {
 } from "../../shortcuts";
 import s from "../../styles";
 import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
+import {
+  appSettingsLabelStyle,
+  appSettingsLastSectionStyle,
+  appSettingsSectionTitleStyle,
+} from "./sectionStyles";
 
-export function ShortcutsPanel() {
+export function ShortcutSettingsSection() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({
     claude_path: "",
@@ -24,15 +28,29 @@ export function ShortcutsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const shortcutOptions: Array<{ value: SendShortcut; label: string; ariaLabel: string }> = [
+    {
+      value: "mod_enter",
+      label: getSendShortcutLabel("mod_enter", APP_PLATFORM),
+      ariaLabel: t("appSettings.sendShortcutModEnter"),
+    },
+    {
+      value: "enter",
+      label: getSendShortcutLabel("enter", APP_PLATFORM),
+      ariaLabel: t("appSettings.sendShortcutEnter"),
+    },
+  ];
+  const selectedShortcut =
+    shortcutOptions.find((option) => option.value === settings.send_shortcut) ??
+    shortcutOptions[0];
 
   useEffect(() => {
     invoke<AppSettings>("load_app_settings")
       .then((loadedSettings) => {
-        const normalized = {
+        setSettings({
           ...loadedSettings,
           send_shortcut: normalizeSendShortcut(loadedSettings.send_shortcut),
-        };
-        setSettings(normalized);
+        });
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -41,10 +59,7 @@ export function ShortcutsPanel() {
   async function handleShortcutChange(value: string) {
     const sendShortcut = normalizeSendShortcut(value);
     const previousSettings = settings;
-    setSettings((prev) => ({
-      ...prev,
-      send_shortcut: sendShortcut,
-    }));
+    setSettings((prev) => ({ ...prev, send_shortcut: sendShortcut }));
     setSaving(true);
     setError(null);
     try {
@@ -72,57 +87,15 @@ export function ShortcutsPanel() {
     }
   }
 
-  const shortcutOptions: Array<{ value: SendShortcut; label: string; ariaLabel: string }> = [
-    {
-      value: "mod_enter",
-      label: getSendShortcutLabel("mod_enter", APP_PLATFORM),
-      ariaLabel: t("appSettings.sendShortcutModEnter"),
-    },
-    {
-      value: "enter",
-      label: getSendShortcutLabel("enter", APP_PLATFORM),
-      ariaLabel: t("appSettings.sendShortcutEnter"),
-    },
-  ];
-  const selectedOption =
-    shortcutOptions.find((option) => option.value === settings.send_shortcut) ??
-    shortcutOptions[0];
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "var(--text-secondary)",
-    marginBottom: 5,
-    display: "block",
-  };
-
-  const kbdStyle: React.CSSProperties = {
-    ...s.kbd,
-    minWidth: 44,
-    height: 24,
-    justifyContent: "center",
-    fontSize: 12,
-  };
-
   return (
-    <div
-      style={{
-        ...s.settingsBody,
-        display: "flex",
-        flexDirection: "column",
-        gap: 0,
-        padding: "20px",
-      }}
-    >
-      {error && (
-        <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 14 }}>{error}</div>
-      )}
-
+    <section style={appSettingsLastSectionStyle}>
+      <h3 style={appSettingsSectionTitleStyle}>{t("appSettings.shortcuts")}</h3>
+      {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
       {loading ? (
         <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <label style={labelStyle}>{t("appSettings.sendMessage")}</label>
+          <label style={appSettingsLabelStyle}>{t("appSettings.sendMessage")}</label>
           <Select.Root
             value={settings.send_shortcut}
             onValueChange={handleShortcutChange}
@@ -146,7 +119,17 @@ export function ShortcutsPanel() {
                 outline: "none",
               }}
             >
-              <kbd style={kbdStyle}>{selectedOption.label}</kbd>
+              <kbd
+                style={{
+                  ...s.kbd,
+                  minWidth: 44,
+                  height: 24,
+                  justifyContent: "center",
+                  fontSize: 12,
+                }}
+              >
+                {selectedShortcut.label}
+              </kbd>
               <Select.Value style={{ display: "none" }} />
               <Select.Icon>
                 <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
@@ -195,6 +178,6 @@ export function ShortcutsPanel() {
           </Select.Root>
         </div>
       )}
-    </div>
+    </section>
   );
 }
