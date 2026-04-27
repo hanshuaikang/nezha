@@ -315,19 +315,36 @@ export function ProjectPage({
                 isDark={isDark}
                 onRunMakeTarget={handleRunMakeTarget}
               />
-            ) : isNewTask || !selectedTask ? (
-              <NewTaskView
-                project={project}
-                otherProjects={otherProjects}
-                onSubmit={onSubmitTask}
-              />
-            ) : selectedTask.status === ("todo" as TaskStatus) ? (
+            ) : !isNewTask && selectedTask && selectedTask.status === ("todo" as TaskStatus) ? (
               <TodoTaskView
                 task={selectedTask}
                 onRunTodo={onRunTodoTask}
                 onUpdateTodo={onUpdateTodo}
               />
             ) : null}
+
+            {/* NewTaskView 始终挂载以保留草稿（输入文本、附件、agent 选择等），
+                仅当不在新建任务态时通过 visibility 隐藏。*/}
+            {(() => {
+              const showNewTask = !openDiff && openFiles.length === 0 && (isNewTask || !selectedTask);
+              return (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    visibility: showNewTask ? "visible" : "hidden",
+                    pointerEvents: showNewTask ? "auto" : "none",
+                  }}
+                >
+                  <NewTaskView
+                    project={project}
+                    otherProjects={otherProjects}
+                    onSubmit={onSubmitTask}
+                  />
+                </div>
+              );
+            })()}
           </ErrorBoundary>
 
           {/* Background terminals */}
