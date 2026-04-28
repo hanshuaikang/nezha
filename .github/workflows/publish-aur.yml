@@ -1,0 +1,117 @@
+name: Publish AUR Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v. Leave empty to derive it from the tag or latest project version.
+        required: false
+  release:
+    types:
+      - published
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    env:
+      PKGBASE: nezha-ide
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install packaging dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          pacman -Syu --noconfirm --needed base-devel git openssh curl jq
+          useradd --create-home --shell /bin/bash builder
+          install -d -o builder -g builder /tmp/aur-work
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${{ github.event.inputs.version || '' }}" ]; then
+            version='${{ github.event.inputs.version || '' }}'
+          elif [ "${GITHUB_EVENT_NAME}" = 'release' ]; then
+            version='${{ github.event.release.tag_name }}'
+            version="${version#v}"
+          elif [ "${GITHUB_REF_TYPE}" = 'tag' ] && [ -n "${GITHUB_REF_NAME}" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version=$(jq -r '.version' package.json)
+          fi
+
+          if [ -z "${version}" ] || [ "${version}" = 'null' ]; then
+            echo 'Unable to determine release version.' >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Update PKGBUILD for release version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version='${{ steps.version.outputs.version }}'
+          source_url="https://github.com/hanshuaikang/nezha/archive/refs/tags/v${version}.tar.gz"
+          archive_path="/tmp/${PKGBASE}-${version}.tar.gz"
+          checksum=$(curl -L "${source_url}" | tee "${archive_path}" | sha256sum | awk '{print $1}')
+
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${version}/" \
+            -e "s/^sha256sums=.*/sha256sums=('${checksum}')/" \
+            packaging/aur/PKGBUILD
+
+      - name: Generate .SRCINFO
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -o builder -g builder /tmp/aur-work/repo
+          cp -R . /tmp/aur-work/repo
+          chown -R builder:builder /tmp/aur-work/repo
+          su builder -c 'cd /tmp/aur-work/repo/packaging/aur && makepkg --printsrcinfo > .SRCINFO'
+          cp /tmp/aur-work/repo/packaging/aur/.SRCINFO packaging/aur/.SRCINFO
+
+      - name: Configure SSH for AUR
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -dm700 /root/.ssh
+          printf '%s\n' '${{ secrets.AUR_SSH_PRIVATE_KEY }}' > /root/.ssh/id_ed25519
+          printf '%s\n' '${{ secrets.AUR_KNOWN_HOSTS }}' > /root/.ssh/known_hosts
+          chmod 600 /root/.ssh/id_ed25519 /root/.ssh/known_hosts
+
+      - name: Publish changed packaging files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aur_dir=/tmp/aur
+          git clone "ssh://aur@aur.archlinux.org/${PKGBASE}.git" "${aur_dir}"
+          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO "${aur_dir}/"
+
+          cd "${aur_dir}"
+
+          if git diff --quiet -- PKGBUILD .SRCINFO; then
+            echo 'No AUR packaging changes detected.'
+            exit 0
+          fi
+
+          git add PKGBUILD .SRCINFO
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Update ${PKGBASE} to ${{ steps.version.outputs.version }}"
+          git push origin HEAD
