@@ -1,0 +1,27 @@
+pkgbase = nezha-ide
+	pkgdesc = Agent-first desktop IDE for parallel AI coding workflows
+	pkgver = 0.3.2
+	pkgrel = 1
+	url = https://github.com/hanshuaikang/nezha
+	arch = x86_64
+	arch = aarch64
+	license = GPL-3.0-only
+	makedepends = cargo
+	makedepends = nodejs
+	makedepends = pkgconf
+	makedepends = pnpm
+	makedepends = rust
+	depends = gtk3
+	depends = hicolor-icon-theme
+	depends = libayatana-appindicator
+	depends = librsvg
+	depends = openssl
+	depends = webkit2gtk-4.1
+	provides = nezha
+	conflicts = nezha
+	conflicts = nezha-git
+	conflicts = nezha-bin
+	source = nezha-ide-0.3.2.tar.gz::https://github.com/hanshuaikang/nezha/archive/refs/tags/v0.3.2.tar.gz
+	sha256sums = 3cf3b9e9991318e3790944e57933a7f0bff91de8edf7bc4210cba136780d822b
+
+pkgname = nezha-ide
