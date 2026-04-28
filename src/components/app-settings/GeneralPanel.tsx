@@ -109,6 +109,7 @@ export function GeneralPanel() {
       setSettings(nextSettings);
       setOriginal(nextSettings);
       window.dispatchEvent(new Event(APP_SETTINGS_CHANGED_EVENT));
+      await loadVersions(nextSettings);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
