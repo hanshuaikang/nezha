@@ -2,11 +2,12 @@ import { useRef } from "react";
 import {
   BookmarkPlus,
   ChevronDown,
+  Command,
+  CornerDownLeft,
   Hand,
   Image as ImageIcon,
   Map as MapIcon,
   Plus,
-  ArrowUp,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
@@ -46,6 +47,23 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Failed to read image file."));
     reader.readAsDataURL(file);
   });
+}
+
+function SendShortcutIcon({ keys }: { keys: string[] }) {
+  const modifierKey = keys.length > 1 ? keys[0] : null;
+
+  return (
+    <span style={s.sendShortcutIcon} aria-hidden="true">
+      {modifierKey ? (
+        modifierKey === "⌘" ? (
+          <Command size={12} strokeWidth={2.2} />
+        ) : (
+          <span style={s.sendShortcutTextKey}>{modifierKey}</span>
+        )
+      ) : null}
+      <CornerDownLeft size={13} strokeWidth={2.3} />
+    </span>
+  );
 }
 
 export function AgentPermSelector({
@@ -256,10 +274,11 @@ export function AgentPermSelector({
           onClick={() => {
             if (canSend) onSubmit(true);
           }}
+          aria-label={`${t("newTask.send")} (${sendShortcutLabel})`}
+          title={sendShortcutLabel}
         >
-          <ArrowUp size={13} strokeWidth={2.1} />
           <span>{t("newTask.send")}</span>
-          <kbd style={s.kbd}>{sendShortcutLabel}</kbd>
+          <SendShortcutIcon keys={sendShortcutKeys} />
         </button>
         <Popover.Root>
           <Popover.Trigger asChild>
