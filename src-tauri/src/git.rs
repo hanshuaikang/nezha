@@ -211,11 +211,57 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     Ok(result)
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct GitFileChange {
     path: String,
     status: String,
     staged: bool,
+}
+
+fn parse_porcelain_z_status(stdout: &[u8]) -> Vec<GitFileChange> {
+    let mut changes = Vec::new();
+    let mut entries = stdout
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty());
+
+    while let Some(entry) = entries.next() {
+        if entry.len() < 4 || entry[2] != b' ' {
+            continue;
+        }
+
+        let x = entry[0] as char;
+        let y = entry[1] as char;
+        let display_path = String::from_utf8_lossy(&entry[3..]).into_owned();
+
+        if x == 'R' || x == 'C' {
+            let _ = entries.next();
+        }
+
+        if x == '?' && y == '?' {
+            changes.push(GitFileChange {
+                path: display_path,
+                status: "?".to_string(),
+                staged: false,
+            });
+        } else {
+            if x != ' ' && x != '?' {
+                changes.push(GitFileChange {
+                    path: display_path.clone(),
+                    status: x.to_string(),
+                    staged: true,
+                });
+            }
+            if y != ' ' && y != '?' {
+                changes.push(GitFileChange {
+                    path: display_path,
+                    status: y.to_string(),
+                    staged: false,
+                });
+            }
+        }
+    }
+
+    changes
 }
 
 #[tauri::command]
@@ -225,49 +271,10 @@ pub async fn git_status(project_path: String) -> Result<Vec<GitFileChange>, Stri
         "core.quotePath=false".to_string(),
         "status".to_string(),
         "--porcelain=v1".to_string(),
+        "-z".to_string(),
     ];
     let output = run_git_with_timeout(project_path, args, Duration::from_secs(5)).await?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let mut changes = Vec::new();
-
-    for line in stdout.lines() {
-        if line.len() < 3 {
-            continue;
-        }
-        let x = &line[0..1];
-        let y = &line[1..2];
-        let raw_path = line[3..].to_string();
-        let display_path = if raw_path.contains(" -> ") {
-            raw_path.split(" -> ").last().unwrap_or(&raw_path).to_string()
-        } else {
-            raw_path
-        };
-
-        if x == "?" && y == "?" {
-            changes.push(GitFileChange {
-                path: display_path,
-                status: "?".to_string(),
-                staged: false,
-            });
-        } else {
-            if x != " " && x != "?" {
-                changes.push(GitFileChange {
-                    path: display_path.clone(),
-                    status: x.to_string(),
-                    staged: true,
-                });
-            }
-            if y != " " && y != "?" {
-                changes.push(GitFileChange {
-                    path: display_path,
-                    status: y.to_string(),
-                    staged: false,
-                });
-            }
-        }
-    }
-    Ok(changes)
+    Ok(parse_porcelain_z_status(&output.stdout))
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -720,4 +727,58 @@ pub async fn git_remote_counts(
     };
 
     Ok(GitRemoteCounts { ahead, behind, branch })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_porcelain_z_status, GitFileChange};
+
+    #[test]
+    fn parses_untracked_path_with_spaces_without_quotes() {
+        let changes = parse_porcelain_z_status(b"?? te st2.txt\0");
+
+        assert_eq!(
+            changes,
+            vec![GitFileChange {
+                path: "te st2.txt".to_string(),
+                status: "?".to_string(),
+                staged: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_staged_and_unstaged_changes_for_same_path() {
+        let changes = parse_porcelain_z_status(b"MM src/file name.ts\0");
+
+        assert_eq!(
+            changes,
+            vec![
+                GitFileChange {
+                    path: "src/file name.ts".to_string(),
+                    status: "M".to_string(),
+                    staged: true,
+                },
+                GitFileChange {
+                    path: "src/file name.ts".to_string(),
+                    status: "M".to_string(),
+                    staged: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_rename_destination_and_skips_source_path() {
+        let changes = parse_porcelain_z_status(b"R  new name.txt\0old name.txt\0");
+
+        assert_eq!(
+            changes,
+            vec![GitFileChange {
+                path: "new name.txt".to_string(),
+                status: "R".to_string(),
+                staged: true,
+            }]
+        );
+    }
 }
