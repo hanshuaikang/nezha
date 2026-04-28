@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -78,6 +78,7 @@ function App() {
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
+  const resumingTaskIds = useRef<Set<string>>(new Set());
 
   const tm = useTerminalManager();
 
@@ -157,11 +158,12 @@ function App() {
       const chunks = await Promise.all(
         loadedProjects.map((p) => invoke<Task[]>("load_project_tasks", { projectId: p.id })),
       );
-      setTasks(chunks.flat());
+      const allTasks = chunks.flat();
+      setTasks(allTasks);
     }
 
     init().catch(console.error);
-  }, []);
+  }, [tm.terminalSizeRef]);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
   useEffect(() => {
@@ -309,12 +311,12 @@ function App() {
     });
   }
 
-  function handleResumeTask(taskId: string) {
+  function handleResumeTask(taskId: string): Promise<void> {
     const task = tasks.find((t) => t.id === taskId);
     const sessionId = task?.agent === "codex" ? task.codexSessionId : task?.claudeSessionId;
-    if (!task || !sessionId) return;
+    if (!task || !sessionId) return Promise.resolve();
     const project = projects.find((p) => p.id === task.projectId);
-    if (!project) return;
+    if (!project) return Promise.resolve();
 
     // Reset task status, clear buffer, and bump run counter to remount the terminal
     setTasks((prev) => {
@@ -329,7 +331,7 @@ function App() {
     tm.resetTaskTerminal(taskId);
     setTaskRunCounts((prev) => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
 
-    invoke("resume_task", {
+    return invoke<void>("resume_task", {
       taskId,
       projectPath: project.path,
       agent: task.agent,
@@ -568,9 +570,21 @@ function App() {
               onNewTask={() =>
                 updateProjectView(project.id, { selectedTaskId: null, isNewTask: true })
               }
-              onSelectTask={(id) =>
-                updateProjectView(project.id, { selectedTaskId: id, isNewTask: false })
-              }
+              onSelectTask={(id) => {
+                updateProjectView(project.id, { selectedTaskId: id, isNewTask: false });
+                // Auto-resume orphaned active tasks (app was restarted)
+                const task = tasks.find((t) => t.id === id);
+                if (task && isActiveTaskStatus(task.status) && !resumingTaskIds.current.has(id)) {
+                  const sessionId =
+                    task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
+                  if (sessionId && !tm.hasTaskBuffer(id)) {
+                    resumingTaskIds.current.add(id);
+                    handleResumeTask(id).finally(() => {
+                      resumingTaskIds.current.delete(id);
+                    });
+                  }
+                }
+              }}
               onDeleteTask={handleDeleteTask}
               onDeleteAllTasks={() => handleDeleteAllTasks(project)}
               onToggleTaskStar={handleToggleTaskStar}

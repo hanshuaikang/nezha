@@ -10,7 +10,7 @@ use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher}
 use crate::TaskManager;
 
 const SESSION_WAIT_POLL: Duration = Duration::from_millis(50);
-const SESSION_WAIT_MAX: Duration = Duration::from_millis(500);
+const SESSION_WAIT_MAX: Duration = Duration::from_secs(5);
 const PTY_READ_BUFFER_SIZE: usize = 32 * 1024;
 const PTY_EMIT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
@@ -405,6 +405,14 @@ pub async fn run_task(
     cols: Option<u16>,
     rows: Option<u16>,
 ) -> Result<(), String> {
+    // Prevent duplicate: reject if task already has active PTY handles
+    {
+        let tm = app.state::<TaskManager>();
+        if tm.pty_masters.lock().contains_key(&task_id) {
+            return Err(format!("Task {} already has an active PTY session", task_id));
+        }
+    }
+
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: rows.unwrap_or(50),
@@ -574,6 +582,14 @@ pub async fn resume_task(
     cols: Option<u16>,
     rows: Option<u16>,
 ) -> Result<(), String> {
+    // Prevent duplicate resume: reject if task already has active PTY handles
+    {
+        let tm = app.state::<TaskManager>();
+        if tm.pty_masters.lock().contains_key(&task_id) {
+            return Err(format!("Task {} already has an active PTY session", task_id));
+        }
+    }
+
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: rows.unwrap_or(50),

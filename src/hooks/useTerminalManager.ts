@@ -254,8 +254,14 @@ export function useTerminalManager() {
     };
   }, []);
 
+  const hasTaskBuffer = useCallback((taskId: string) => {
+    const buf = taskBufferRef.current[taskId];
+    return !!buf && buf.totalLen > 0;
+  }, []);
+
   return {
     terminalSizeRef,
+    hasTaskBuffer,
     resetTaskTerminal,
     removeTaskBuffers,
     writeErrorToTerminal,
