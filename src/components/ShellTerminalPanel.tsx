@@ -13,7 +13,7 @@ import {
   safeFit,
   createSmartWriter,
 } from "./terminalShared";
-import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import "@xterm/xterm/css/xterm.css";
@@ -134,9 +134,10 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const writer = createSmartWriter(term);
       const disposeSmartCopy = attachSmartCopy(term);
-      const disposeOnData = term.onData((data) => {
+      const linuxIME = attachLinuxIMEFix(term, (data) => {
         invoke("send_input", { taskId: shellId, data }).catch(() => {});
       });
+      const disposeOnData = { dispose: () => linuxIME.dispose() };
 
       const resizeObserver = new ResizeObserver(() => {
         setTimeout(() => {
