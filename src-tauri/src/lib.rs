@@ -118,7 +118,7 @@ pub fn run() {
             app_settings::save_app_settings,
             app_settings::save_agent_paths,
             app_settings::save_send_shortcut,
-            app_settings::save_font_settings,
+            app_settings::save_zoom,
             app_settings::save_keybindings,
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,

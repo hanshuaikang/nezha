@@ -23,19 +23,15 @@ fn normalize_send_shortcut(value: String) -> String {
     }
 }
 
-fn default_font_family() -> String {
-    String::new()
-}
-
-fn default_font_size() -> u32 {
+fn default_zoom() -> u32 {
     0
 }
 
-fn normalize_font_size(size: u32) -> u32 {
-    if size == 0 {
+fn normalize_zoom(zoom: u32) -> u32 {
+    if zoom == 0 {
         0
     } else {
-        size.clamp(10, 24)
+        zoom.clamp(50, 200)
     }
 }
 
@@ -59,10 +55,8 @@ pub struct AppSettings {
     pub codex_path: String,
     #[serde(default = "default_send_shortcut")]
     pub send_shortcut: String,
-    #[serde(default = "default_font_family")]
-    pub font_family: String,
-    #[serde(default = "default_font_size")]
-    pub font_size: u32,
+    #[serde(default = "default_zoom")]
+    pub zoom: u32,
     #[serde(default)]
     pub keybindings: HashMap<String, String>,
 }
@@ -73,8 +67,7 @@ impl Default for AppSettings {
             claude_path: String::new(),
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
-            font_family: default_font_family(),
-            font_size: default_font_size(),
+            zoom: default_zoom(),
             keybindings: HashMap::new(),
         }
     }
@@ -332,8 +325,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
-        font_family: settings.font_family,
-        font_size: normalize_font_size(settings.font_size),
+        zoom: normalize_zoom(settings.zoom),
         keybindings: settings.keybindings,
     }
 }
@@ -349,8 +341,7 @@ fn load_settings_unlocked() -> AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
-            font_family: default_font_family(),
-            font_size: default_font_size(),
+            zoom: default_zoom(),
             keybindings: HashMap::new(),
         });
         if let Ok(dir) = nezha_dir() {
@@ -449,12 +440,11 @@ pub async fn save_send_shortcut(send_shortcut: String) -> Result<AppSettings, St
 }
 
 #[tauri::command]
-pub async fn save_font_settings(font_family: String, font_size: u32) -> Result<AppSettings, String> {
+pub async fn save_zoom(zoom: u32) -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(move || {
         let _guard = settings_lock().lock();
         let mut settings = load_settings_unlocked();
-        settings.font_family = font_family;
-        settings.font_size = normalize_font_size(font_size);
+        settings.zoom = normalize_zoom(zoom);
 
         let dir = nezha_dir()?;
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

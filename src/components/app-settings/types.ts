@@ -6,8 +6,7 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
-  font_family: string;
-  font_size: number;
+  zoom: number;
   keybindings: Record<string, string>;
 }
 
