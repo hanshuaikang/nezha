@@ -12,6 +12,10 @@ import {
   createSmartWriter,
 } from "./terminalShared";
 import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import {
+  formatDroppedPathsForTerminal,
+  registerTerminalFileDropTarget,
+} from "./terminalDragDrop";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -47,9 +51,11 @@ export function TerminalView({
   const onRegisterRef = useRef(onRegisterTerminal);
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
+  const isActiveRef = useRef(isActive);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
+  isActiveRef.current = isActive;
 
   // Keep refs current on every render
   onInputRef.current = onInput;
@@ -89,6 +95,14 @@ export function TerminalView({
     };
 
     const writer = createSmartWriter(term);
+    const unregisterDropTarget = registerTerminalFileDropTarget(
+      container,
+      (paths) => {
+        onInputRef.current(formatDroppedPathsForTerminal(paths));
+        focusTerminal();
+      },
+      () => isActiveRef.current,
+    );
 
     const terminalGeneration = onRegisterRef.current(writer.write);
 
@@ -164,6 +178,7 @@ export function TerminalView({
         /* ignore */
       }
       onRegisterRef.current(null);
+      unregisterDropTarget();
       fitAddonRef.current = null;
       disposeInputFix();
       disposeSmartCopy();

@@ -5,6 +5,7 @@ import { ChevronRight, ChevronDown, RotateCcw } from "lucide-react";
 import { getFileColor } from "../utils";
 import { useToast } from "./Toast";
 import { useI18n } from "../i18n";
+import { dispatchTerminalFileDropAtPoint } from "./terminalDragDrop";
 
 interface FsEntry {
   name: string;
@@ -147,10 +148,84 @@ function TreeItem({
   const isSelected = selectedPath === node.path;
   const isContextTarget = contextPath === node.path;
   const isHighlighted = isSelected || isContextTarget;
+  const [dragPreview, setDragPreview] = useState<{ x: number; y: number } | null>(null);
+  const pointerDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const resetDragCursor = () => {
+    document.body.style.cursor = "";
+  };
+
+  const suppressNextClick = () => {
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  };
+
+  useEffect(() => resetDragCursor, []);
+
   return (
     <div
-      onClick={() => (node.is_dir ? onToggle(node.path) : onSelect(node))}
+      onClick={(e) => {
+        if (suppressClickRef.current) {
+          suppressClickRef.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        node.is_dir ? onToggle(node.path) : onSelect(node);
+      }}
       onContextMenu={(e) => onContextMenu(e, node)}
+      onPointerDown={(e) => {
+        if (node.is_dir || e.button !== 0) return;
+        setDragPreview(null);
+        pointerDragRef.current = {
+          pointerId: e.pointerId,
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        const drag = pointerDragRef.current;
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= 4) {
+          drag.moved = true;
+          document.body.style.cursor = "pointer";
+          setDragPreview({ x: e.clientX, y: e.clientY });
+        }
+      }}
+      onPointerUp={(e) => {
+        const drag = pointerDragRef.current;
+        pointerDragRef.current = null;
+        setDragPreview(null);
+        resetDragCursor();
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+        if (!drag.moved) return;
+        suppressNextClick();
+        if (dispatchTerminalFileDropAtPoint(node.path, e.clientX, e.clientY)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
+      onPointerCancel={(e) => {
+        pointerDragRef.current = null;
+        setDragPreview(null);
+        resetDragCursor();
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      }}
       style={{
         display: "flex",
         alignItems: "center",
@@ -158,7 +233,7 @@ function TreeItem({
         height: ROW_HEIGHT,
         paddingLeft: 8 + depth * 14,
         paddingRight: 8,
-        cursor: "pointer",
+        cursor: dragPreview ? "pointer" : "default",
         borderRadius: 4,
         margin: "0 4px",
         boxSizing: "border-box",
@@ -207,6 +282,53 @@ function TreeItem({
       >
         {node.name}
       </span>
+      {dragPreview && (
+        <>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 3999,
+              cursor: "pointer",
+              background: "transparent",
+            }}
+          />
+          <div
+            style={{
+              position: "fixed",
+              left: dragPreview.x,
+              top: dragPreview.y,
+              transform: "translate(-50%, -50%)",
+              zIndex: 4000,
+              maxWidth: 280,
+              height: 26,
+              padding: "0 10px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              background: "#ffffff",
+              color: "#111827",
+              boxShadow: "0 10px 24px color-mix(in srgb, #000 22%, transparent)",
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              pointerEvents: "none",
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+            }}
+          >
+            <FileIcon
+              name={node.name}
+              ext={node.extension}
+              isDir={node.is_dir}
+              expanded={node.expanded}
+              isGitignored={node.is_gitignored}
+            />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{node.name}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
