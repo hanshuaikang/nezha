@@ -3,7 +3,7 @@ import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Project, Task, TaskStatus, AgentType, PermissionMode, ThemeMode } from "./types";
+import type { Project, Task, TaskStatus, AgentType, PermissionMode, ThemeMode, SessionListItem } from "./types";
 import { isActiveTaskStatus } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
@@ -95,14 +95,23 @@ function App() {
   }, []);
 
   const updateProjectView = useCallback((projectId: string, patch: Partial<ProjectViewState>) => {
-    setProjectViews((prev) => ({
-      ...prev,
-      [projectId]: {
-        ...createDefaultProjectViewState(),
-        ...prev[projectId],
-        ...patch,
-      },
-    }));
+    setProjectViews((prev) => {
+      const next = {
+        ...prev,
+        [projectId]: {
+          ...createDefaultProjectViewState(),
+          ...prev[projectId],
+          ...patch,
+        },
+      };
+      const taskId = next[projectId].selectedTaskId;
+      if (taskId) {
+        localStorage.setItem(`nezha:selectedTask:${projectId}`, taskId);
+      } else {
+        localStorage.removeItem(`nezha:selectedTask:${projectId}`);
+      }
+      return next;
+    });
   }, []);
 
   const clearProjectView = useCallback((projectId: string) => {
@@ -112,6 +121,7 @@ function App() {
       delete next[projectId];
       return next;
     });
+    localStorage.removeItem(`nezha:selectedTask:${projectId}`);
   }, []);
 
   function getProjectView(projectId: string): ProjectViewState {
@@ -149,18 +159,51 @@ function App() {
 
   useEffect(() => {
     async function init() {
-      // Load projects from ~/.nezha/projects.json
       const loadedProjects = await invoke<Project[]>("load_projects");
       setProjects(loadedProjects);
 
-      // Load tasks for all known projects
       const chunks = await Promise.all(
         loadedProjects.map((p) => invoke<Task[]>("load_project_tasks", { projectId: p.id })),
       );
-      setTasks(chunks.flat());
+      let allTasks = chunks.flat();
+
+      // Normalize zombie statuses: processes from previous session are gone
+      const dirtyProjectIds = new Set<string>();
+      allTasks = allTasks.map((task) => {
+        if (!isActiveTaskStatus(task.status)) return task;
+        dirtyProjectIds.add(task.projectId);
+        const hasSession = !!(task.claudeSessionId || task.codexSessionId);
+        return { ...task, status: (hasSession ? "done" : "failed") as TaskStatus, attentionRequestedAt: undefined };
+      });
+      // Persist normalized statuses
+      for (const pid of dirtyProjectIds) {
+        persistProjectTasks(pid, allTasks, showToast, formatSaveTasksError);
+      }
+
+      setTasks(allTasks);
+
+      // Restore last active project
+      const lastProjectId = localStorage.getItem("nezha:lastProjectId");
+      const lastProject = lastProjectId
+        ? loadedProjects.find((p) => p.id === lastProjectId)
+        : null;
+      const target =
+        lastProject ??
+        [...loadedProjects].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0] ??
+        null;
+
+      if (target) {
+        setActiveProject(target);
+        setMountedProjectIds([target.id]);
+        const savedTaskId = localStorage.getItem(`nezha:selectedTask:${target.id}`);
+        if (savedTaskId && allTasks.some((t) => t.id === savedTaskId && t.projectId === target.id)) {
+          setProjectViews({ [target.id]: { selectedTaskId: savedTaskId, isNewTask: false } });
+        }
+      }
     }
 
     init().catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
@@ -201,6 +244,7 @@ function App() {
       return next;
     });
     setActiveProject(project);
+    localStorage.setItem("nezha:lastProjectId", project.id);
     mountProject(project.id);
     updateProjectView(project.id, createDefaultProjectViewState());
     invoke("init_project_config", { projectPath: path }).catch((e: unknown) => {
@@ -216,6 +260,7 @@ function App() {
       return next;
     });
     setActiveProject(updated);
+    localStorage.setItem("nezha:lastProjectId", updated.id);
     mountProject(updated.id);
     invoke("init_project_config", { projectPath: project.path }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
@@ -334,6 +379,46 @@ function App() {
       projectPath: project.path,
       agent: task.agent,
       sessionId,
+      prompt: task.prompt,
+      permissionMode: task.permissionMode,
+      cols: tm.terminalSizeRef.current.cols,
+      rows: tm.terminalSizeRef.current.rows,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      tm.writeErrorToTerminal(taskId, `\r\nError: ${msg}\r\n`);
+      updateTaskStatus(taskId, "failed", undefined, msg);
+    });
+  }
+
+  function handleAttachSession(project: Project, session: SessionListItem, resume: boolean) {
+    const taskId = `${Date.now()}`;
+    const task: Task = {
+      id: taskId,
+      projectId: project.id,
+      prompt: session.title ?? `Session ${session.id.slice(0, 8)}`,
+      agent: "claude",
+      permissionMode: "ask",
+      status: resume ? "pending" : "done",
+      createdAt: Date.now(),
+      claudeSessionId: session.id,
+      claudeSessionPath: session.path,
+    };
+    setTasks((prev) => {
+      const next = [task, ...prev];
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
+      return next;
+    });
+    updateProjectView(project.id, { selectedTaskId: taskId, isNewTask: false });
+
+    if (!resume) return;
+
+    tm.resetTaskTerminal(taskId);
+    setTaskRunCounts((prev) => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
+    invoke("resume_task", {
+      taskId,
+      projectPath: project.path,
+      agent: "claude",
+      sessionId: session.id,
       prompt: task.prompt,
       permissionMode: task.permissionMode,
       cols: tm.terminalSizeRef.current.cols,
@@ -580,6 +665,7 @@ function App() {
               onUpdateTodo={handleUpdateTodo}
               onCancelTask={handleCancelTask}
               onResumeTask={handleResumeTask}
+              onAttachSession={(session, resume) => handleAttachSession(project, session, resume)}
               onInput={tm.handleInput}
               onResize={tm.handleResize}
               onRegisterTerminal={tm.handleRegisterTerminal}

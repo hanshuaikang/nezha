@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useImperativeHandle, forwardRef } from "react";
 import {
   Search,
   ChevronLeft,
@@ -8,36 +8,24 @@ import {
   PanelLeftOpen,
   Moon,
   Sun,
+  LinkIcon,
 } from "lucide-react";
-import type { Project, Task, ThemeMode } from "../types";
+import type { Project, Task, ThemeMode, SessionListItem } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
 import { TaskList } from "./task-panel/TaskList";
+import { SessionPickerDialog } from "./SessionPickerDialog";
+import { APP_PLATFORM } from "../platform";
+import { formatShortcutHint } from "../shortcuts";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
-export function TaskPanel({
-  project,
-  tasks,
-  selectedId,
-  isNewTask,
-  onNewTask,
-  onSelectTask,
-  onDeleteTask,
-  onDeleteAllTasks,
-  onToggleTaskStar,
-  onRunTodo,
-  onBack,
-  isDark,
-  themeMode,
-  systemPrefersDark,
-  onThemeModeChange,
-  onToggleTheme,
-  active = true,
-  collapsed = false,
-  onToggleCollapsed,
-}: {
+export interface TaskPanelHandle {
+  focusSearch: () => void;
+}
+
+interface TaskPanelProps {
   project: Project;
   tasks: Task[];
   selectedId: string | null;
@@ -48,6 +36,7 @@ export function TaskPanel({
   onDeleteAllTasks: () => void;
   onToggleTaskStar: (id: string) => void;
   onRunTodo: (task: Task) => void;
+  onAttachSession: (session: SessionListItem, resume: boolean) => void;
   onBack: () => void;
   isDark: boolean;
   themeMode: ThemeMode;
@@ -57,10 +46,44 @@ export function TaskPanel({
   active?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
-}) {
+}
+
+export const TaskPanel = forwardRef<TaskPanelHandle, TaskPanelProps>(function TaskPanel(
+  {
+    project,
+    tasks,
+    selectedId,
+    isNewTask,
+    onNewTask,
+    onSelectTask,
+    onDeleteTask,
+    onDeleteAllTasks,
+    onToggleTaskStar,
+    onRunTodo,
+    onAttachSession,
+    onBack,
+    isDark,
+    themeMode,
+    systemPrefersDark,
+    onThemeModeChange,
+    onToggleTheme,
+    active = true,
+    collapsed = false,
+    onToggleCollapsed,
+  },
+  ref,
+) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const hasAttention = tasks.some((t) => t.status === "input_required");
+
+  useImperativeHandle(ref, () => ({
+    focusSearch: () => {
+      if (!collapsed) searchInputRef.current?.focus();
+    },
+  }));
 
   if (collapsed) {
     return (
@@ -128,6 +151,7 @@ export function TaskPanel({
       <div style={s.panelSearchWrap}>
         <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         <input
+          ref={searchInputRef}
           style={s.panelSearchInput}
           placeholder={t("task.searchTasks")}
           value={query}
@@ -139,17 +163,42 @@ export function TaskPanel({
       <BranchBar projectPath={project.path} active={active} />
 
       {/* New Task row */}
-      <button
-        style={{
-          ...s.newTaskRow,
-          background: isNewTask ? "var(--control-active-bg)" : "var(--bg-card)",
-          color: isNewTask ? "var(--control-active-fg)" : "var(--text-secondary)",
-        }}
-        onClick={onNewTask}
-      >
-        <Plus size={14} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{t("task.newTask")}</span>
-      </button>
+      <div style={{ display: "flex", gap: 4, padding: "0 10px" }}>
+        <button
+          style={{
+            ...s.newTaskRow,
+            flex: 1,
+            padding: "7px 10px",
+            margin: 0,
+            background: isNewTask ? "var(--control-active-bg)" : "var(--bg-card)",
+            color: isNewTask ? "var(--control-active-fg)" : "var(--text-secondary)",
+          }}
+          onClick={onNewTask}
+        >
+          <Plus size={14} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 500 }}>
+            {t("task.newTask")}
+            <span style={{ opacity: 0.5, marginLeft: 6, fontSize: 11 }}>
+              {formatShortcutHint("new-task", APP_PLATFORM)}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          style={{
+            ...s.newTaskRow,
+            flex: 0,
+            padding: "7px 8px",
+            margin: 0,
+            background: "var(--bg-card)",
+            color: "var(--text-muted)",
+          }}
+          onClick={() => setShowSessionPicker(true)}
+          title={t("session.attachSession")}
+        >
+          <LinkIcon size={14} strokeWidth={2.2} />
+        </button>
+      </div>
 
       <div style={s.taskActionsRow}>
         <div style={s.taskActionsMeta}>{tasks.length} {t("task.tasks")}</div>
@@ -190,6 +239,16 @@ export function TaskPanel({
           onToggleTheme={onToggleTheme}
         />
       </div>
+      {showSessionPicker && (
+        <SessionPickerDialog
+          projectPath={project.path}
+          onSelect={(session, resume) => {
+            setShowSessionPicker(false);
+            onAttachSession(session, resume);
+          }}
+          onClose={() => setShowSessionPicker(false)}
+        />
+      )}
     </div>
   );
-}
+});

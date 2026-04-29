@@ -6,6 +6,9 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  font_family: string;
+  font_size: number;
+  keybindings: Record<string, string>;
 }
 
 export interface AgentVersions {

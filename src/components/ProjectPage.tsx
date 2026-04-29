@@ -6,8 +6,10 @@ import type {
   PermissionMode,
   TaskStatus,
   ThemeMode,
+  SessionListItem,
 } from "../types";
-import { TaskPanel } from "./TaskPanel";
+import { invoke } from "@tauri-apps/api/core";
+import { TaskPanel, type TaskPanelHandle } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
 import { FileExplorer } from "./FileExplorer";
@@ -22,6 +24,10 @@ import { TodoTaskView } from "./TodoTaskView";
 import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTerminalPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useProjectPanels } from "../hooks/useProjectPanels";
+import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
+import { AppSettingsDialog } from "./AppSettingsDialog";
+import type { Keybindings } from "../shortcuts";
+import { APP_SETTINGS_CHANGED_EVENT } from "./app-settings/types";
 import s from "../styles";
 
 export function ProjectPage({
@@ -45,6 +51,7 @@ export function ProjectPage({
   onUpdateTodo,
   onCancelTask,
   onResumeTask,
+  onAttachSession,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -88,6 +95,7 @@ export function ProjectPage({
   ) => void;
   onCancelTask: (id: string) => void;
   onResumeTask: (id: string) => void;
+  onAttachSession: (session: SessionListItem, resume: boolean) => void;
   onInput: (taskId: string, data: string) => void;
   onResize: (taskId: string, cols: number, rows: number) => void;
   onRegisterTerminal: (
@@ -130,10 +138,26 @@ export function ProjectPage({
 
   const [showShellTerminal, setShowShellTerminal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAppSettings, setShowAppSettings] = useState(false);
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
+  const [keybindings, setKeybindings] = useState<Keybindings>({});
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
+  const taskPanelRef = useRef<TaskPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    invoke<{ keybindings: Keybindings }>("load_app_settings")
+      .then((s) => setKeybindings(s.keybindings ?? {}))
+      .catch(() => {});
+    function onSettingsChanged() {
+      invoke<{ keybindings: Keybindings }>("load_app_settings")
+        .then((s) => setKeybindings(s.keybindings ?? {}))
+        .catch(() => {});
+    }
+    window.addEventListener(APP_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+    return () => window.removeEventListener(APP_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+  }, []);
   const prevHadDiffRef = useRef(false);
   const newTaskDraftRef = useRef<NewTaskDraft | null>(null);
   const handleCacheNewTaskDraft = useCallback((draft: NewTaskDraft | null) => {
@@ -201,6 +225,54 @@ export function ProjectPage({
     onNewTask();
   }, [onNewTask, clearFileAndDiff]);
 
+  useGlobalShortcuts(
+    useMemo(
+      () => ({
+        "new-task": handleNewTask,
+        "delete-task": () => {
+          if (selectedTaskId) onDeleteTask(selectedTaskId);
+        },
+        "prev-task": () => {
+          if (projectTasks.length === 0) return;
+          const idx = selectedTaskId
+            ? projectTasks.findIndex((t) => t.id === selectedTaskId)
+            : -1;
+          const prev = idx > 0 ? projectTasks[idx - 1] : projectTasks[projectTasks.length - 1];
+          if (prev) handleSelectTask(prev.id);
+        },
+        "next-task": () => {
+          if (projectTasks.length === 0) return;
+          const idx = selectedTaskId
+            ? projectTasks.findIndex((t) => t.id === selectedTaskId)
+            : -1;
+          const next =
+            idx >= 0 && idx < projectTasks.length - 1
+              ? projectTasks[idx + 1]
+              : projectTasks[0];
+          if (next) handleSelectTask(next.id);
+        },
+        "toggle-sidebar": () => setTaskPanelCollapsed((v) => !v),
+        "toggle-files": () => handleTogglePanel("files"),
+        "toggle-git-changes": () => handleTogglePanel("git-changes"),
+        "toggle-git-history": () => handleTogglePanel("git-history"),
+        "toggle-terminal": () => setShowShellTerminal((v) => !v),
+        "app-settings": () => setShowAppSettings((v) => !v),
+        "project-settings": () => setShowSettings((v) => !v),
+        "focus-search": () => taskPanelRef.current?.focusSearch(),
+      }),
+      [
+        handleNewTask,
+        selectedTaskId,
+        projectTasks,
+        handleSelectTask,
+        handleTogglePanel,
+        onDeleteTask,
+      ],
+    ),
+    visible,
+    keybindings,
+  );
+
   const currentTaskCreatedAt = selectedTask?.createdAt ?? null;
 
   return (
@@ -222,6 +294,7 @@ export function ProjectPage({
         onOpen={onOpen}
       />
       <TaskPanel
+        ref={taskPanelRef}
         project={project}
         tasks={projectTasks}
         selectedId={selectedTaskId}
@@ -232,6 +305,7 @@ export function ProjectPage({
         onDeleteAllTasks={onDeleteAllTasks}
         onToggleTaskStar={onToggleTaskStar}
         onRunTodo={onRunTodoTask}
+        onAttachSession={onAttachSession}
         onBack={onBack}
         isDark={isDark}
         themeMode={themeMode}
@@ -442,6 +516,16 @@ export function ProjectPage({
 
       {showSettings && (
         <SettingsDialog projectPath={project.path} onClose={() => setShowSettings(false)} />
+      )}
+
+      {showAppSettings && (
+        <AppSettingsDialog
+          isDark={isDark}
+          themeMode={themeMode}
+          systemPrefersDark={systemPrefersDark}
+          onThemeModeChange={onThemeModeChange}
+          onClose={() => setShowAppSettings(false)}
+        />
       )}
     </div>
   );

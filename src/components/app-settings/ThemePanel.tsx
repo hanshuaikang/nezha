@@ -1,8 +1,47 @@
+import { useEffect, useState } from "react";
 import type React from "react";
-import { Check, Monitor } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Check, ChevronDown, Monitor } from "lucide-react";
+import * as Select from "@radix-ui/react-select";
 import type { ThemeMode } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
+import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
+
+const FONT_FAMILY_DEFAULT = "__default__";
+
+const FONT_FAMILIES = [
+  { value: FONT_FAMILY_DEFAULT, label: "" },
+  { value: "SF Pro Display", label: "SF Pro Display" },
+  { value: "Inter", label: "Inter" },
+  { value: "IBM Plex Sans", label: "IBM Plex Sans" },
+  { value: "Noto Sans SC", label: "Noto Sans SC" },
+  { value: "PingFang SC", label: "PingFang SC" },
+  { value: "Helvetica Neue", label: "Helvetica Neue" },
+  { value: "Segoe UI", label: "Segoe UI" },
+  { value: "system-ui", label: "System UI" },
+];
+
+const FONT_SIZES = [0, 10, 11, 12, 13, 14, 15, 16, 18, 20, 24];
+
+const DEFAULT_FONT_STACK =
+  '"SF Pro Display", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif';
+
+export function applyFontSettings(family: string, size: number) {
+  const root = document.documentElement;
+  if (family) {
+    root.style.setProperty("--font-ui", `"${family}", ${DEFAULT_FONT_STACK}`);
+  } else {
+    root.style.removeProperty("--font-ui");
+  }
+  if (size > 0) {
+    root.style.setProperty("--app-font-size", `${size}px`);
+    root.style.fontSize = `${size}px`;
+  } else {
+    root.style.removeProperty("--app-font-size");
+    root.style.fontSize = "";
+  }
+}
 
 interface ThemePanelProps {
   themeMode: ThemeMode;
@@ -12,6 +51,34 @@ interface ThemePanelProps {
 
 export function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePanelProps) {
   const { t } = useI18n();
+  const [fontFamily, setFontFamily] = useState(FONT_FAMILY_DEFAULT);
+  const [fontSize, setFontSize] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<AppSettings>("load_app_settings").then((loaded) => {
+      setFontFamily(loaded.font_family || FONT_FAMILY_DEFAULT);
+      setFontSize(loaded.font_size);
+    });
+  }, []);
+
+  async function handleFontChange(nextFamily: string, nextSize: number) {
+    setSaving(true);
+    try {
+      const realFamily = nextFamily === FONT_FAMILY_DEFAULT ? "" : nextFamily;
+      const saved = await invoke<AppSettings>("save_font_settings", {
+        fontFamily: realFamily,
+        fontSize: nextSize,
+      });
+      setFontFamily(saved.font_family || FONT_FAMILY_DEFAULT);
+      setFontSize(saved.font_size);
+      applyFontSettings(saved.font_family, saved.font_size);
+      window.dispatchEvent(new Event(APP_SETTINGS_CHANGED_EVENT));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
   const currentModeLabel = systemPrefersDark ? t("theme.dark") : t("theme.light");
   const manualModeLabel = themeMode === "dark" ? t("theme.dark") : t("theme.light");
@@ -434,6 +501,192 @@ export function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: 
             previewBorder: "rgba(23,27,36,0.08)",
             previewAccent: "#171b24",
           })}
+        </div>
+      </div>
+
+      <div
+        style={{
+          borderTop: "1px solid var(--border-dim)",
+          paddingTop: 18,
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+          {t("appSettings.fontFamily")}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <Select.Root
+            value={fontFamily}
+            onValueChange={(value) => {
+              setFontFamily(value);
+              void handleFontChange(value, fontSize);
+            }}
+            disabled={saving}
+          >
+            <Select.Trigger
+              aria-label={t("appSettings.fontFamily")}
+              style={{
+                width: 220,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "7px 10px",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border-medium)",
+                borderRadius: 7,
+                color: "var(--text-primary)",
+                fontSize: 12.5,
+                fontFamily: fontFamily !== FONT_FAMILY_DEFAULT ? `"${fontFamily}", var(--font-ui)` : "var(--font-ui)",
+                cursor: saving ? "default" : "pointer",
+                opacity: saving ? 0.65 : 1,
+                outline: "none",
+              }}
+            >
+              <Select.Value>
+                {fontFamily === FONT_FAMILY_DEFAULT ? t("appSettings.fontFamilyDefault") : fontFamily}
+              </Select.Value>
+              <Select.Icon>
+                <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Content
+                position="popper"
+                sideOffset={4}
+                style={{
+                  minWidth: 220,
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-medium)",
+                  borderRadius: 8,
+                  boxShadow: "var(--shadow-popover)",
+                  padding: 4,
+                  zIndex: 3000,
+                }}
+              >
+                <Select.Viewport>
+                  {FONT_FAMILIES.map((option) => (
+                    <Select.Item
+                      key={option.value}
+                      value={option.value}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 8px",
+                        borderRadius: 5,
+                        color: "var(--text-primary)",
+                        fontSize: 12.5,
+                        fontFamily: option.value !== FONT_FAMILY_DEFAULT ? `"${option.value}", var(--font-ui)` : "var(--font-ui)",
+                        cursor: "pointer",
+                        outline: "none",
+                      }}
+                    >
+                      <Select.ItemText>
+                        {option.value === FONT_FAMILY_DEFAULT ? t("appSettings.fontFamilyDefault") : option.value}
+                      </Select.ItemText>
+                      <Select.ItemIndicator style={{ marginLeft: "auto", display: "flex" }}>
+                        <Check size={13} color="var(--accent)" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                  ))}
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
+          <span style={{ fontSize: 11, color: "var(--text-hint)" }}>
+            {t("appSettings.fontFamilyHint")}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+            {t("appSettings.fontSize")}
+          </div>
+          <Select.Root
+            value={String(fontSize)}
+            onValueChange={(value) => {
+              const size = Number(value);
+              setFontSize(size);
+              void handleFontChange(fontFamily, size);
+            }}
+            disabled={saving}
+          >
+            <Select.Trigger
+              aria-label={t("appSettings.fontSize")}
+              style={{
+                width: 160,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "7px 10px",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border-medium)",
+                borderRadius: 7,
+                color: "var(--text-primary)",
+                fontSize: 12.5,
+                fontFamily: "var(--font-ui)",
+                cursor: saving ? "default" : "pointer",
+                opacity: saving ? 0.65 : 1,
+                outline: "none",
+              }}
+            >
+              <Select.Value>
+                {fontSize === 0 ? t("appSettings.fontSizeDefault") : `${fontSize}px`}
+              </Select.Value>
+              <Select.Icon>
+                <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Content
+                position="popper"
+                sideOffset={4}
+                style={{
+                  minWidth: 160,
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-medium)",
+                  borderRadius: 8,
+                  boxShadow: "var(--shadow-popover)",
+                  padding: 4,
+                  zIndex: 3000,
+                }}
+              >
+                <Select.Viewport>
+                  {FONT_SIZES.map((size) => (
+                    <Select.Item
+                      key={size}
+                      value={String(size)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 8px",
+                        borderRadius: 5,
+                        color: "var(--text-primary)",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                        outline: "none",
+                      }}
+                    >
+                      <Select.ItemText>
+                        {size === 0 ? t("appSettings.fontSizeDefault") : `${size}px`}
+                      </Select.ItemText>
+                      <Select.ItemIndicator style={{ marginLeft: "auto", display: "flex" }}>
+                        <Check size={13} color="var(--accent)" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                  ))}
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
+          <span style={{ fontSize: 11, color: "var(--text-hint)" }}>
+            {t("appSettings.fontSizeHint")}
+          </span>
         </div>
       </div>
     </div>

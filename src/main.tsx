@@ -1,8 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import { ToastProvider } from "./components/Toast";
 import { I18nProvider } from "./i18n";
+import { applyFontSettings } from "./components/app-settings/ThemePanel";
+
+invoke<{ font_family: string; font_size: number }>("load_app_settings")
+  .then((s) => applyFontSettings(s.font_family, s.font_size))
+  .catch(() => {});
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
