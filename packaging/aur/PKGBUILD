@@ -1,0 +1,63 @@
+pkgbase=nezha-ide
+pkgname=nezha-ide
+pkgver=0.3.2
+pkgrel=1
+pkgdesc='Agent-first desktop IDE for parallel AI coding workflows'
+arch=('x86_64' 'aarch64')
+url='https://github.com/hanshuaikang/nezha'
+license=('GPL-3.0-only')
+depends=(
+  'gtk3'
+  'hicolor-icon-theme'
+  'libayatana-appindicator'
+  'librsvg'
+  'openssl'
+  'webkit2gtk-4.1'
+)
+makedepends=(
+  'cargo'
+  'nodejs'
+  'pkgconf'
+  'pnpm'
+  'rust'
+)
+provides=('nezha')
+conflicts=('nezha' 'nezha-git' 'nezha-bin')
+source=("${pkgbase}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('3cf3b9e9991318e3790944e57933a7f0bff91de8edf7bc4210cba136780d822b')
+
+build() {
+  cd "${srcdir}/nezha-${pkgver}"
+
+  export CARGO_TARGET_DIR="${srcdir}/target"
+  export npm_config_cache="${srcdir}/npm-cache"
+  export PNPM_HOME="${srcdir}/pnpm-home"
+
+  pnpm install --frozen-lockfile
+  pnpm tauri build --no-bundle
+}
+
+package() {
+  cd "${srcdir}/nezha-${pkgver}"
+
+  install -Dm755 "${srcdir}/target/release/nezha" "${pkgdir}/usr/bin/nezha"
+
+  install -Dm644 "src-tauri/icons/32x32.png" \
+    "${pkgdir}/usr/share/icons/hicolor/32x32/apps/nezha.png"
+  install -Dm644 "src-tauri/icons/128x128.png" \
+    "${pkgdir}/usr/share/icons/hicolor/128x128/apps/nezha.png"
+
+  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/nezha.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Nezha
+Comment=Agent-first desktop IDE for parallel AI coding workflows
+Exec=nezha
+Icon=nezha
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=Nezha
+EOF
+
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
