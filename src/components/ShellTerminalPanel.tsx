@@ -8,12 +8,16 @@ import { attachSmartCopy } from "./terminalCopyHelper";
 import {
   DARK_THEME,
   LIGHT_THEME,
+  applyTerminalAppearance,
+  createSmartWriter,
+  getTerminalAppearance,
   initTerminal,
   loadWebglAddon,
   safeFit,
-  createSmartWriter,
+  type TerminalAppearanceSettings,
 } from "./terminalShared";
 import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./app-settings/types";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import "@xterm/xterm/css/xterm.css";
@@ -67,6 +71,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const appearanceRef = useRef<TerminalAppearanceSettings>(getTerminalAppearance());
     const isDarkRef = useRef(isDark);
     const isActiveRef = useRef(isActive);
     const onReadyRef = useRef(onReady);
@@ -92,105 +97,151 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
 
-      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000);
-      terminalRef.current = term;
-      fitAddonRef.current = fitAddon;
-      term.open(container);
-      const disposeInputFix = attachMacWebKitShiftInputFix(term);
-      loadWebglAddon(term);
-
-      const fit = () => {
-        if (cleaned) return;
-        const s = safeFit(fitAddon, term);
-        if (!s) return;
-        const last = lastSizeRef.current;
-        if (last && last.cols === s.cols && last.rows === s.rows) return;
-        lastSizeRef.current = { cols: s.cols, rows: s.rows };
-        invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
-      };
-
-      initTimeoutId = window.setTimeout(() => {
-        if (cleaned) return;
-        fit();
-        invoke<void>("open_shell", {
-          shellId,
-          projectPath,
-          cols: term.cols,
-          rows: term.rows,
-        })
-          .then(() => {
-            if (cleaned) return;
-            readyTimeoutId = window.setTimeout(() => {
-              if (!cleaned) {
-                onReadyRef.current?.();
-              }
-            }, 300);
-          })
-          .catch(console.error);
-        if (isActiveRef.current) {
-          term.focus();
+      const loadAppearance = async () => {
+        try {
+          const settings = await invoke<AppSettings>("load_app_settings");
+          if (!cleaned) {
+            appearanceRef.current = getTerminalAppearance(settings);
+          }
+        } catch {
+          if (!cleaned) {
+            appearanceRef.current = getTerminalAppearance();
+          }
         }
-      }, 50);
 
-      const writer = createSmartWriter(term);
-      const disposeSmartCopy = attachSmartCopy(term);
-      const disposeOnData = term.onData((data) => {
-        invoke("send_input", { taskId: shellId, data }).catch(() => {});
-      });
+        if (cleaned) return;
 
-      const resizeObserver = new ResizeObserver(() => {
-        setTimeout(() => {
+
+        const { term, fitAddon } = initTerminal(isDarkRef.current, appearanceRef.current, 5000);
+        terminalRef.current = term;
+        fitAddonRef.current = fitAddon;
+        term.open(container);
+        const disposeInputFix = attachMacWebKitShiftInputFix(term);
+        loadWebglAddon(term);
+
+        const fit = () => {
+          if (cleaned) return;
+          const s = safeFit(fitAddon, term);
+          if (!s) return;
+          const last = lastSizeRef.current;
+          if (last && last.cols === s.cols && last.rows === s.rows) return;
+          lastSizeRef.current = { cols: s.cols, rows: s.rows };
+          invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        };
+
+        initTimeoutId = window.setTimeout(() => {
+          if (cleaned) return;
+          fit();
+          invoke<void>("open_shell", {
+            shellId,
+            projectPath,
+            cols: term.cols,
+            rows: term.rows,
+          })
+            .then(() => {
+              if (cleaned) return;
+              readyTimeoutId = window.setTimeout(() => {
+                if (!cleaned) {
+                  onReadyRef.current?.();
+                }
+              }, 300);
+            })
+            .catch(console.error);
           if (isActiveRef.current) {
-            fit();
+            term.focus();
           }
         }, 50);
-      });
-      resizeObserver.observe(container);
 
-      const handleVisibilityChange = () => {
-        if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
-        window.requestAnimationFrame(() => {
-          fit();
-          const t = terminalRef.current;
-          if (t) {
-            t.refresh(0, t.rows - 1);
-            t.focus();
+        const writer = createSmartWriter(term);
+        const disposeSmartCopy = attachSmartCopy(term);
+        const disposeOnData = term.onData((data) => {
+          invoke("send_input", { taskId: shellId, data }).catch(() => {});
+        });
+
+        const resizeObserver = new ResizeObserver(() => {
+          setTimeout(() => {
+            if (isActiveRef.current) {
+              fit();
+            }
+          }, 50);
+        });
+        resizeObserver.observe(container);
+
+        const handleVisibilityChange = () => {
+          if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
+          window.requestAnimationFrame(() => {
+            fit();
+            const t = terminalRef.current;
+            if (t) {
+              t.refresh(0, t.rows - 1);
+              t.focus();
+            }
+          });
+        };
+        const handleSettingsChanged = (event: Event) => {
+          const settings = (event as CustomEvent<AppSettings>).detail;
+          appearanceRef.current = getTerminalAppearance(settings);
+          const s = applyTerminalAppearance(term, fitAddon, appearanceRef.current);
+          if (!s) return;
+          const last = lastSizeRef.current;
+          if (!last || last.cols !== s.cols || last.rows !== s.rows) {
+            lastSizeRef.current = { cols: s.cols, rows: s.rows };
+            invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+          }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        window.addEventListener(APP_SETTINGS_CHANGED_EVENT, handleSettingsChanged as EventListener);
+
+        let unlisten: (() => void) | null = null;
+        listen<ShellOutputEvent>("shell-output", (event) => {
+          if (event.payload.shell_id === shellId && terminalRef.current) {
+            writer.write(event.payload.data);
+          }
+        }).then((fn) => {
+          if (cleaned) {
+            fn();
+          } else {
+            unlisten = fn;
           }
         });
-      };
-      document.addEventListener("visibilitychange", handleVisibilityChange);
 
-      let unlisten: (() => void) | null = null;
-      listen<ShellOutputEvent>("shell-output", (event) => {
-        if (event.payload.shell_id === shellId && terminalRef.current) {
-          writer.write(event.payload.data);
-        }
-      }).then((fn) => {
+        const cleanup = () => {
+          cleaned = true;
+          if (initTimeoutId !== null) {
+            window.clearTimeout(initTimeoutId);
+          }
+          if (readyTimeoutId !== null) {
+            window.clearTimeout(readyTimeoutId);
+          }
+          unlisten?.();
+          disposeSmartCopy();
+          disposeOnData.dispose();
+          resizeObserver.disconnect();
+          document.removeEventListener("visibilitychange", handleVisibilityChange);
+          window.removeEventListener(APP_SETTINGS_CHANGED_EVENT, handleSettingsChanged as EventListener);
+          terminalRef.current = null;
+          fitAddonRef.current = null;
+          disposeInputFix();
+          term.dispose();
+          invoke("kill_shell", { shellId }).catch(() => {});
+        };
+
         if (cleaned) {
-          fn();
-        } else {
-          unlisten = fn;
+          cleanup();
+          return;
         }
+
+        return cleanup;
+      };
+
+      let cleanupFn: (() => void) | undefined;
+      void loadAppearance().then((cleanup) => {
+        cleanupFn = cleanup;
       });
 
       return () => {
         cleaned = true;
-        if (initTimeoutId !== null) {
-          window.clearTimeout(initTimeoutId);
-        }
-        if (readyTimeoutId !== null) {
-          window.clearTimeout(readyTimeoutId);
-        }
-        unlisten?.();
-        disposeSmartCopy();
-        disposeOnData.dispose();
-        resizeObserver.disconnect();
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-        terminalRef.current = null;
-        fitAddonRef.current = null;
-        disposeInputFix();
-        term.dispose();
-        invoke("kill_shell", { shellId }).catch(() => {});
+        cleanupFn?.();
       };
     }, [shellId, projectPath]);
 

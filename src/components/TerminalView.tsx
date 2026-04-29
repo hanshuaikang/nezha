@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -6,12 +7,16 @@ import { attachSmartCopy } from "./terminalCopyHelper";
 import {
   DARK_THEME,
   LIGHT_THEME,
+  applyTerminalAppearance,
+  createSmartWriter,
+  getTerminalAppearance,
   initTerminal,
   loadWebglAddon,
   safeFit,
-  createSmartWriter,
+  type TerminalAppearanceSettings,
 } from "./terminalShared";
 import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./app-settings/types";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -42,6 +47,7 @@ export function TerminalView({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const appearanceRef = useRef<TerminalAppearanceSettings>(getTerminalAppearance());
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
   const onRegisterRef = useRef(onRegisterTerminal);
@@ -51,13 +57,10 @@ export function TerminalView({
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
-  // Keep refs current on every render
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
   onRegisterRef.current = onRegisterTerminal;
 
-  // 仅在 cols/rows 真正变化时回调；否则会触发 resize_pty → SIGWINCH →
-  // 下游 TUI（Claude Code / Codex）全屏重绘，导致每次切回都看到一次多余重画。
   const notifyResize = useCallback((cols: number, rows: number) => {
     const last = lastSizeRef.current;
     if (last && last.cols === cols && last.rows === rows) return;
@@ -68,113 +71,153 @@ export function TerminalView({
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
+    let disposed = false;
 
-    const { term, fitAddon } = initTerminal(isDark);
-    terminalRef.current = term;
-    fitAddonRef.current = fitAddon;
+    const loadAppearance = async () => {
+      try {
+        const settings = await invoke<AppSettings>("load_app_settings");
+        if (!disposed) {
+          appearanceRef.current = getTerminalAppearance(settings);
+        }
+      } catch {
+        if (!disposed) {
+          appearanceRef.current = getTerminalAppearance();
+        }
+      }
 
-    const serializeAddon = new SerializeAddon();
-    term.loadAddon(serializeAddon);
-    term.open(container);
-    const disposeInputFix = attachMacWebKitShiftInputFix(term);
-    loadWebglAddon(term);
+      if (disposed) return;
 
-    const size = safeFit(fitAddon, term);
-    if (size) notifyResize(size.cols, size.rows);
+      const { term, fitAddon } = initTerminal(isDark, appearanceRef.current);
+      terminalRef.current = term;
+      fitAddonRef.current = fitAddon;
 
-    const focusTerminal = () => {
-      window.requestAnimationFrame(() => {
-        term.focus();
-      });
-    };
+      const serializeAddon = new SerializeAddon();
+      term.loadAddon(serializeAddon);
+      term.open(container);
+      const disposeInputFix = attachMacWebKitShiftInputFix(term);
+      loadWebglAddon(term);
 
-    const writer = createSmartWriter(term);
+      const size = safeFit(fitAddon, term);
+      if (size) notifyResize(size.cols, size.rows);
 
-    const terminalGeneration = onRegisterRef.current(writer.write);
-
-    const completeRestore = () => {
-      onReadyRef.current?.(terminalGeneration);
-      focusTerminal();
-    };
-
-    window.requestAnimationFrame(() => {
-      const s = safeFit(fitAddon, term);
-      if (s) notifyResize(s.cols, s.rows);
-      if (initialSnapshot) {
-        term.write(initialSnapshot, () => {
-          if (initialData) {
-            term.write(initialData, completeRestore);
-            return;
-          }
-          completeRestore();
+      const focusTerminal = () => {
+        window.requestAnimationFrame(() => {
+          term.focus();
         });
-        return;
-      }
-      if (initialData) {
-        term.write(initialData, completeRestore);
-        return;
-      }
-      completeRestore();
-    });
+      };
 
-    const disposeSmartCopy = attachSmartCopy(term);
-    const disposeOnData = term.onData((data) => onInputRef.current(data));
+      const writer = createSmartWriter(term);
+      const terminalGeneration = onRegisterRef.current(writer.write);
 
-    const handlePointerDown = (e: PointerEvent) => {
-      if (e.button === 0) {
+
+      const completeRestore = () => {
+        onReadyRef.current?.(terminalGeneration);
         focusTerminal();
-        writer.setSelectionPaused(true);
-      }
-    };
-    // pointerup 挂在 document 上，拖出终端区域外松手也能正确恢复
-    const handlePointerUp = (e: PointerEvent) => {
-      if (e.button === 0) {
-        writer.setSelectionPaused(false);
-      }
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") return;
+      };
+
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term);
         if (s) notifyResize(s.cols, s.rows);
-        term.refresh(0, term.rows - 1);
-        term.focus();
+        if (initialSnapshot) {
+          term.write(initialSnapshot, () => {
+            if (initialData) {
+              term.write(initialData, completeRestore);
+              return;
+            }
+            completeRestore();
+          });
+          return;
+        }
+        if (initialData) {
+          term.write(initialData, completeRestore);
+          return;
+        }
+        completeRestore();
       });
+
+      const disposeSmartCopy = attachSmartCopy(term);
+      const disposeOnData = term.onData((data) => onInputRef.current(data));
+
+      const handlePointerDown = (e: PointerEvent) => {
+        if (e.button === 0) {
+          focusTerminal();
+          writer.setSelectionPaused(true);
+        }
+      };
+      const handlePointerUp = (e: PointerEvent) => {
+        if (e.button === 0) {
+          writer.setSelectionPaused(false);
+        }
+      };
+      const handleVisibilityChange = () => {
+        if (document.visibilityState !== "visible") return;
+        window.requestAnimationFrame(() => {
+          const s = safeFit(fitAddon, term);
+          if (s) notifyResize(s.cols, s.rows);
+          term.refresh(0, term.rows - 1);
+          term.focus();
+        });
+      };
+      const handleSettingsChanged = (event: Event) => {
+        const settings = (event as CustomEvent<AppSettings>).detail;
+        appearanceRef.current = getTerminalAppearance(settings);
+        const s = applyTerminalAppearance(term, fitAddon, appearanceRef.current);
+        if (s) notifyResize(s.cols, s.rows);
+      };
+
+      container.addEventListener("pointerdown", handlePointerDown as EventListener);
+      document.addEventListener("pointerup", handlePointerUp as EventListener);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener(APP_SETTINGS_CHANGED_EVENT, handleSettingsChanged as EventListener);
+
+      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+      const resizeObserver = new ResizeObserver(() => {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const s = safeFit(fitAddon, term);
+          if (s) notifyResize(s.cols, s.rows);
+        }, 50);
+      });
+      resizeObserver.observe(container);
+
+      const cleanup = () => {
+        try {
+          const snapshot = serializeAddon.serialize();
+          if (snapshot) onSnapshotRef.current?.(snapshot);
+        } catch {
+          /* ignore */
+        }
+        onRegisterRef.current(null);
+        fitAddonRef.current = null;
+        disposeInputFix();
+        disposeSmartCopy();
+        disposeOnData.dispose();
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeObserver.disconnect();
+        container.removeEventListener("pointerdown", handlePointerDown as EventListener);
+        document.removeEventListener("pointerup", handlePointerUp as EventListener);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        window.removeEventListener(APP_SETTINGS_CHANGED_EVENT, handleSettingsChanged as EventListener);
+        terminalRef.current = null;
+        term.dispose();
+      };
+
+      if (disposed) {
+        cleanup();
+        return;
+      }
+
+      return cleanup;
     };
 
-    container.addEventListener("pointerdown", handlePointerDown as EventListener);
-    document.addEventListener("pointerup", handlePointerUp as EventListener);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const resizeObserver = new ResizeObserver(() => {
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        const s = safeFit(fitAddon, term);
-        if (s) notifyResize(s.cols, s.rows);
-      }, 50);
+    let cleanupFn: (() => void) | undefined;
+    void loadAppearance().then((cleanup) => {
+      cleanupFn = cleanup;
     });
-    resizeObserver.observe(container);
 
     return () => {
-      try {
-        const snapshot = serializeAddon.serialize();
-        if (snapshot) onSnapshotRef.current?.(snapshot);
-      } catch {
-        /* ignore */
-      }
-      onRegisterRef.current(null);
-      fitAddonRef.current = null;
-      disposeInputFix();
-      disposeSmartCopy();
-      disposeOnData.dispose();
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeObserver.disconnect();
-      container.removeEventListener("pointerdown", handlePointerDown as EventListener);
-      document.removeEventListener("pointerup", handlePointerUp as EventListener);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      terminalRef.current = null;
-      term.dispose();
+      disposed = true;
+      cleanupFn?.();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

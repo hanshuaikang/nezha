@@ -6,6 +6,9 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  terminal_font_family: string;
+  terminal_font_size: number;
+  terminal_line_height: number;
 }
 
 export interface AgentVersions {
@@ -24,3 +27,7 @@ export interface AppSettingsNavItem {
 }
 
 export const APP_SETTINGS_CHANGED_EVENT = "nezha:app-settings-changed";
+
+export const DEFAULT_TERMINAL_FONT_FAMILY = "monospace";
+export const DEFAULT_TERMINAL_FONT_SIZE = 14;
+export const DEFAULT_TERMINAL_LINE_HEIGHT = 1.38;

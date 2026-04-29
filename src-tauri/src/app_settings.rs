@@ -15,11 +15,43 @@ fn default_send_shortcut() -> String {
     "mod_enter".to_string()
 }
 
+fn default_terminal_font_family() -> String {
+    "monospace".to_string()
+}
+
+fn default_terminal_font_size() -> u16 {
+    14
+}
+
+fn default_terminal_line_height() -> f64 {
+    1.38
+}
+
 fn normalize_send_shortcut(value: String) -> String {
     match value.as_str() {
         "enter" | "mod_enter" => value,
         _ => default_send_shortcut(),
     }
+}
+
+fn normalize_terminal_font_family(value: String) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        default_terminal_font_family()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn normalize_terminal_font_size(value: u16) -> u16 {
+    value.clamp(10, 24)
+}
+
+fn normalize_terminal_line_height(value: f64) -> f64 {
+    if !value.is_finite() {
+        return default_terminal_line_height();
+    }
+    value.clamp(1.0, 2.0)
 }
 
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
@@ -34,7 +66,7 @@ pub fn get_login_shell_path() -> &'static str {
     crate::platform::login_shell_path()
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct AppSettings {
     #[serde(default)]
     pub claude_path: String,
@@ -42,6 +74,12 @@ pub struct AppSettings {
     pub codex_path: String,
     #[serde(default = "default_send_shortcut")]
     pub send_shortcut: String,
+    #[serde(default = "default_terminal_font_family")]
+    pub terminal_font_family: String,
+    #[serde(default = "default_terminal_font_size")]
+    pub terminal_font_size: u16,
+    #[serde(default = "default_terminal_line_height")]
+    pub terminal_line_height: f64,
 }
 
 impl Default for AppSettings {
@@ -50,6 +88,9 @@ impl Default for AppSettings {
             claude_path: String::new(),
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
+            terminal_font_family: default_terminal_font_family(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_line_height: default_terminal_line_height(),
         }
     }
 }
@@ -306,6 +347,9 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
+        terminal_font_family: normalize_terminal_font_family(settings.terminal_font_family),
+        terminal_font_size: normalize_terminal_font_size(settings.terminal_font_size),
+        terminal_line_height: normalize_terminal_line_height(settings.terminal_line_height),
     }
 }
 
@@ -320,6 +364,9 @@ fn load_settings_unlocked() -> AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
+            terminal_font_family: default_terminal_font_family(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_line_height: default_terminal_line_height(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);

@@ -3,6 +3,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 
+import type { AppSettings } from "./app-settings/types";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+} from "./app-settings/types";
+
 // ── Theme ────────────────────────────────────────────────────────────────────
 
 export const DARK_THEME = {
@@ -54,12 +61,38 @@ export const LIGHT_THEME = {
 // ── Watermark flow control ───────────────────────────────────────────────────
 
 const HIGH_WATER = 128 * 1024; // 128 KB：超过时停止写入
-const LOW_WATER  =  16 * 1024; //  16 KB：恢复写入
+const LOW_WATER = 16 * 1024; //  16 KB：恢复写入
 
 export interface SmartWriter {
   write: (data: string, callback?: () => void) => void;
   drainPending: () => void;
   setSelectionPaused: (paused: boolean) => void;
+}
+
+export interface TerminalAppearanceSettings {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+}
+
+export const DEFAULT_TERMINAL_APPEARANCE: TerminalAppearanceSettings = {
+  fontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+  fontSize: DEFAULT_TERMINAL_FONT_SIZE,
+  lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+};
+
+export function getTerminalAppearance(settings?: Partial<AppSettings> | null): TerminalAppearanceSettings {
+  return {
+    fontFamily: settings?.terminal_font_family?.trim() || DEFAULT_TERMINAL_APPEARANCE.fontFamily,
+    fontSize:
+      typeof settings?.terminal_font_size === "number"
+        ? Math.min(24, Math.max(10, settings.terminal_font_size))
+        : DEFAULT_TERMINAL_APPEARANCE.fontSize,
+    lineHeight:
+      typeof settings?.terminal_line_height === "number" && Number.isFinite(settings.terminal_line_height)
+        ? Math.min(2, Math.max(1, settings.terminal_line_height))
+        : DEFAULT_TERMINAL_APPEARANCE.lineHeight,
+  };
 }
 
 /**
@@ -125,17 +158,35 @@ export interface InitTerminalResult {
   fitAddon: FitAddon;
 }
 
+export function applyTerminalAppearance(
+  term: Terminal,
+  fitAddon: FitAddon | null,
+  appearance: TerminalAppearanceSettings,
+): { cols: number; rows: number } | null {
+  term.options.fontFamily = appearance.fontFamily;
+  term.options.fontSize = appearance.fontSize;
+  term.options.lineHeight = appearance.lineHeight;
+  const size = fitAddon ? safeFit(fitAddon, term) : null;
+  term.refresh(0, term.rows - 1);
+  return size;
+}
+
 /**
  * 创建 xterm Terminal 实例并加载通用 addon（FitAddon, Unicode11, WebGL）。
  * 调用方负责 term.open(container)。
  */
-export function initTerminal(isDark: boolean, scrollback = 1000): InitTerminalResult {
+export function initTerminal(
+  isDark: boolean,
+  appearance: TerminalAppearanceSettings = DEFAULT_TERMINAL_APPEARANCE,
+  scrollback = 1000,
+): InitTerminalResult {
   const term = new Terminal({
     convertEol: false,
     scrollback,
     cursorBlink: true,
-    fontFamily: "monospace",
-    fontSize: 12,
+    fontFamily: appearance.fontFamily,
+    fontSize: appearance.fontSize,
+    lineHeight: appearance.lineHeight,
     theme: isDark ? DARK_THEME : LIGHT_THEME,
     allowProposedApi: true,
   });

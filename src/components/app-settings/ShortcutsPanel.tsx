@@ -16,13 +16,18 @@ import s from "../../styles";
 import { renderShortcutKeys } from "./shared";
 import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
 
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  claude_path: "",
+  codex_path: "",
+  send_shortcut: DEFAULT_SEND_SHORTCUT,
+  terminal_font_family: "monospace",
+  terminal_font_size: 14,
+  terminal_line_height: 1.38,
+};
+
 export function ShortcutsPanel() {
   const { t } = useI18n();
-  const [settings, setSettings] = useState<AppSettings>({
-    claude_path: "",
-    codex_path: "",
-    send_shortcut: DEFAULT_SEND_SHORTCUT,
-  });
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

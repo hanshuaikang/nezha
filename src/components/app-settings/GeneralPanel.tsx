@@ -6,10 +6,31 @@ import * as Select from "@radix-ui/react-select";
 import { useI18n, type AppLanguage } from "../../i18n";
 import { DEFAULT_SEND_SHORTCUT, normalizeSendShortcut } from "../../shortcuts";
 import s from "../../styles";
-import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings } from "./types";
+import {
+  APP_SETTINGS_CHANGED_EVENT,
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+  type AgentVersions,
+  type AppSettings,
+} from "./types";
 import { getAgentExecutablePlaceholder } from "./shared";
 
 const AUTO_VERSION_DETECT_DELAY_MS = 350;
+
+function normalizeTerminalSettings(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    send_shortcut: normalizeSendShortcut(settings.send_shortcut),
+    terminal_font_family: settings.terminal_font_family?.trim() || DEFAULT_TERMINAL_FONT_FAMILY,
+    terminal_font_size: Number.isFinite(settings.terminal_font_size)
+      ? Math.min(24, Math.max(10, settings.terminal_font_size))
+      : DEFAULT_TERMINAL_FONT_SIZE,
+    terminal_line_height: Number.isFinite(settings.terminal_line_height)
+      ? Math.min(2, Math.max(1, settings.terminal_line_height))
+      : DEFAULT_TERMINAL_LINE_HEIGHT,
+  };
+}
 
 export function GeneralPanel() {
   const { language, setLanguage, t } = useI18n();
@@ -17,11 +38,17 @@ export function GeneralPanel() {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    terminal_font_family: DEFAULT_TERMINAL_FONT_FAMILY,
+    terminal_font_size: DEFAULT_TERMINAL_FONT_SIZE,
+    terminal_line_height: DEFAULT_TERMINAL_LINE_HEIGHT,
   });
   const [original, setOriginal] = useState<AppSettings>({
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    terminal_font_family: DEFAULT_TERMINAL_FONT_FAMILY,
+    terminal_font_size: DEFAULT_TERMINAL_FONT_SIZE,
+    terminal_line_height: DEFAULT_TERMINAL_LINE_HEIGHT,
   });
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",
@@ -61,8 +88,9 @@ export function GeneralPanel() {
   useEffect(() => {
     invoke<AppSettings>("load_app_settings")
       .then((loadedSettings) => {
-        setSettings(loadedSettings);
-        setOriginal(loadedSettings);
+        const normalized = normalizeTerminalSettings(loadedSettings);
+        setSettings(normalized);
+        setOriginal(normalized);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoadingSettings(false));
@@ -81,12 +109,11 @@ export function GeneralPanel() {
     setDetectingPaths(true);
     setError(null);
     try {
-      const detected = await invoke<AppSettings>("detect_agent_paths");
+      const detected = normalizeTerminalSettings(await invoke<AppSettings>("detect_agent_paths"));
       const nextSettings = {
         ...settings,
         claude_path: detected.claude_path,
         codex_path: detected.codex_path,
-        send_shortcut: normalizeSendShortcut(detected.send_shortcut),
       };
       setSettings(nextSettings);
       await loadVersions(nextSettings);
@@ -102,13 +129,13 @@ export function GeneralPanel() {
     setError(null);
     setSaved(false);
     try {
-      const nextSettings = await invoke<AppSettings>("save_agent_paths", {
-        claudePath: settings.claude_path,
-        codexPath: settings.codex_path,
+      const nextSettings = normalizeTerminalSettings(settings);
+      await invoke("save_app_settings", {
+        settings: nextSettings,
       });
       setSettings(nextSettings);
       setOriginal(nextSettings);
-      window.dispatchEvent(new Event(APP_SETTINGS_CHANGED_EVENT));
+      window.dispatchEvent(new CustomEvent(APP_SETTINGS_CHANGED_EVENT, { detail: nextSettings }));
       await loadVersions(nextSettings);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -120,7 +147,11 @@ export function GeneralPanel() {
   }
 
   const isDirty =
-    settings.claude_path !== original.claude_path || settings.codex_path !== original.codex_path;
+    settings.claude_path !== original.claude_path ||
+    settings.codex_path !== original.codex_path ||
+    settings.terminal_font_family !== original.terminal_font_family ||
+    settings.terminal_font_size !== original.terminal_font_size ||
+    settings.terminal_line_height !== original.terminal_line_height;
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -352,6 +383,64 @@ export function GeneralPanel() {
             spellCheck={false}
           />
           <span style={hintStyle}>{t("appSettings.codexPathHint")}</span>
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
+            {t("appSettings.terminalAppearance")}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px", gap: 12 }}>
+            <div style={{ ...fieldStyle, marginBottom: 0 }}>
+              <label style={labelStyle}>{t("appSettings.terminalFontFamily")}</label>
+              <input
+                style={inputStyle}
+                value={settings.terminal_font_family}
+                onChange={(e) => {
+                  setSettings((prev) => ({ ...prev, terminal_font_family: e.target.value }));
+                }}
+                placeholder={DEFAULT_TERMINAL_FONT_FAMILY}
+                disabled={loadingSettings}
+                spellCheck={false}
+              />
+            </div>
+            <div style={{ ...fieldStyle, marginBottom: 0 }}>
+              <label style={labelStyle}>{t("appSettings.terminalFontSize")}</label>
+              <input
+                style={inputStyle}
+                type="number"
+                min={10}
+                max={24}
+                step={1}
+                value={settings.terminal_font_size}
+                onChange={(e) => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    terminal_font_size: Number(e.target.value || DEFAULT_TERMINAL_FONT_SIZE),
+                  }));
+                }}
+                disabled={loadingSettings}
+              />
+            </div>
+            <div style={{ ...fieldStyle, marginBottom: 0 }}>
+              <label style={labelStyle}>{t("appSettings.terminalLineHeight")}</label>
+              <input
+                style={inputStyle}
+                type="number"
+                min={1}
+                max={2}
+                step={0.02}
+                value={settings.terminal_line_height}
+                onChange={(e) => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    terminal_line_height: Number(e.target.value || DEFAULT_TERMINAL_LINE_HEIGHT),
+                  }));
+                }}
+                disabled={loadingSettings}
+              />
+            </div>
+          </div>
+          <span style={hintStyle}>{t("appSettings.terminalAppearanceHint")}</span>
         </div>
 
         <div style={{ ...fieldStyle, marginBottom: 0 }}>
