@@ -526,3 +526,94 @@ pub struct AgentVersions {
     pub claude_version: String,
     pub codex_version: String,
 }
+
+#[derive(Serialize, Clone, Debug)]
+pub struct AgentSlashCommand {
+    pub name: String,
+    pub description: String,
+    pub source: String, // "command" or "skill"
+}
+
+fn read_first_heading(path: &std::path::Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines().take(5) {
+        let trimmed = line.trim();
+        if let Some(heading) = trimmed.strip_prefix("# ") {
+            return Some(heading.to_string());
+        }
+    }
+    None
+}
+
+fn read_skill_description(dir: &std::path::Path) -> Option<String> {
+    let skill_file = dir.join("SKILL.md");
+    if !skill_file.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(&skill_file).ok()?;
+    for line in content.lines().take(10) {
+        if let Some(desc) = line.strip_prefix("description:") {
+            let desc = desc.trim().trim_matches('"');
+            if !desc.is_empty() {
+                return Some(desc.chars().take(120).collect());
+            }
+        }
+    }
+    None
+}
+
+fn collect_agent_commands() -> Vec<AgentSlashCommand> {
+    let mut results = Vec::new();
+    let home = match crate::platform::home_dir() {
+        Some(h) => h,
+        None => return results,
+    };
+    let commands_dir = home.join(".claude").join("commands");
+    if commands_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&commands_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                    let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                    let description = read_first_heading(&path).unwrap_or_default();
+                    results.push(AgentSlashCommand {
+                        name,
+                        description,
+                        source: "command".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    let skills_dir = home.join(".claude").join("skills");
+    if skills_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&skills_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if name.starts_with('.') || name.starts_with('_') {
+                        continue;
+                    }
+                    let description = read_skill_description(&path).unwrap_or_default();
+                    results.push(AgentSlashCommand {
+                        name,
+                        description,
+                        source: "skill".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    results.sort_by(|a, b| a.name.cmp(&b.name));
+    results
+}
+
+#[tauri::command]
+pub async fn list_agent_slash_commands() -> Result<Vec<AgentSlashCommand>, String> {
+    tokio::task::spawn_blocking(collect_agent_commands)
+        .await
+        .map_err(|e| e.to_string())
+}

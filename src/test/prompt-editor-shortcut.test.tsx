@@ -40,11 +40,16 @@ function PromptEditorHarness({
         isEmpty={false}
         mentionItems={mentionItems}
         mentionIndex={0}
+        slashCommands={[]}
+        slashIndex={0}
         onSetIsEmpty={vi.fn()}
         onUpdateMention={vi.fn()}
+        onUpdateSlash={vi.fn()}
         onSelectFile={vi.fn()}
         onSelectProject={vi.fn<(project: Project) => void>()}
+        onSelectSlash={vi.fn()}
         onSetMentionIndex={vi.fn()}
+        onSetSlashIndex={vi.fn()}
         sendShortcut={sendShortcut}
         onSubmit={onSubmit}
         onContentChange={onContentChange}

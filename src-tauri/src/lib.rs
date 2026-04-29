@@ -120,6 +120,7 @@ pub fn run() {
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,
+            app_settings::list_agent_slash_commands,
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,

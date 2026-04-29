@@ -388,6 +388,20 @@ export const panels = {
     cursor: "pointer",
     minWidth: 0,
   },
+  slashCommandName: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--accent)",
+    flexShrink: 0,
+  },
+  slashCommandDesc: {
+    fontSize: 12,
+    color: "var(--text-muted)",
+    overflow: "hidden" as const,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    minWidth: 0,
+  },
   mentionCrossHeader: {
     display: "flex",
     alignItems: "center",
