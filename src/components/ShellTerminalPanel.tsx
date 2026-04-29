@@ -15,6 +15,7 @@ import {
   createSmartWriter,
   applyTerminalFontSize,
 } from "./terminalShared";
+import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import "@xterm/xterm/css/xterm.css";
@@ -101,6 +102,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
+      const disposeInputFix = attachMacWebKitShiftInputFix(term);
       loadWebglAddon(term);
 
       const fit = () => {
@@ -192,6 +194,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         terminalRef.current = null;
         fitAddonRef.current = null;
+        disposeInputFix();
         term.dispose();
         invoke("kill_shell", { shellId }).catch(() => {});
       };

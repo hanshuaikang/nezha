@@ -202,6 +202,7 @@ html.dark {
   --success: #3dd68c;
   --warning: #f5a623;
   --danger: #ff5555;
+  --warning-code-bg: rgba(245, 166, 35, 0.16);
   --usage-good: #4ade80;
   --usage-warn: #fbbf24;
   --usage-danger: #f87171;
