@@ -11,11 +11,19 @@ import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
 const ZOOM_LEVELS = [0, 75, 80, 90, 100, 110, 120, 130, 150, 175, 200];
 
 export function applyZoom(zoom: number) {
-  const root = document.documentElement;
-  if (zoom > 0) {
-    root.style.zoom = `${zoom / 100}`;
+  const root = document.getElementById("root");
+  if (!root) return;
+  if (zoom > 0 && zoom !== 100) {
+    const scale = zoom / 100;
+    root.style.transform = `scale(${scale})`;
+    root.style.transformOrigin = "top left";
+    root.style.width = `${100 / scale}%`;
+    root.style.height = `${100 / scale}%`;
   } else {
-    root.style.zoom = "";
+    root.style.transform = "";
+    root.style.transformOrigin = "";
+    root.style.width = "";
+    root.style.height = "";
   }
 }
 
