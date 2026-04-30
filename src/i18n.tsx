@@ -338,7 +338,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "theme.lightDescription": "始终使用浅色界面。",
     "theme.switchToLight": "切换到浅色模式",
     "theme.switchToDark": "切换到深色模式",
-    "theme.terminalFontSize": "终端字体大小（10–20px, 默认13px）",
+    "theme.terminalFontSize": "终端字体大小（10–20px, 默认12px）",
     "theme.terminalFontSizeHint": "仅调整终端面板中的字体大小。应用布局保持不变。",
     "language.english": "English",
     "language.chinese": "中文",
