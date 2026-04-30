@@ -3,8 +3,16 @@ import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Project, Task, TaskStatus, AgentType, PermissionMode, ThemeMode } from "./types";
-import { isActiveTaskStatus } from "./types";
+import type {
+  Project,
+  Task,
+  TaskStatus,
+  AgentType,
+  PermissionMode,
+  ThemeMode,
+  TerminalFontSize,
+} from "./types";
+import { isActiveTaskStatus, DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
@@ -65,6 +73,13 @@ function getInitialThemeMode(): ThemeMode {
   return stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
 }
 
+function getInitialTerminalFontSize(): TerminalFontSize {
+  const stored = localStorage.getItem("nezha:terminalFontSize");
+  if (stored == null) return DEFAULT_TERMINAL_FONT_SIZE;
+  const parsed = Number(stored);
+  return Number.isFinite(parsed) ? clampTerminalFontSize(parsed) : DEFAULT_TERMINAL_FONT_SIZE;
+}
+
 function App() {
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -72,6 +87,9 @@ function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
   const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
+  const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
+    getInitialTerminalFontSize,
+  );
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
@@ -138,6 +156,10 @@ function App() {
       .setTheme(themeMode === "system" ? null : themeMode)
       .catch(console.error);
   }, [themeMode]);
+
+  useEffect(() => {
+    localStorage.setItem("nezha:terminalFontSize", String(terminalFontSize));
+  }, [terminalFontSize]);
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
@@ -593,6 +615,8 @@ function App() {
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={setThemeMode}
               onToggleTheme={handleToggleTheme}
+              terminalFontSize={terminalFontSize}
+              onTerminalFontSizeChange={setTerminalFontSize}
             />
           );
         })}
@@ -615,6 +639,8 @@ function App() {
             systemPrefersDark={systemPrefersDark}
             onThemeModeChange={setThemeMode}
             onToggleTheme={handleToggleTheme}
+            terminalFontSize={terminalFontSize}
+            onTerminalFontSizeChange={setTerminalFontSize}
           />
         </div>
       )}
