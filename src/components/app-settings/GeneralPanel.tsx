@@ -17,11 +17,15 @@ export function GeneralPanel() {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    zoom: 0,
+    keybindings: {},
   });
   const [original, setOriginal] = useState<AppSettings>({
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    zoom: 0,
+    keybindings: {},
   });
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",

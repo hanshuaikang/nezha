@@ -1,8 +1,31 @@
+import { useEffect, useState } from "react";
 import type React from "react";
-import { Check, Monitor } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Check, ChevronDown, Monitor } from "lucide-react";
+import * as Select from "@radix-ui/react-select";
 import type { ThemeMode } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
+import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
+
+const ZOOM_LEVELS = [0, 75, 80, 90, 100, 110, 120, 130, 150, 175, 200];
+
+export function applyZoom(zoom: number) {
+  const root = document.getElementById("root");
+  if (!root) return;
+  if (zoom > 0 && zoom !== 100) {
+    const scale = zoom / 100;
+    root.style.transform = `scale(${scale})`;
+    root.style.transformOrigin = "top left";
+    root.style.width = `${100 / scale}%`;
+    root.style.height = `${100 / scale}%`;
+  } else {
+    root.style.transform = "";
+    root.style.transformOrigin = "";
+    root.style.width = "";
+    root.style.height = "";
+  }
+}
 
 interface ThemePanelProps {
   themeMode: ThemeMode;
@@ -12,6 +35,27 @@ interface ThemePanelProps {
 
 export function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePanelProps) {
   const { t } = useI18n();
+  const [zoom, setZoom] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<AppSettings>("load_app_settings").then((loaded) => {
+      setZoom(loaded.zoom);
+    });
+  }, []);
+
+  async function handleZoomChange(nextZoom: number) {
+    setSaving(true);
+    try {
+      const saved = await invoke<AppSettings>("save_zoom", { zoom: nextZoom });
+      setZoom(saved.zoom);
+      applyZoom(saved.zoom);
+      window.dispatchEvent(new Event(APP_SETTINGS_CHANGED_EVENT));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
   const currentModeLabel = systemPrefersDark ? t("theme.dark") : t("theme.light");
   const manualModeLabel = themeMode === "dark" ? t("theme.dark") : t("theme.light");
@@ -435,6 +479,102 @@ export function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: 
             previewAccent: "#171b24",
           })}
         </div>
+      </div>
+
+      <div
+        style={{
+          borderTop: "1px solid var(--border-dim)",
+          paddingTop: 18,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+          {t("appSettings.zoom")}
+        </div>
+        <Select.Root
+          value={String(zoom)}
+          onValueChange={(value) => {
+            const z = Number(value);
+            setZoom(z);
+            void handleZoomChange(z);
+          }}
+          disabled={saving}
+        >
+          <Select.Trigger
+            aria-label={t("appSettings.zoom")}
+            style={{
+              width: 160,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              padding: "7px 10px",
+              background: "var(--bg-input)",
+              border: "1px solid var(--border-medium)",
+              borderRadius: 7,
+              color: "var(--text-primary)",
+              fontSize: 12.5,
+              fontFamily: "var(--font-ui)",
+              cursor: saving ? "default" : "pointer",
+              opacity: saving ? 0.65 : 1,
+              outline: "none",
+            }}
+          >
+            <Select.Value>
+              {zoom === 0 ? t("appSettings.zoomDefault") : `${zoom}%`}
+            </Select.Value>
+            <Select.Icon>
+              <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+            </Select.Icon>
+          </Select.Trigger>
+          <Select.Portal>
+            <Select.Content
+              position="popper"
+              sideOffset={4}
+              style={{
+                minWidth: 160,
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-medium)",
+                borderRadius: 8,
+                boxShadow: "var(--shadow-popover)",
+                padding: 4,
+                zIndex: 3000,
+              }}
+            >
+              <Select.Viewport>
+                {ZOOM_LEVELS.map((level) => (
+                  <Select.Item
+                    key={level}
+                    value={String(level)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "7px 8px",
+                      borderRadius: 5,
+                      color: "var(--text-primary)",
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      outline: "none",
+                    }}
+                  >
+                    <Select.ItemText>
+                      {level === 0 ? t("appSettings.zoomDefault") : `${level}%`}
+                    </Select.ItemText>
+                    <Select.ItemIndicator style={{ marginLeft: "auto", display: "flex" }}>
+                      <Check size={13} color="var(--accent)" />
+                    </Select.ItemIndicator>
+                  </Select.Item>
+                ))}
+              </Select.Viewport>
+            </Select.Content>
+          </Select.Portal>
+        </Select.Root>
+        <span style={{ fontSize: 11, color: "var(--text-hint)" }}>
+          {t("appSettings.zoomHint")}
+        </span>
       </div>
     </div>
   );
