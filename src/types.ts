@@ -9,6 +9,19 @@ export interface Project {
 export type AgentType = "claude" | "codex";
 export type ThemeMode = "system" | "dark" | "light";
 export type PermissionMode = "ask" | "auto_edit" | "full_access";
+
+export type TerminalFontSize = number;
+
+export const TERMINAL_FONT_SIZE_MIN = 10;
+export const TERMINAL_FONT_SIZE_MAX = 20;
+export const TERMINAL_FONT_SIZE_STEP = 1;
+export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
+
+export function clampTerminalFontSize(value: number): TerminalFontSize {
+  if (!Number.isFinite(value)) return DEFAULT_TERMINAL_FONT_SIZE;
+  const snapped = Math.round(value / TERMINAL_FONT_SIZE_STEP) * TERMINAL_FONT_SIZE_STEP;
+  return Math.min(TERMINAL_FONT_SIZE_MAX, Math.max(TERMINAL_FONT_SIZE_MIN, snapped));
+}
 export type TaskStatus =
   | "todo"
   | "pending"
