@@ -71,11 +71,11 @@ function getInitialTerminalFontSize(): TerminalFontSize {
     const parsed = Number(stored);
     if (!isNaN(parsed)) {
       // Migrate old percentage-based values (0.8–1.4 range) to px.
-      // Old default was 1; new default is 12. Anything ≤ 2 is a legacy multiplier.
+      // Old default was 1; anything ≤ 2 is a legacy multiplier relative to the current default.
       if (parsed <= 2) {
-        const px = Math.round(parsed * 12);
+        const px = clampTerminalFontSize(Math.round(parsed * DEFAULT_TERMINAL_FONT_SIZE));
         localStorage.setItem("nezha:terminalFontSize", String(px));
-        return clampTerminalFontSize(px);
+        return px;
       }
       return clampTerminalFontSize(parsed);
     }
