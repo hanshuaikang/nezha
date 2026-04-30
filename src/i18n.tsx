@@ -59,7 +59,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "theme.lightDescription": "Always use the light interface.",
     "theme.switchToLight": "Switch to light mode",
     "theme.switchToDark": "Switch to dark mode",
-    "theme.terminalFontSize": "Terminal Font Size (10–20px, default 13px)",
+    "theme.terminalFontSize": "Terminal Font Size (10–20px, default 12px)",
     "theme.terminalFontSizeHint": "Adjust the font size in terminal panels only. The app layout stays unchanged.",
     "language.english": "English",
     "language.chinese": "Chinese",
