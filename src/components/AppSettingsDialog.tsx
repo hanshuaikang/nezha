@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X, Keyboard, Monitor } from "lucide-react";
-import type { ThemeMode } from "../types";
+import type { ThemeMode, TerminalFontSize } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -41,12 +41,16 @@ export function AppSettingsDialog({
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
+  terminalFontSize,
+  onTerminalFontSizeChange,
 }: {
   onClose: () => void;
   isDark: boolean;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
@@ -132,6 +136,8 @@ export function AppSettingsDialog({
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={onThemeModeChange}
+              terminalFontSize={terminalFontSize}
+              onTerminalFontSizeChange={onTerminalFontSizeChange}
             />
           ) : activeNav === "shortcuts" ? (
             <ShortcutsPanel key="shortcuts" />

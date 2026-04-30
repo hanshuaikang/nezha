@@ -6,6 +6,7 @@ import type {
   PermissionMode,
   TaskStatus,
   ThemeMode,
+  TerminalFontSize,
 } from "../types";
 import { TaskPanel } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
@@ -58,6 +59,8 @@ export function ProjectPage({
   systemPrefersDark,
   onThemeModeChange,
   onToggleTheme,
+  terminalFontSize,
+  onTerminalFontSizeChange,
 }: {
   project: Project;
   visible?: boolean;
@@ -104,6 +107,8 @@ export function ProjectPage({
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }) {
   const {
     rightPanel,
@@ -238,6 +243,8 @@ export function ProjectPage({
         systemPrefersDark={systemPrefersDark}
         onThemeModeChange={onThemeModeChange}
         onToggleTheme={onToggleTheme}
+        terminalFontSize={terminalFontSize}
+        onTerminalFontSizeChange={onTerminalFontSizeChange}
         active={visible}
         collapsed={taskPanelCollapsed}
         onToggleCollapsed={() => setTaskPanelCollapsed((v) => !v)}
@@ -364,6 +371,7 @@ export function ProjectPage({
                   getRestoreState={() => getTaskRestoreState(task.id)}
                   onRename={(name) => onRenameTask(task.id, name)}
                   isDark={isDark}
+                  terminalFontSize={terminalFontSize}
                 />
               );
             })}
@@ -376,6 +384,7 @@ export function ProjectPage({
             isActive={visible}
             onClose={() => setShowShellTerminal(false)}
             isDark={isDark}
+            terminalFontSize={terminalFontSize}
             onReady={handleShellReady}
             height={terminalHeight}
             onResizeStart={handleTerminalResizeStart}
