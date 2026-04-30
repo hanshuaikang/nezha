@@ -13,6 +13,7 @@ import {
   createSmartWriter,
   applyTerminalFontSize,
 } from "./terminalShared";
+import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -79,6 +80,7 @@ export function TerminalView({
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
+    const disposeInputFix = attachMacWebKitShiftInputFix(term);
     loadWebglAddon(term);
 
     const size = safeFit(fitAddon, term);
@@ -167,6 +169,7 @@ export function TerminalView({
       }
       onRegisterRef.current(null);
       fitAddonRef.current = null;
+      disposeInputFix();
       disposeSmartCopy();
       disposeOnData.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
