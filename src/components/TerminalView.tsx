@@ -195,6 +195,12 @@ export function TerminalView({
 
   useEffect(() => {
     if (terminalRef.current) {
+      terminalRef.current.options.cursorBlink = isActive;
+    }
+  }, [isActive]);
+
+  useEffect(() => {
+    if (terminalRef.current) {
       terminalRef.current.options.theme = isDark ? DARK_THEME : LIGHT_THEME;
     }
   }, [isDark]);

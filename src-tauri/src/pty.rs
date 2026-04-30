@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher};
@@ -196,31 +197,47 @@ enum PtyEmitMode {
     },
 }
 
-fn emit_pty_event(app: &AppHandle, id: &str, event_name: &str, id_key: &str, data: String) {
-    let mut payload = serde_json::Map::new();
-    payload.insert(id_key.to_string(), serde_json::Value::String(id.to_string()));
-    payload.insert("data".to_string(), serde_json::Value::String(data));
-    let _ = app.emit(event_name, serde_json::Value::Object(payload));
+/// 输出归宿：agent 任务用 Channel 直投单一前端订阅者，跳过事件总线的全局广播 + JSON
+/// 事件 payload；shell 终端仍走 emit 事件，多面板挂载时由前端按 shell_id 筛选。
+#[derive(Clone)]
+enum OutputSink {
+    Event {
+        event_name: &'static str,
+        id_key: &'static str,
+    },
+    Channel(Channel<String>),
 }
 
-fn flush_pty_batch(app: &AppHandle, id: &str, event_name: &str, id_key: &str, batch: &mut String) {
+fn send_pty_chunk(app: &AppHandle, id: &str, sink: &OutputSink, data: String) {
+    match sink {
+        OutputSink::Event { event_name, id_key } => {
+            let mut payload = serde_json::Map::new();
+            payload.insert((*id_key).to_string(), serde_json::Value::String(id.to_string()));
+            payload.insert("data".to_string(), serde_json::Value::String(data));
+            let _ = app.emit(event_name, serde_json::Value::Object(payload));
+        }
+        OutputSink::Channel(channel) => {
+            let _ = channel.send(data);
+        }
+    }
+}
+
+fn flush_pty_batch(app: &AppHandle, id: &str, sink: &OutputSink, batch: &mut String) {
     if batch.is_empty() {
         return;
     }
-    emit_pty_event(app, id, event_name, id_key, std::mem::take(batch));
+    send_pty_chunk(app, id, sink, std::mem::take(batch));
 }
 
-/// 在后台线程中读取 PTY 输出，向前端发送事件。
+/// 在后台线程中读取 PTY 输出，按 sink 把数据投递给前端。
 ///
-/// - `event_name`：Tauri 事件名（`"agent-output"` 或 `"shell-output"`）
-/// - `id_key`：JSON payload 中的 ID 字段名（`"task_id"` 或 `"shell_id"`）
+/// - `sink`：agent 任务传 `OutputSink::Channel`（直投单订阅者），shell 传 `OutputSink::Event`
 /// - `session_tx`：可选 channel，用于将原始文本转发给 session watcher
 /// - `on_finish`：PTY 关闭后执行的可选清理回调
 fn spawn_pty_reader(
     app: AppHandle,
     id: String,
-    event_name: &'static str,
-    id_key: &'static str,
+    sink: OutputSink,
     emit_mode: PtyEmitMode,
     reader: Box<dyn Read + Send>,
     session_tx: Option<std::sync::mpsc::Sender<String>>,
@@ -240,6 +257,7 @@ fn spawn_pty_reader(
                 let (tx, rx) = std::sync::mpsc::sync_channel::<String>(PTY_EMIT_CHANNEL_CAPACITY);
                 let emit_app = app.clone();
                 let emit_id = id.clone();
+                let worker_sink = sink.clone();
                 let worker = std::thread::spawn(move || {
                     let mut batch = String::new();
                     loop {
@@ -250,8 +268,7 @@ fn spawn_pty_reader(
                                     flush_pty_batch(
                                         &emit_app,
                                         &emit_id,
-                                        event_name,
-                                        id_key,
+                                        &worker_sink,
                                         &mut batch,
                                     );
                                 }
@@ -260,8 +277,7 @@ fn spawn_pty_reader(
                                 flush_pty_batch(
                                     &emit_app,
                                     &emit_id,
-                                    event_name,
-                                    id_key,
+                                    &worker_sink,
                                     &mut batch,
                                 );
                             }
@@ -269,8 +285,7 @@ fn spawn_pty_reader(
                                 flush_pty_batch(
                                     &emit_app,
                                     &emit_id,
-                                    event_name,
-                                    id_key,
+                                    &worker_sink,
                                     &mut batch,
                                 );
                                 break;
@@ -305,10 +320,10 @@ fn spawn_pty_reader(
                         if let Some(ref tx) = emit_tx {
                             match tx.send(data) {
                                 Ok(()) => {}
-                                Err(err) => emit_pty_event(&app, &id, event_name, id_key, err.0),
+                                Err(err) => send_pty_chunk(&app, &id, &sink, err.0),
                             }
                         } else {
-                            emit_pty_event(&app, &id, event_name, id_key, data);
+                            send_pty_chunk(&app, &id, &sink, data);
                         }
                     }
 
@@ -404,6 +419,7 @@ pub async fn run_task(
     images: Option<Vec<String>>,
     cols: Option<u16>,
     rows: Option<u16>,
+    on_output: Channel<String>,
 ) -> Result<(), String> {
     let pair = native_pty_system()
         .openpty(PtySize {
@@ -493,8 +509,7 @@ pub async fn run_task(
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),
-        "agent-output",
-        "task_id",
+        OutputSink::Channel(on_output),
         PtyEmitMode::Batched {
             flush_interval: PTY_EMIT_FLUSH_INTERVAL,
             max_batch_bytes: PTY_EMIT_MAX_BATCH_BYTES,
@@ -573,6 +588,7 @@ pub async fn resume_task(
     permission_mode: String,
     cols: Option<u16>,
     rows: Option<u16>,
+    on_output: Channel<String>,
 ) -> Result<(), String> {
     let pair = native_pty_system()
         .openpty(PtySize {
@@ -627,8 +643,7 @@ pub async fn resume_task(
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),
-        "agent-output",
-        "task_id",
+        OutputSink::Channel(on_output),
         PtyEmitMode::Batched {
             flush_interval: PTY_EMIT_FLUSH_INTERVAL,
             max_batch_bytes: PTY_EMIT_MAX_BATCH_BYTES,
@@ -730,8 +745,10 @@ pub async fn open_shell(
     spawn_pty_reader(
         app,
         shell_id,
-        "shell-output",
-        "shell_id",
+        OutputSink::Event {
+            event_name: "shell-output",
+            id_key: "shell_id",
+        },
         PtyEmitMode::Immediate,
         reader,
         None,

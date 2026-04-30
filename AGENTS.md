@@ -64,11 +64,11 @@ App
         └── GitHistory → GitDiffViewer     — 提交日志、提交差异查看器
 ```
 
-状态从 `App.tsx` 通过 props 向下传递；异步更新通过 Tauri 事件向上传递：
-- `agent-output` — `{ task_id, data }` 运行中任务的原始 PTY 字节流
+状态从 `App.tsx` 通过 props 向下传递；异步更新通过 Tauri 通道/事件向上传递：
+- **agent 任务输出** — 通过 `tauri::ipc::Channel<String>`（前端 `new Channel<string>()`）由 `run_task` / `resume_task` 的 `onOutput` 参数传入，绕过事件总线的全局广播，直投 `useTerminalManager` 的批量写入流程
 - `task-status` — `{ task_id, status }` 任务生命周期状态变更
 - `task-session` — `{ task_id, session_id, session_path }` 会话发现
-- `shell-output` — `{ shell_id, data }` 嵌入式 Shell 的 PTY 字节流
+- `shell-output` — `{ shell_id, data }` 嵌入式 Shell 的 PTY 字节流（仍走 emit 事件）
 
 ### 后端（`src-tauri/src/`）
 
@@ -187,7 +187,7 @@ commit_prompt = "..."     # generate_commit_message 使用的提示词
 ### 前端性能
 
 - **组件必须控制渲染范围**——列表行组件已经开始使用 memo 化（如 `TaskListItem`），但 `ProjectPage` 等接收大量 props 且可能不可见的组件仍应继续收敛渲染范围。
-- **高频事件回调中避免 `setState`**——`App.tsx` 已使用 buffer/ref 与 `pendingTaskIdsRef` 降低 `agent-output` 高频更新带来的重渲染；新增类似通路时继续沿用这一策略，不要在每条输出事件中直接触发全局状态更新。
+- **高频事件回调中避免 `setState`**——`useTerminalManager` 已使用 buffer/ref + RAF 批量写入降低 PTY 输出带来的重渲染；agent 输出走 `tauri::ipc::Channel`（绕开事件总线全局广播）直投 hook 内的批量管道。新增类似通路时继续沿用 Channel + RAF 批量的策略，不要在每条输出回调中直接触发全局状态更新。
 - **`persistProjectTasks` 必须防抖**——当前每次状态变更都立即调用 `invoke("save_project_tasks")`，高频场景下造成冗余磁盘 I/O。应对同一 projectId 的连续写入做 300-500ms 防抖。
 - **长列表必须虚拟化**——SessionView（会话消息）、GitChanges（文件列表）在数据量大时（5000+ 消息、1000+ 文件变更）会因 DOM 节点过多导致滚动卡顿。新增类似列表时必须考虑虚拟滚动。
 - **`marked()` 禁止同步调用大文本**——SessionView 中 `marked(text, { async: false })` 会阻塞主线程。对单条消息超过 10KB 的文本应使用异步渲染或 memoize 结果。

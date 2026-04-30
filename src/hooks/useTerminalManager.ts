@@ -1,6 +1,5 @@
 import { useRef, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 // ── Buffer constants ─────────────────────────────────────────────────────────
 
@@ -102,64 +101,78 @@ export function useTerminalManager() {
     [resetTerminalWriteState],
   );
 
-  // ── agent-output event listener ──────────────────────────────────────────
+  // ── Agent output ingestion ───────────────────────────────────────────────
+  // 通过 tauri::ipc::Channel 直投单订阅者，绕过 emit/listen 的全局事件总线。
+  // pendingOutputs / RAF 仍在 hook 级共享，保留原批量写入节奏与每帧字节预算。
 
-  useEffect(() => {
-    const pendingOutputs = new Map<string, string[]>();
-    let rafId = 0;
+  const pendingOutputsRef = useRef<Map<string, string[]>>(new Map());
+  const rafIdRef = useRef<number>(0);
 
-    function drainPendingOutputs() {
-      rafId = 0;
-      if (
-        (
-          navigator as unknown as {
-            scheduling?: { isInputPending?: () => boolean };
-          }
-        ).scheduling?.isInputPending?.()
-      ) {
-        rafId = requestAnimationFrame(drainPendingOutputs);
-        return;
+  const drainPendingOutputs = useCallback(() => {
+    rafIdRef.current = 0;
+    if (
+      (
+        navigator as unknown as {
+          scheduling?: { isInputPending?: () => boolean };
+        }
+      ).scheduling?.isInputPending?.()
+    ) {
+      rafIdRef.current = requestAnimationFrame(drainPendingOutputs);
+      return;
+    }
+    const pendingOutputs = pendingOutputsRef.current;
+    let bytesThisFrame = 0;
+    for (const [taskId, chunks] of pendingOutputs) {
+      const joined = chunks.length === 1 ? chunks[0] : chunks.join("");
+
+      if (terminalWriteRefs.current[taskId]) {
+        enqueueTerminalWrite(taskId, joined);
       }
-      let bytesThisFrame = 0;
-      for (const [taskId, chunks] of pendingOutputs) {
-        const joined = chunks.length === 1 ? chunks[0] : chunks.join("");
-
-        if (terminalWriteRefs.current[taskId]) {
-          enqueueTerminalWrite(taskId, joined);
-        }
-        if (taskId in taskBufferRef.current) {
-          pushToBuffer(taskBufferRef.current[taskId], joined);
-        }
-
-        pendingOutputs.delete(taskId);
-        bytesThisFrame += joined.length;
-        if (bytesThisFrame >= DRAIN_FRAME_BUDGET) {
-          break;
-        }
+      if (taskId in taskBufferRef.current) {
+        pushToBuffer(taskBufferRef.current[taskId], joined);
       }
-      if (pendingOutputs.size > 0 && !rafId) {
-        rafId = requestAnimationFrame(drainPendingOutputs);
+
+      pendingOutputs.delete(taskId);
+      bytesThisFrame += joined.length;
+      if (bytesThisFrame >= DRAIN_FRAME_BUDGET) {
+        break;
       }
     }
+    if (pendingOutputs.size > 0 && !rafIdRef.current) {
+      rafIdRef.current = requestAnimationFrame(drainPendingOutputs);
+    }
+  }, [enqueueTerminalWrite]);
 
-    const unlisten = listen<{ task_id: string; data: string }>("agent-output", (e) => {
-      const { task_id, data } = e.payload;
-      let arr = pendingOutputs.get(task_id);
+  const ingestAgentChunk = useCallback(
+    (taskId: string, data: string) => {
+      const pendingOutputs = pendingOutputsRef.current;
+      let arr = pendingOutputs.get(taskId);
       if (!arr) {
         arr = [];
-        pendingOutputs.set(task_id, arr);
+        pendingOutputs.set(taskId, arr);
       }
       arr.push(data);
-      if (!rafId) {
-        rafId = requestAnimationFrame(drainPendingOutputs);
+      if (!rafIdRef.current) {
+        rafIdRef.current = requestAnimationFrame(drainPendingOutputs);
       }
-    });
+    },
+    [drainPendingOutputs],
+  );
 
+  const createOutputChannel = useCallback(
+    (taskId: string): Channel<string> => {
+      const channel = new Channel<string>();
+      channel.onmessage = (data) => ingestAgentChunk(taskId, data);
+      return channel;
+    },
+    [ingestAgentChunk],
+  );
+
+  useEffect(() => {
     return () => {
-      unlisten.then((fn) => fn());
-      if (rafId) cancelAnimationFrame(rafId);
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [enqueueTerminalWrite]);
+  }, []);
 
   // ── Public API ───────────────────────────────────────────────────────────
 
@@ -265,5 +278,6 @@ export function useTerminalManager() {
     handleTerminalReady,
     handleSnapshot,
     getTaskRestoreState,
+    createOutputChannel,
   };
 }
