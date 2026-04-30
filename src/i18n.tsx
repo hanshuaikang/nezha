@@ -153,7 +153,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "newTask.instructionsMissing": "No {file} found in this project.",
     "newTask.addInstructions":
       "Add a {file} to the project root to give {agent} context about your codebase, conventions, and preferences — it will follow them on every task.",
-    "newTask.promptPlaceholder": "Describe your task… type @ to mention a file",
+    "newTask.promptPlaceholder": "Describe your task… type @ to mention a file, / for commands",
     "newTask.moreComposeActions": "More compose actions",
     "newTask.images": "Images",
     "newTask.planMode": "Plan mode",
@@ -167,6 +167,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "mention.noResults": 'No results for "{query}"',
     "mention.noFilesMatching": 'No files matching "{query}"',
     "mention.otherProjects": "Other Projects",
+    "slash.noResults": "No matching commands",
     "file.files": "Files",
     "file.emptyDirectory": "Empty directory",
     "file.openInSystemFolder": "Open in System Folder",
@@ -430,7 +431,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "newTask.instructionsMissing": "此项目中未找到 {file}。",
     "newTask.addInstructions":
       "在项目根目录添加 {file}，为 {agent} 提供代码库、约定和偏好上下文；它会在每个任务中遵循这些内容。",
-    "newTask.promptPlaceholder": "描述你的任务… 输入 @ 可引用文件",
+    "newTask.promptPlaceholder": "描述你的任务… 输入 @ 引用文件，/ 使用命令",
     "newTask.moreComposeActions": "更多编辑操作",
     "newTask.images": "图片",
     "newTask.planMode": "计划模式",
@@ -444,6 +445,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "mention.noResults": "没有找到“{query}”",
     "mention.noFilesMatching": "没有匹配“{query}”的文件",
     "mention.otherProjects": "其他项目",
+    "slash.noResults": "没有匹配的命令",
     "file.files": "文件",
     "file.emptyDirectory": "空目录",
     "file.openInSystemFolder": "在系统文件夹中打开",

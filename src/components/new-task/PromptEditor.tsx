@@ -2,6 +2,7 @@ import { useRef, useCallback } from "react";
 import type { Project } from "../../types";
 import { CODE_EXTS } from "../../utils";
 import type { FileEntry, CrossProjectRef, MentionItem } from "./MentionPopover";
+import type { SlashCommand } from "./slashCommands";
 import { useI18n } from "../../i18n";
 import { APP_PLATFORM } from "../../platform";
 import {
@@ -32,6 +33,44 @@ function getMentionInfo(): {
   const query = textBefore.substring(atIdx + 1);
   if (query.includes(" ") || query.includes("\n")) return null;
   return { node: textNode, atOffset: atIdx, endOffset: range.startOffset, query };
+}
+
+export function getSlashInfo(): {
+  node: Text;
+  slashOffset: number;
+  endOffset: number;
+  query: string;
+} | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!range.collapsed) return null;
+
+  let textNode: Text;
+  let cursorOffset: number;
+
+  if (range.startContainer.nodeType === Node.TEXT_NODE) {
+    textNode = range.startContainer as Text;
+    cursorOffset = range.startOffset;
+  } else {
+    const container = range.startContainer as HTMLElement;
+    const child = container.childNodes[range.startOffset - 1];
+    if (child && child.nodeType === Node.TEXT_NODE) {
+      textNode = child as Text;
+      cursorOffset = textNode.textContent?.length ?? 0;
+    } else {
+      return null;
+    }
+  }
+
+  const textBefore = textNode.textContent!.substring(0, cursorOffset);
+  const slashIdx = textBefore.lastIndexOf("/");
+  if (slashIdx === -1) return null;
+  if (slashIdx > 0 && textBefore[slashIdx - 1] !== " " && textBefore[slashIdx - 1] !== "\n")
+    return null;
+  const query = textBefore.substring(slashIdx + 1);
+  if (query.includes(" ") || query.includes("\n")) return null;
+  return { node: textNode, slashOffset: slashIdx, endOffset: cursorOffset, query };
 }
 
 function createChipElement(file: FileEntry, crossProject?: CrossProjectRef): HTMLSpanElement {
@@ -182,11 +221,16 @@ export function PromptEditor({
   isEmpty,
   mentionItems,
   mentionIndex,
+  slashCommands,
+  slashIndex,
   onSetIsEmpty,
   onUpdateMention,
+  onUpdateSlash,
   onSelectFile,
   onSelectProject,
+  onSelectSlash,
   onSetMentionIndex,
+  onSetSlashIndex,
   sendShortcut,
   onSubmit,
   onContentChange,
@@ -196,11 +240,16 @@ export function PromptEditor({
   isEmpty: boolean;
   mentionItems: MentionItem[];
   mentionIndex: number;
+  slashCommands: SlashCommand[];
+  slashIndex: number;
   onSetIsEmpty: (empty: boolean) => void;
   onUpdateMention: () => void;
+  onUpdateSlash: () => void;
   onSelectFile: (file: FileEntry, crossProject?: CrossProjectRef) => void;
   onSelectProject: (project: Project) => void;
+  onSelectSlash: (cmd: SlashCommand) => void;
   onSetMentionIndex: (index: number) => void;
+  onSetSlashIndex: (index: number) => void;
   sendShortcut: SendShortcut;
   onSubmit: (immediate: boolean) => void;
   onContentChange?: (content: PromptEditorContent) => void;
@@ -297,10 +346,33 @@ export function PromptEditor({
     captureContent();
     if (!isComposingRef.current) {
       onUpdateMention();
+      onUpdateSlash();
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (slashCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        onSetSlashIndex(Math.min(slashIndex + 1, slashCommands.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        onSetSlashIndex(Math.max(slashIndex - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const cmd = slashCommands[slashIndex];
+        if (cmd) onSelectSlash(cmd);
+        return;
+      }
+      if (e.key === "Escape") {
+        onUpdateSlash();
+        return;
+      }
+    }
     if (mentionItems.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -337,6 +409,7 @@ export function PromptEditor({
       onSetIsEmpty(false);
       captureContent();
       onUpdateMention();
+      onUpdateSlash();
     }
   }
 
@@ -364,6 +437,7 @@ export function PromptEditor({
     onSetIsEmpty(false);
     captureContent();
     onUpdateMention();
+    onUpdateSlash();
   }
 
   return (
@@ -396,13 +470,17 @@ export function PromptEditor({
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
-        onSelect={updateMentionState}
+        onSelect={() => {
+          updateMentionState();
+          onUpdateSlash();
+        }}
         onCompositionStart={() => {
           isComposingRef.current = true;
         }}
         onCompositionEnd={() => {
           isComposingRef.current = false;
           onUpdateMention();
+          onUpdateSlash();
         }}
         style={
           {
