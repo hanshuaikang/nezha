@@ -231,7 +231,9 @@ body {
   }
 }
 .rail-active {
-  animation: rail-active-breathe 2.4s ease-in-out infinite;
+  /* animation: rail-active-breathe 2.4s ease-in-out infinite; */
+  box-shadow: 0 0 0 2px var(--control-active-bg);
+  outline-color: var(--control-active-fg);
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────── */

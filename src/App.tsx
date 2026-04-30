@@ -258,6 +258,7 @@ function App() {
       images,
       cols: tm.terminalSizeRef.current.cols,
       rows: tm.terminalSizeRef.current.rows,
+      onOutput: tm.createOutputChannel(task.id),
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       tm.writeErrorToTerminal(task.id, `\r\nError: ${msg}\r\n`);
@@ -360,6 +361,7 @@ function App() {
       permissionMode: task.permissionMode,
       cols: tm.terminalSizeRef.current.cols,
       rows: tm.terminalSizeRef.current.rows,
+      onOutput: tm.createOutputChannel(taskId),
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       tm.writeErrorToTerminal(taskId, `\r\nError: ${msg}\r\n`);
