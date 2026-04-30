@@ -31,6 +31,10 @@ pub(crate) fn emit_task_status(app: &AppHandle, task_id: &str, status: &str) {
 }
 
 fn emit_active_task_status(app: &AppHandle, task_id: &str, status: &str) {
+    let tm = app.state::<TaskManager>();
+    if tm.finalized_tasks.lock().contains(task_id) {
+        return;
+    }
     if is_task_active(app, task_id) {
         emit_task_status(app, task_id, status);
     }

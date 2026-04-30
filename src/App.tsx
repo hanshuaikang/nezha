@@ -479,6 +479,8 @@ function App() {
       const next = prev.map((task) => {
         if (task.id !== taskId) return task;
 
+        if (!isActiveTaskStatus(task.status) && isActiveTaskStatus(status)) return task;
+
         const attentionRequestedAt =
           status === "input_required" ? (extra?.attentionRequestedAt ?? Date.now()) : undefined;
 
