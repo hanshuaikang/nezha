@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, BarChart2 } from "lucide-react";
-import type { Project, ThemeMode } from "../types";
+import type { Project, ThemeMode, TerminalFontSize } from "../types";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
@@ -75,6 +75,8 @@ export function WelcomePage({
   systemPrefersDark,
   onThemeModeChange,
   onToggleTheme,
+  terminalFontSize,
+  onTerminalFontSizeChange,
 }: {
   projects: Project[];
   onOpen: () => void;
@@ -85,6 +87,8 @@ export function WelcomePage({
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
+  terminalFontSize: TerminalFontSize;
+  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -139,6 +143,8 @@ export function WelcomePage({
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={onThemeModeChange}
               onToggleTheme={onToggleTheme}
+              terminalFontSize={terminalFontSize}
+              onTerminalFontSizeChange={onTerminalFontSizeChange}
             />
           </div>
         </div>
