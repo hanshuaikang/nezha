@@ -225,9 +225,42 @@ export function ProjectRail({
   const [addHov, setAddHov] = useState(false);
   const [expandHov, setExpandHov] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drawerOpenedByHover = useRef(false);
+
+  const clearHoverTimer = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
+  const handleZoneEnter = () => {
+    clearHoverTimer();
+    if (!drawerOpen) {
+      hoverTimerRef.current = setTimeout(() => {
+        setDrawerOpen(true);
+        drawerOpenedByHover.current = true;
+      }, 350);
+    }
+  };
+
+  const handleZoneLeave = () => {
+    clearHoverTimer();
+    if (drawerOpen && drawerOpenedByHover.current) {
+      hoverTimerRef.current = setTimeout(() => {
+        setDrawerOpen(false);
+        drawerOpenedByHover.current = false;
+      }, 300);
+    }
+  };
+
+  useEffect(() => clearHoverTimer, []);
 
   return (
     <div
+      onMouseEnter={handleZoneEnter}
+      onMouseLeave={handleZoneLeave}
       style={{
         position: "relative",
         width: 52,
@@ -253,6 +286,7 @@ export function ProjectRail({
           onSwitch={(p) => {
             onSwitch(p);
             setDrawerOpen(false);
+            drawerOpenedByHover.current = false;
           }}
         />
       ))}
@@ -261,7 +295,12 @@ export function ProjectRail({
 
       <button
         title={t("project.showAllProjects")}
-        onClick={() => setDrawerOpen((v) => !v)}
+        onClick={() => {
+          setDrawerOpen((v) => {
+            if (!v) drawerOpenedByHover.current = false;
+            return !v;
+          });
+        }}
         onMouseEnter={() => setExpandHov(true)}
         onMouseLeave={() => setExpandHov(false)}
         style={{
@@ -320,7 +359,10 @@ export function ProjectRail({
           allTasks={allTasks}
           activeProjectId={activeProjectId}
           onSwitch={onSwitch}
-          onClose={() => setDrawerOpen(false)}
+          onClose={() => {
+            setDrawerOpen(false);
+            drawerOpenedByHover.current = false;
+          }}
         />
       )}
     </div>
