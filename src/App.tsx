@@ -11,6 +11,7 @@ import type {
   PermissionMode,
   ThemeMode,
   TerminalFontSize,
+  SessionDiscoverySource,
 } from "./types";
 import { isActiveTaskStatus, DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
@@ -197,11 +198,16 @@ function App() {
         }
       },
     );
-    const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
+    const p2 = listen<{
+      task_id: string;
+      session_id: string;
+      session_path: string;
+      source?: SessionDiscoverySource;
+    }>(
       "task-session",
       (e) => {
-        const { task_id, session_id, session_path } = e.payload;
-        updateTaskSession(task_id, session_id, session_path);
+        const { task_id, session_id, session_path, source } = e.payload;
+        updateTaskSession(task_id, session_id, session_path, source);
       },
     );
     return () => {
@@ -524,21 +530,45 @@ function App() {
     });
   }
 
-  function updateTaskSession(taskId: string, sessionId: string, sessionPath: string) {
+  function updateTaskSession(
+    taskId: string,
+    sessionId: string,
+    sessionPath: string,
+    source?: SessionDiscoverySource,
+  ) {
     setTasks((prev) => {
       let changed = false;
       const next = prev.map((task) => {
         if (task.id !== taskId) return task;
+        const nextSource = source ?? task.sessionDiscoverySource;
         if (task.agent === "claude") {
-          if (task.claudeSessionId === sessionId && task.claudeSessionPath === sessionPath)
+          if (
+            task.claudeSessionId === sessionId &&
+            task.claudeSessionPath === sessionPath &&
+            task.sessionDiscoverySource === nextSource
+          )
             return task;
           changed = true;
-          return { ...task, claudeSessionId: sessionId, claudeSessionPath: sessionPath };
+          return {
+            ...task,
+            claudeSessionId: sessionId,
+            claudeSessionPath: sessionPath,
+            sessionDiscoverySource: nextSource,
+          };
         } else {
-          if (task.codexSessionId === sessionId && task.codexSessionPath === sessionPath)
+          if (
+            task.codexSessionId === sessionId &&
+            task.codexSessionPath === sessionPath &&
+            task.sessionDiscoverySource === nextSource
+          )
             return task;
           changed = true;
-          return { ...task, codexSessionId: sessionId, codexSessionPath: sessionPath };
+          return {
+            ...task,
+            codexSessionId: sessionId,
+            codexSessionPath: sessionPath,
+            sessionDiscoverySource: nextSource,
+          };
         }
       });
 

@@ -44,6 +44,8 @@ pub struct Task {
     pub starred: Option<bool>,
     #[serde(rename = "failureReason", skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
+    #[serde(rename = "sessionDiscoverySource", skip_serializing_if = "Option::is_none")]
+    pub session_discovery_source: Option<String>,
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────────────

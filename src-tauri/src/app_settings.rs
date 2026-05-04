@@ -459,15 +459,6 @@ fn detect_versions_for_settings(settings: &AppSettings) -> AgentVersions {
     }
 }
 
-fn parse_semver(v: &str) -> (u32, u32, u32) {
-    let parts: Vec<&str> = v.split('.').collect();
-    (
-        parts.first().and_then(|s| s.parse().ok()).unwrap_or(0),
-        parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0),
-        parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0),
-    )
-}
-
 pub fn detect_claude_version() -> Option<String> {
     let cache = CACHED_CLAUDE_VERSION.get_or_init(|| Mutex::new(None));
     let mut guard = cache.lock();
@@ -490,18 +481,6 @@ pub fn detect_codex_version() -> Option<String> {
     let detected = detect_version(&get_agent_launch_spec("codex"));
     *guard = Some(detected.clone());
     detected
-}
-
-pub fn claude_version_gte(saved_version: &str, min_version: &str) -> bool {
-    let version = if saved_version.is_empty() {
-        match detect_claude_version() {
-            Some(v) => v,
-            None => return false,
-        }
-    } else {
-        saved_version.to_string()
-    };
-    parse_semver(&version) >= parse_semver(min_version)
 }
 
 #[tauri::command]

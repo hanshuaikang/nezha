@@ -52,6 +52,55 @@ pub struct ProjectConfig {
     pub git: GitConfig,
 }
 
+const CODEX_SESSION_LINK_HOOK: &str = r#"#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def main():
+    task_id = os.environ.get("NEZHA_TASK_ID")
+    token = os.environ.get("NEZHA_HOOK_TOKEN")
+    link_path = os.environ.get("NEZHA_SESSION_LINK_PATH")
+    project_path = os.environ.get("NEZHA_PROJECT_PATH")
+    if not task_id or not token or not link_path or not project_path:
+        return
+
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return
+
+    if payload.get("hook_event_name") != "SessionStart":
+        return
+    if payload.get("cwd") != project_path:
+        return
+
+    data = {
+        "task_id": task_id,
+        "token": token,
+        "session_id": payload.get("session_id") or "",
+        "session_path": payload.get("transcript_path") or "",
+        "cwd": payload.get("cwd") or "",
+        "source": payload.get("source") or "",
+        "hook_event_name": payload.get("hook_event_name") or "",
+    }
+
+    try:
+        path = Path(link_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        return
+
+
+if __name__ == "__main__":
+    main()
+"#;
+
 impl Default for ProjectConfig {
     fn default() -> Self {
         ProjectConfig {
@@ -107,7 +156,93 @@ pub fn init_project_config(project_path: String) -> Result<ProjectConfig, String
         }
     }
 
+    let _ = ensure_codex_project_hook(&project_path);
+
     Ok(config)
+}
+
+pub(crate) fn codex_session_link_path(project_path: &str, task_id: &str) -> std::path::PathBuf {
+    Path::new(project_path)
+        .join(".nezha")
+        .join("session-links")
+        .join(format!("{task_id}.json"))
+}
+
+pub(crate) fn ensure_codex_project_hook(project_path: &str) -> Result<(), String> {
+    let project = Path::new(project_path);
+    let codex_dir = project.join(".codex");
+    let nezha_hooks_dir = project.join(".nezha").join("hooks");
+    fs::create_dir_all(&codex_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&nezha_hooks_dir).map_err(|e| e.to_string())?;
+
+    let script_path = nezha_hooks_dir.join("codex_session_link.py");
+    atomic_write(&script_path, CODEX_SESSION_LINK_HOOK)?;
+
+    let command = format!(
+        "/usr/bin/env python3 {}",
+        shell_quote(&script_path.to_string_lossy())
+    );
+    let hooks_path = codex_dir.join("hooks.json");
+    let mut root = if hooks_path.exists() {
+        let raw = fs::read_to_string(&hooks_path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<serde_json::Value>(&raw)
+            .map_err(|e| format!("Invalid Codex hooks.json: {e}"))?
+    } else {
+        serde_json::json!({})
+    };
+
+    let Some(root_obj) = root.as_object_mut() else {
+        return Err("Invalid Codex hooks.json: root must be an object".to_string());
+    };
+    let hooks = root_obj
+        .entry("hooks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return Err("Invalid Codex hooks.json: hooks must be an object".to_string());
+    };
+    let session_start = hooks_obj
+        .entry("SessionStart".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    let Some(groups) = session_start.as_array_mut() else {
+        return Err("Invalid Codex hooks.json: SessionStart must be an array".to_string());
+    };
+
+    let already_installed = groups.iter().any(|group| {
+        group
+            .get("hooks")
+            .and_then(serde_json::Value::as_array)
+            .map(|items| {
+                items.iter().any(|item| {
+                    item.get("type").and_then(serde_json::Value::as_str) == Some("command")
+                        && item
+                            .get("command")
+                            .and_then(serde_json::Value::as_str)
+                            .map(|value| value == command)
+                            .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    });
+    if !already_installed {
+        groups.push(serde_json::json!({
+            "matcher": "startup|resume",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command,
+                    "timeout": 5
+                }
+            ]
+        }));
+        let raw = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+        atomic_write(&hooks_path, &raw)?;
+    }
+
+    Ok(())
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 /// Reads `.nezha/config.toml` from the project directory.
