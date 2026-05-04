@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, Pencil } from "lucide-react";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
+import { AgentPathSection } from "./AgentPathSection";
 import type { AgentKey } from "./types";
 
 import type { Highlighter } from "shiki";
@@ -139,9 +140,35 @@ export function AgentConfigPanel({
           display: "flex",
           flexDirection: "column",
           gap: 0,
-          padding: "14px 20px",
+          padding: "18px 20px 14px",
         }}
       >
+        {!editing && (
+          <>
+            <AgentPathSection agentKey={agentKey} />
+
+            <div
+              style={{
+                height: 1,
+                background: "var(--border-dim)",
+                margin: "4px 0 16px",
+                flexShrink: 0,
+              }}
+            />
+
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                marginBottom: 10,
+              }}
+            >
+              {t("appSettings.configFile")}
+            </div>
+          </>
+        )}
+
         {/* File path + edit button row */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <div
