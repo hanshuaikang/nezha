@@ -54,6 +54,17 @@ export const dialogs = {
     textAlign: "left" as const,
     transition: "background 0.12s, color 0.12s",
   },
+  settingsNavSectionLabel: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: "var(--text-hint)",
+    letterSpacing: 0.6,
+    textTransform: "uppercase" as const,
+    padding: "12px 10px 6px",
+  },
+  settingsNavSectionLabelFirst: {
+    padding: "4px 10px 6px",
+  },
   settingsContent: {
     flex: 1,
     display: "flex",

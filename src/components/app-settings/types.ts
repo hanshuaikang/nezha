@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import type { SendShortcut } from "../../shortcuts";
 
 export type NavKey = "general" | "theme" | "shortcuts" | "about" | "claude" | "codex";
@@ -15,9 +16,13 @@ export interface AgentVersions {
 
 export type AgentKey = "claude" | "codex";
 
+export type NavSection = "application" | "agents" | "about";
+
 export interface AppSettingsNavItem {
   key: NavKey;
   labelKey: string;
+  section: NavSection;
+  icon?: LucideIcon;
   logo?: string;
   filePath?: string;
   lang?: string;
