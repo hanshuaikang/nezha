@@ -1002,13 +1002,12 @@ pub(crate) fn register_and_watch_session(
     session_id: &str,
     project_path: &str,
     is_codex: bool,
-    source: &str,
 ) {
     let path = match wait_for_session_file(session_id, project_path, is_codex) {
         Some(p) => p,
         None => return,
     };
-    register_and_watch_session_path(app, task_id, session_id, project_path, is_codex, path, source);
+    register_and_watch_session_path(app, task_id, session_id, project_path, is_codex, path);
 }
 
 fn register_and_watch_session_path(
@@ -1018,7 +1017,6 @@ fn register_and_watch_session_path(
     project_path: &str,
     is_codex: bool,
     path: PathBuf,
-    source: &str,
 ) {
     let path_string = path.to_string_lossy().into_owned();
 
@@ -1052,7 +1050,6 @@ fn register_and_watch_session_path(
             "task_id": task_id,
             "session_id": session_id,
             "session_path": path_string,
-            "source": source
         }),
     );
 
@@ -1107,7 +1104,6 @@ fn try_register_codex_hook_session(
         project_path,
         true,
         session_path,
-        "hook",
     );
 
     let tm = app.state::<TaskManager>();
@@ -1140,10 +1136,9 @@ pub(crate) fn spawn_known_session_watcher(
     project_path: String,
     session_id: String,
     is_codex: bool,
-    source: &'static str,
 ) {
     thread::spawn(move || {
-        register_and_watch_session(&app, &task_id, &session_id, &project_path, is_codex, source);
+        register_and_watch_session(&app, &task_id, &session_id, &project_path, is_codex);
     });
 }
 

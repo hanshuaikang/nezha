@@ -84,6 +84,10 @@ fn finalize_task_exit(
         tm.codex_hook_tokens.lock().remove(task_id);
     }
 
+    if is_codex {
+        let _ = fs::remove_file(crate::config::codex_session_link_path(project_path, task_id));
+    }
+
     if is_cancelled {
         let _ = fs::remove_dir_all(task_attachments_dir(project_path, task_id));
         return;
@@ -528,7 +532,6 @@ pub async fn run_task(
             project_path.clone(),
             sid,
             false,
-            "explicit",
         );
     }
     if let Some(link_path) = codex_hook_link_path {
@@ -676,7 +679,6 @@ pub async fn resume_task(
         project_path.clone(),
         session_id,
         is_codex,
-        "resume",
     );
     spawn_pty_reader(
         app.clone(),

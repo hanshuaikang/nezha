@@ -34,11 +34,6 @@ function InlineWindow({ label, window }: { label: string; window: UsageWindow })
   );
 }
 
-function sessionSourceLabel(source: Task["sessionDiscoverySource"]): string | null {
-  if (!source) return null;
-  return `via ${source}`;
-}
-
 export function RunningView({
   task,
   runCount = 0,
@@ -76,7 +71,6 @@ export function RunningView({
   const isActive =
     task.status === "pending" || task.status === "running" || task.status === "input_required";
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
-  const sourceLabel = sessionSourceLabel(task.sessionDiscoverySource);
   const restoreState = getRestoreState?.() ?? {};
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
@@ -279,7 +273,6 @@ export function RunningView({
             }}
           >
             {t("running.sessionFile", { path: shortenPath(sessionPath) })}
-            {sourceLabel ? ` · ${sourceLabel}` : ""}
           </div>
         )}
         {metrics && (

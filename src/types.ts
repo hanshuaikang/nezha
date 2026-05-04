@@ -31,8 +31,6 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
-export type SessionDiscoverySource = "hook" | "resume" | "explicit";
-
 export interface Task {
   id: string;
   projectId: string;
@@ -45,7 +43,6 @@ export interface Task {
   attentionRequestedAt?: number;
   starred?: boolean;
   failureReason?: string;
-  sessionDiscoverySource?: SessionDiscoverySource;
   codexSessionId?: string;
   codexSessionPath?: string;
   claudeSessionId?: string;

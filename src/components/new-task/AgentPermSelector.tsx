@@ -95,9 +95,7 @@ export function AgentPermSelector({
 }) {
   const { t } = useI18n();
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const hasContent = !isEmpty || hasImages;
-  // 版本检查不达标时，禁用立即发送但仍允许"保存为待办"（用户可在升级后再启动）。
-  const canSend = hasContent && !submitDisabled;
+  const canSend = (!isEmpty || hasImages) && !submitDisabled;
   const sendShortcutLabel = sendShortcutKeys.join("");
 
   async function handleImageFiles(files: FileList | null) {
@@ -294,10 +292,10 @@ export function AgentPermSelector({
                 padding: "6px 5px",
                 borderRadius: "0 6px 6px 0",
                 borderLeft: "none",
-                opacity: hasContent ? 1 : 0.4,
-                cursor: hasContent ? "pointer" : "not-allowed",
+                opacity: canSend ? 1 : 0.4,
+                cursor: canSend ? "pointer" : "not-allowed",
               }}
-              disabled={!hasContent}
+              disabled={!canSend}
             >
               <ChevronDown size={12} strokeWidth={2.5} />
             </button>
