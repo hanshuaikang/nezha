@@ -24,9 +24,7 @@ interface WeeklyAnalytics {
   daily: DayStats[];
   total_tasks: number;
   done_tasks: number;
-  failed_tasks: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
+  total_tokens: number;
   total_tool_calls: number;
   total_duration_secs: number;
   claude_tasks: number;
@@ -110,7 +108,6 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
     );
   }
 
-  const totalTokens = data.total_input_tokens + data.total_output_tokens;
   const successRate =
     data.total_tasks > 0 ? Math.round((data.done_tasks / data.total_tasks) * 100) : 0;
   const totalAgents = data.claude_tasks + data.codex_tasks;
@@ -184,7 +181,7 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
       <div style={s.statGrid}>
         <StatCard value={String(data.total_tasks)} label={t("analytics.totalTasks")} />
         <StatCard value={`${successRate}%`} label={t("analytics.successRate")} />
-        <StatCard value={formatTokens(totalTokens)} label={t("analytics.totalTokens")} />
+        <StatCard value={formatTokens(data.total_tokens)} label={t("analytics.totalTokens")} />
         <StatCard value={String(data.total_tool_calls)} label={t("analytics.toolCalls")} />
       </div>
 
