@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { TriangleAlert } from "lucide-react";
+import { TriangleAlert, Sparkles } from "lucide-react";
 import type { Project, AgentType, PermissionMode } from "../types";
 import { useToast } from "./Toast";
 import {
@@ -302,6 +302,18 @@ export function NewTaskView({
     setMentionIndex(0);
   }
 
+  function handleInitializeMd() {
+    const filename = agent === "claude" ? "CLAUDE.md" : "AGENTS.md";
+    const prompt = t("newTask.initializePrompt", { file: filename });
+    onSubmit({
+      prompt,
+      agent,
+      permissionMode: permMode,
+      images: [],
+      immediate: true,
+    });
+  }
+
   function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
     if (!text && pastedImages.length === 0) return;
@@ -357,30 +369,46 @@ export function NewTaskView({
       {hasMdFile === false && (
         <div style={s.agentMissingMdBanner}>
           <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
-          <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
-            <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
-              {t("newTask.instructionsMissing", {
+          <div style={s.agentMissingMdBody}>
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
+              <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
+                {t("newTask.instructionsMissing", {
+                  file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+                }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]}
+                <code
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                    background: "var(--warning-code-bg)",
+                    padding: "0 4px",
+                    borderRadius: 3,
+                  }}
+                >
+                  {agent === "claude" ? "CLAUDE.md" : "AGENTS.md"}
+                </code>{" "}
+                {t("newTask.instructionsMissing", {
+                  file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+                }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[1]}
+              </span>{" "}
+              {t("newTask.addInstructions", {
                 file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-              }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]}
-              <code
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  background: "var(--warning-code-bg)",
-                  padding: "0 4px",
-                  borderRadius: 3,
-                }}
-              >
-                {agent === "claude" ? "CLAUDE.md" : "AGENTS.md"}
-              </code>{" "}
-              {t("newTask.instructionsMissing", {
-                file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-              }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[1]}
-            </span>{" "}
-            {t("newTask.addInstructions", {
-              file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-              agent: agent === "claude" ? "Claude Code" : "Codex",
-            })}
+                agent: agent === "claude" ? "Claude Code" : "Codex",
+              })}
+            </div>
+            <button
+              type="button"
+              style={s.agentMissingMdInitBtn}
+              onClick={handleInitializeMd}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--warning-surface)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <Sparkles size={13} strokeWidth={2} />
+              {t("newTask.initializeButton")}
+            </button>
           </div>
         </div>
       )}
