@@ -29,13 +29,15 @@ pub struct TaskManager {
     pub(crate) codex_sessions: Mutex<HashMap<String, CodexSessionInfo>>,
     pub(crate) claude_sessions: Mutex<HashMap<String, ClaudeSessionInfo>>,
     pub(crate) claimed_session_paths: Mutex<HashSet<String>>,
+    /// Tracks tasks currently starting up to prevent duplicate run/resume.
+    pub(crate) pending_resumes: Mutex<HashSet<String>>,
     /// Persistent `codex app-server` process reused across `read_usage_snapshot` calls.
     pub(crate) codex_rpc: Arc<Mutex<Option<CodexRpcClient>>>,
 }
 
 impl TaskManager {
-    /// Atomically remove a task/shell from all PTY maps (masters, writers, children).
-    /// Locks are acquired in a fixed order to prevent deadlocks.
+    /// Atomically remove a task/shell from all PTY maps (masters, writers, children)
+    /// and the pending_resumes set. Locks are acquired in a fixed order to prevent deadlocks.
     pub(crate) fn remove_pty_handles(&self, id: &str) {
         let mut masters = self.pty_masters.lock();
         let mut writers = self.pty_writers.lock();
@@ -43,6 +45,7 @@ impl TaskManager {
         masters.remove(id);
         writers.remove(id);
         children.remove(id);
+        self.pending_resumes.lock().remove(id);
     }
 }
 
@@ -64,6 +67,7 @@ pub fn run() {
             codex_sessions: Mutex::new(HashMap::new()),
             claude_sessions: Mutex::new(HashMap::new()),
             claimed_session_paths: Mutex::new(HashSet::new()),
+            pending_resumes: Mutex::new(HashSet::new()),
             codex_rpc: Arc::new(Mutex::new(None)),
         })
         .plugin(tauri_plugin_opener::init())

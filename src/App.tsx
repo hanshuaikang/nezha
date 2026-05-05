@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -96,6 +96,7 @@ function App() {
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
+  const resumingTaskIds = useRef<Set<string>>(new Set());
 
   const tm = useTerminalManager();
 
@@ -179,11 +180,12 @@ function App() {
       const chunks = await Promise.all(
         loadedProjects.map((p) => invoke<Task[]>("load_project_tasks", { projectId: p.id })),
       );
-      setTasks(chunks.flat());
+      const allTasks = chunks.flat();
+      setTasks(allTasks);
     }
 
     init().catch(console.error);
-  }, []);
+  }, [tm.terminalSizeRef]);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
   useEffect(() => {
@@ -332,14 +334,17 @@ function App() {
     });
   }
 
-  function handleResumeTask(taskId: string) {
+  function handleResumeTask(taskId: string): Promise<void> {
+    if (resumingTaskIds.current.has(taskId)) return Promise.resolve();
+    resumingTaskIds.current.add(taskId);
+
     const task = tasks.find((t) => t.id === taskId);
     const sessionId = task?.agent === "codex" ? task.codexSessionId : task?.claudeSessionId;
-    if (!task || !sessionId) return;
+    if (!task || !sessionId) { resumingTaskIds.current.delete(taskId); return Promise.resolve(); }
     const project = projects.find((p) => p.id === task.projectId);
-    if (!project) return;
+    if (!project) { resumingTaskIds.current.delete(taskId); return Promise.resolve(); }
 
-    // Reset task status, clear buffer, and bump run counter to remount the terminal
+    // Reset terminal before invoke so data from the new PTY flows into a clean buffer
     setTasks((prev) => {
       const next = prev.map((t) =>
         t.id === taskId
@@ -352,7 +357,7 @@ function App() {
     tm.resetTaskTerminal(taskId);
     setTaskRunCounts((prev) => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
 
-    invoke("resume_task", {
+    return invoke<{ started: boolean }>("resume_task", {
       taskId,
       projectPath: project.path,
       agent: task.agent,
@@ -362,10 +367,14 @@ function App() {
       cols: tm.terminalSizeRef.current.cols,
       rows: tm.terminalSizeRef.current.rows,
       onOutput: tm.createOutputChannel(taskId),
+    }).then((result) => {
+      if (!result.started) return;
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       tm.writeErrorToTerminal(taskId, `\r\nError: ${msg}\r\n`);
       updateTaskStatus(taskId, "failed", undefined, msg);
+    }).finally(() => {
+      resumingTaskIds.current.delete(taskId);
     });
   }
 
@@ -592,9 +601,18 @@ function App() {
               onNewTask={() =>
                 updateProjectView(project.id, { selectedTaskId: null, isNewTask: true })
               }
-              onSelectTask={(id) =>
-                updateProjectView(project.id, { selectedTaskId: id, isNewTask: false })
-              }
+              onSelectTask={(id) => {
+                updateProjectView(project.id, { selectedTaskId: id, isNewTask: false });
+                // Auto-resume orphaned active tasks (app was restarted)
+                const task = tasks.find((t) => t.id === id);
+                if (task && isActiveTaskStatus(task.status)) {
+                  const sessionId =
+                    task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
+                  if (sessionId && !tm.hasTaskBuffer(id)) {
+                    handleResumeTask(id);
+                  }
+                }
+              }}
               onDeleteTask={handleDeleteTask}
               onDeleteAllTasks={() => handleDeleteAllTasks(project)}
               onToggleTaskStar={handleToggleTaskStar}
