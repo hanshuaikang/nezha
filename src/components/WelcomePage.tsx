@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, BarChart2 } from "lucide-react";
-import type { Project, ThemeMode, TerminalFontSize } from "../types";
+import type { Project, ThemeMode, TerminalFontSize, FontFamily } from "../types";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
@@ -77,6 +77,10 @@ export function WelcomePage({
   onToggleTheme,
   terminalFontSize,
   onTerminalFontSizeChange,
+  uiFontFamily,
+  onUiFontFamilyChange,
+  monoFontFamily,
+  onMonoFontFamilyChange,
 }: {
   projects: Project[];
   onOpen: () => void;
@@ -89,6 +93,10 @@ export function WelcomePage({
   onToggleTheme: () => void;
   terminalFontSize: TerminalFontSize;
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
+  uiFontFamily: FontFamily;
+  onUiFontFamilyChange: (family: FontFamily) => void;
+  monoFontFamily: FontFamily;
+  onMonoFontFamilyChange: (family: FontFamily) => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -145,6 +153,10 @@ export function WelcomePage({
               onToggleTheme={onToggleTheme}
               terminalFontSize={terminalFontSize}
               onTerminalFontSizeChange={onTerminalFontSizeChange}
+              uiFontFamily={uiFontFamily}
+              onUiFontFamilyChange={onUiFontFamilyChange}
+              monoFontFamily={monoFontFamily}
+              onMonoFontFamilyChange={onMonoFontFamilyChange}
             />
           </div>
         </div>

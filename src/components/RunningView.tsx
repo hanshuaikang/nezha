@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Task, UsageWindow, TerminalFontSize } from "../types";
+import type { Task, UsageWindow, TerminalFontSize, FontFamily } from "../types";
 import { permissionModeLabel } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
@@ -50,6 +50,7 @@ export function RunningView({
   onRename,
   isDark,
   terminalFontSize,
+  monoFontFamily,
 }: {
   task: Task;
   runCount?: number;
@@ -66,6 +67,7 @@ export function RunningView({
   onRename: (name: string) => void;
   isDark: boolean;
   terminalFontSize: TerminalFontSize;
+  monoFontFamily: FontFamily;
 }) {
   const { t } = useI18n();
   const isActive =
@@ -266,7 +268,7 @@ export function RunningView({
               marginTop: 4,
               fontSize: 11,
               color: "var(--text-muted)",
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              fontFamily: "var(--font-mono)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -301,6 +303,7 @@ export function RunningView({
             onSnapshot={onSnapshot}
             isDark={isDark}
             terminalFontSize={terminalFontSize}
+            monoFontFamily={monoFontFamily}
             isActive={visible}
             initialData={restoreState.initialData}
             initialSnapshot={restoreState.initialSnapshot}
