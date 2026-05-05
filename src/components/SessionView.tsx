@@ -52,7 +52,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
         )}
         <Wrench size={11} style={{ color: "var(--text-hint)", flexShrink: 0 }} />
         <span
-          style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 600 }}
+          style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
         >
           {name}
         </span>
@@ -63,7 +63,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
             margin: 0,
             padding: "8px 12px",
             fontSize: 11,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontFamily: "var(--font-mono)",
             color: "var(--text-secondary)",
             background: "var(--bg-root)",
             overflowX: "auto",

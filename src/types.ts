@@ -22,6 +22,13 @@ export function clampTerminalFontSize(value: number): TerminalFontSize {
   const snapped = Math.round(value / TERMINAL_FONT_SIZE_STEP) * TERMINAL_FONT_SIZE_STEP;
   return Math.min(TERMINAL_FONT_SIZE_MAX, Math.max(TERMINAL_FONT_SIZE_MIN, snapped));
 }
+
+export type FontFamily = string;
+export const DEFAULT_UI_FONT: FontFamily =
+  '"SF Pro Display", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif';
+export const DEFAULT_MONO_FONT: FontFamily =
+  '"JetBrains Mono", "Fira Code", ui-monospace, monospace';
+
 export type TaskStatus =
   | "todo"
   | "pending"

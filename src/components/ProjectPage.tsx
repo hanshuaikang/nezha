@@ -7,6 +7,7 @@ import type {
   TaskStatus,
   ThemeMode,
   TerminalFontSize,
+  FontFamily,
 } from "../types";
 import { TaskPanel } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
@@ -61,6 +62,10 @@ export function ProjectPage({
   onToggleTheme,
   terminalFontSize,
   onTerminalFontSizeChange,
+  uiFontFamily,
+  onUiFontFamilyChange,
+  monoFontFamily,
+  onMonoFontFamilyChange,
 }: {
   project: Project;
   visible?: boolean;
@@ -109,6 +114,10 @@ export function ProjectPage({
   onToggleTheme: () => void;
   terminalFontSize: TerminalFontSize;
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
+  uiFontFamily: FontFamily;
+  onUiFontFamilyChange: (family: FontFamily) => void;
+  monoFontFamily: FontFamily;
+  onMonoFontFamilyChange: (family: FontFamily) => void;
 }) {
   const {
     rightPanel,
@@ -245,6 +254,10 @@ export function ProjectPage({
         onToggleTheme={onToggleTheme}
         terminalFontSize={terminalFontSize}
         onTerminalFontSizeChange={onTerminalFontSizeChange}
+        uiFontFamily={uiFontFamily}
+        onUiFontFamilyChange={onUiFontFamilyChange}
+        monoFontFamily={monoFontFamily}
+        onMonoFontFamilyChange={onMonoFontFamilyChange}
         active={visible}
         collapsed={taskPanelCollapsed}
         onToggleCollapsed={() => setTaskPanelCollapsed((v) => !v)}
@@ -372,6 +385,7 @@ export function ProjectPage({
                   onRename={(name) => onRenameTask(task.id, name)}
                   isDark={isDark}
                   terminalFontSize={terminalFontSize}
+                  monoFontFamily={monoFontFamily}
                 />
               );
             })}
@@ -385,6 +399,7 @@ export function ProjectPage({
             onClose={() => setShowShellTerminal(false)}
             isDark={isDark}
             terminalFontSize={terminalFontSize}
+            monoFontFamily={monoFontFamily}
             onReady={handleShellReady}
             height={terminalHeight}
             onResizeStart={handleTerminalResizeStart}

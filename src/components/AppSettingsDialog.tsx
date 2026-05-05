@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { X, Keyboard, Monitor, Info, Settings as SettingsIcon } from "lucide-react";
-import type { ThemeMode, TerminalFontSize } from "../types";
+import type { ThemeMode, TerminalFontSize, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -73,6 +73,10 @@ export function AppSettingsDialog({
   onThemeModeChange,
   terminalFontSize,
   onTerminalFontSizeChange,
+  uiFontFamily,
+  onUiFontFamilyChange,
+  monoFontFamily,
+  onMonoFontFamilyChange,
 }: {
   onClose: () => void;
   isDark: boolean;
@@ -81,6 +85,10 @@ export function AppSettingsDialog({
   onThemeModeChange: (mode: ThemeMode) => void;
   terminalFontSize: TerminalFontSize;
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
+  uiFontFamily: FontFamily;
+  onUiFontFamilyChange: (family: FontFamily) => void;
+  monoFontFamily: FontFamily;
+  onMonoFontFamilyChange: (family: FontFamily) => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
@@ -153,6 +161,10 @@ export function AppSettingsDialog({
               onThemeModeChange={onThemeModeChange}
               terminalFontSize={terminalFontSize}
               onTerminalFontSizeChange={onTerminalFontSizeChange}
+              uiFontFamily={uiFontFamily}
+              onUiFontFamilyChange={onUiFontFamilyChange}
+              monoFontFamily={monoFontFamily}
+              onMonoFontFamilyChange={onMonoFontFamilyChange}
             />
           ) : activeNav === "shortcuts" ? (
             <ShortcutsPanel key="shortcuts" />

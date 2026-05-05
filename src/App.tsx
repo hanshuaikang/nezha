@@ -12,7 +12,14 @@ import type {
   ThemeMode,
   TerminalFontSize,
 } from "./types";
-import { isActiveTaskStatus, DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "./types";
+import {
+  isActiveTaskStatus,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  clampTerminalFontSize,
+  DEFAULT_UI_FONT,
+  DEFAULT_MONO_FONT,
+} from "./types";
+import type { FontFamily } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
@@ -80,6 +87,11 @@ function getInitialTerminalFontSize(): TerminalFontSize {
   return Number.isFinite(parsed) ? clampTerminalFontSize(parsed) : DEFAULT_TERMINAL_FONT_SIZE;
 }
 
+function getInitialFontFamily(key: string, fallback: FontFamily): FontFamily {
+  const stored = localStorage.getItem(key);
+  return stored || fallback;
+}
+
 function App() {
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -89,6 +101,12 @@ function App() {
   const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
   const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
     getInitialTerminalFontSize,
+  );
+  const [uiFontFamily, setUiFontFamily] = useState<FontFamily>(() =>
+    getInitialFontFamily("nezha:uiFontFamily", DEFAULT_UI_FONT),
+  );
+  const [monoFontFamily, setMonoFontFamily] = useState<FontFamily>(() =>
+    getInitialFontFamily("nezha:monoFontFamily", DEFAULT_MONO_FONT),
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -160,6 +178,18 @@ function App() {
   useEffect(() => {
     localStorage.setItem("nezha:terminalFontSize", String(terminalFontSize));
   }, [terminalFontSize]);
+
+  useEffect(() => {
+    const value = uiFontFamily.trim() || DEFAULT_UI_FONT;
+    localStorage.setItem("nezha:uiFontFamily", value);
+    document.documentElement.style.setProperty("--font-ui", value);
+  }, [uiFontFamily]);
+
+  useEffect(() => {
+    const value = monoFontFamily.trim() || DEFAULT_MONO_FONT;
+    localStorage.setItem("nezha:monoFontFamily", value);
+    document.documentElement.style.setProperty("--font-mono", value);
+  }, [monoFontFamily]);
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
@@ -619,6 +649,10 @@ function App() {
               onToggleTheme={handleToggleTheme}
               terminalFontSize={terminalFontSize}
               onTerminalFontSizeChange={setTerminalFontSize}
+              uiFontFamily={uiFontFamily}
+              onUiFontFamilyChange={setUiFontFamily}
+              monoFontFamily={monoFontFamily}
+              onMonoFontFamilyChange={setMonoFontFamily}
             />
           );
         })}
@@ -643,6 +677,10 @@ function App() {
             onToggleTheme={handleToggleTheme}
             terminalFontSize={terminalFontSize}
             onTerminalFontSizeChange={setTerminalFontSize}
+            uiFontFamily={uiFontFamily}
+            onUiFontFamilyChange={setUiFontFamily}
+            monoFontFamily={monoFontFamily}
+            onMonoFontFamilyChange={setMonoFontFamily}
           />
         </div>
       )}

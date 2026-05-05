@@ -607,7 +607,7 @@ function CommitRow({
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-          <span style={{ fontSize: 10.5, color: "var(--text-hint)", fontFamily: "monospace" }}>
+          <span style={{ fontSize: 10.5, color: "var(--text-hint)", fontFamily: "var(--font-mono)" }}>
             {commit.short_hash}
           </span>
           <span style={{ fontSize: 10.5, color: "var(--text-hint)" }}>{commit.author}</span>
@@ -697,7 +697,7 @@ function CommitDetailPanel({
       <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--border-dim)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           <GitCommitIcon size={12} color="var(--text-hint)" />
-          <span style={{ fontSize: 11, color: "var(--text-hint)", fontFamily: "monospace" }}>
+          <span style={{ fontSize: 11, color: "var(--text-hint)", fontFamily: "var(--font-mono)" }}>
             {detail.short_hash}
           </span>
           <span style={{ fontSize: 11, color: "var(--text-hint)" }}>{detail.author}</span>
