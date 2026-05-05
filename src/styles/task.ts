@@ -280,6 +280,14 @@ export const task = {
     whiteSpace: "nowrap",
   },
   taskCardSub: { fontSize: 11, color: "var(--text-muted)", marginTop: 1 },
+  agentBadge: {
+    flexShrink: 0,
+    width: 14,
+    height: 14,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   taskDeleteBtn: {
     flexShrink: 0,
     width: 22,
