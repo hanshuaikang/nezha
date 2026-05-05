@@ -107,19 +107,72 @@ async fn run_git_with_timeout(
         .await
         .map_err(|e| format!("Git stderr task failed: {}", e))??;
 
-    Ok(Output { status, stdout, stderr })
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 /// 执行 git 命令，若退出码非零则将 stderr 作为错误返回。
-fn run_git_check<S: AsRef<std::ffi::OsStr>>(
-    project_path: &str,
-    args: &[S],
-) -> Result<(), String> {
+fn run_git_check<S: AsRef<std::ffi::OsStr>>(project_path: &str, args: &[S]) -> Result<(), String> {
     let output = run_git(project_path, args)?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
     Ok(())
+}
+
+fn git_worktree_root(project_path: &str) -> Result<PathBuf, String> {
+    let output = run_git(project_path, &["rev-parse", "--show-toplevel"])?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if root.is_empty() {
+        return Err("Cannot resolve git worktree root".to_string());
+    }
+
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve git worktree root: {}", e))?;
+    let project = Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+
+    if !project.starts_with(&root) {
+        return Err("Git worktree root does not contain project path".to_string());
+    }
+
+    Ok(root)
+}
+
+fn path_to_string(path: &Path) -> Result<String, String> {
+    path.to_str()
+        .map(|path| path.to_string())
+        .ok_or_else(|| "Path contains invalid UTF-8".to_string())
+}
+
+fn git_has_head(worktree_root: &str) -> Result<bool, String> {
+    let output = run_git(worktree_root, &["rev-parse", "--verify", "HEAD"])?;
+    Ok(output.status.success())
+}
+
+const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".nezha"];
+
+fn is_protected_project_relative_path(relative_path: &str) -> bool {
+    Path::new(relative_path)
+        .components()
+        .find_map(|component| match component {
+            std::path::Component::Normal(name) => name.to_str().map(|name| {
+                PROTECTED_FIRST_SEGMENTS
+                    .iter()
+                    .any(|protected| name.eq_ignore_ascii_case(protected))
+            }),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 fn apply_login_shell_env(cmd: &mut Command) {
@@ -318,9 +371,17 @@ pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo
             // "origin/main" -> remote = "origin", name = "origin/main"
             let name = without_remotes.to_string();
             let remote = name.split('/').next().map(|s| s.to_string());
-            branches.push(GitBranchInfo { name, current, remote });
+            branches.push(GitBranchInfo {
+                name,
+                current,
+                remote,
+            });
         } else if !raw.is_empty() {
-            branches.push(GitBranchInfo { name: raw.to_string(), current, remote: None });
+            branches.push(GitBranchInfo {
+                name: raw.to_string(),
+                current,
+                remote: None,
+            });
         }
     }
     Ok(branches)
@@ -357,7 +418,10 @@ pub async fn git_create_branch(
     branch_name: String,
     from_branch: String,
 ) -> Result<(), String> {
-    run_git_check(&project_path, &["checkout", "-b", &branch_name, &from_branch])
+    run_git_check(
+        &project_path,
+        &["checkout", "-b", &branch_name, &from_branch],
+    )
 }
 
 #[tauri::command]
@@ -369,8 +433,12 @@ pub async fn git_log(
 ) -> Result<Vec<GitCommit>, String> {
     let limit_str = limit.to_string();
     let format = "COMMIT:%H%nSHORT:%h%nAUTHOR:%an%nDATE:%ar%nSUBJECT:%s%nREFS:%D%nEND_RECORD";
-    let mut args: Vec<String> =
-        vec!["log".into(), format!("--format={}", format), "-n".into(), limit_str];
+    let mut args: Vec<String> = vec![
+        "log".into(),
+        format!("--format={}", format),
+        "-n".into(),
+        limit_str,
+    ];
     if let Some(ref s) = search {
         if !s.is_empty() {
             args.push(format!("--grep={}", s));
@@ -487,7 +555,13 @@ pub async fn git_commit_detail(
 
     let ns_out = run_git(
         &project_path,
-        &["diff-tree", "--no-commit-id", "-r", "--name-status", &commit_hash],
+        &[
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--name-status",
+            &commit_hash,
+        ],
     )?;
 
     let mut file_statuses: HashMap<String, String> = HashMap::new();
@@ -497,13 +571,21 @@ pub async fn git_commit_detail(
             [st, path] => {
                 file_statuses.insert(
                     path.to_string(),
-                    if st.starts_with('R') { "R".to_string() } else { st.to_string() },
+                    if st.starts_with('R') {
+                        "R".to_string()
+                    } else {
+                        st.to_string()
+                    },
                 );
             }
             [st, _old, new_path] => {
                 file_statuses.insert(
                     new_path.to_string(),
-                    if st.starts_with('R') { "R".to_string() } else { st.to_string() },
+                    if st.starts_with('R') {
+                        "R".to_string()
+                    } else {
+                        st.to_string()
+                    },
                 );
             }
             _ => {}
@@ -512,7 +594,13 @@ pub async fn git_commit_detail(
 
     let num_out = run_git(
         &project_path,
-        &["diff-tree", "--no-commit-id", "-r", "--numstat", &commit_hash],
+        &[
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--numstat",
+            &commit_hash,
+        ],
     )?;
 
     let mut files = Vec::new();
@@ -530,9 +618,16 @@ pub async fn git_commit_detail(
             let path = parts[2].to_string();
             total_additions += additions;
             total_deletions += deletions;
-            let status =
-                file_statuses.get(&path).cloned().unwrap_or_else(|| "M".to_string());
-            files.push(GitCommitFile { path, status, additions, deletions });
+            let status = file_statuses
+                .get(&path)
+                .cloned()
+                .unwrap_or_else(|| "M".to_string());
+            files.push(GitCommitFile {
+                path,
+                status,
+                additions,
+                deletions,
+            });
         }
     }
 
@@ -549,10 +644,7 @@ pub async fn git_commit_detail(
 }
 
 #[tauri::command]
-pub async fn git_show_diff(
-    project_path: String,
-    commit_hash: String,
-) -> Result<String, String> {
+pub async fn git_show_diff(project_path: String, commit_hash: String) -> Result<String, String> {
     let args = vec!["show".to_string(), "--format=".to_string(), commit_hash];
     let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
     if !output.status.success() {
@@ -560,8 +652,12 @@ pub async fn git_show_diff(
     }
     let raw = output.stdout;
     let limit = 500 * 1024;
-    Ok(String::from_utf8_lossy(if raw.len() > limit { &raw[..limit] } else { &raw })
-        .into_owned())
+    Ok(String::from_utf8_lossy(if raw.len() > limit {
+        &raw[..limit]
+    } else {
+        &raw
+    })
+    .into_owned())
 }
 
 #[tauri::command]
@@ -597,17 +693,21 @@ pub async fn git_file_diff(
         let fallback = fallback?;
         let fallback_raw = fallback.stdout;
         let limit = 200 * 1024;
-        return Ok(String::from_utf8_lossy(
-            if fallback_raw.len() > limit { &fallback_raw[..limit] } else { &fallback_raw },
-        )
+        return Ok(String::from_utf8_lossy(if fallback_raw.len() > limit {
+            &fallback_raw[..limit]
+        } else {
+            &fallback_raw
+        })
         .into_owned());
     }
 
     let limit = 200 * 1024;
-    Ok(
-        String::from_utf8_lossy(if raw.len() > limit { &raw[..limit] } else { &raw })
-            .into_owned(),
-    )
+    Ok(String::from_utf8_lossy(if raw.len() > limit {
+        &raw[..limit]
+    } else {
+        &raw
+    })
+    .into_owned())
 }
 
 #[tauri::command]
@@ -635,6 +735,249 @@ pub async fn git_commit(project_path: String, message: String) -> Result<(), Str
     run_git_check(&project_path, &["commit", "-m", &message])
 }
 
+fn untracked_files_under_directory<'a>(
+    directory_path: &str,
+    untracked_files: &'a [String],
+) -> Vec<&'a str> {
+    let directory = Path::new(directory_path);
+    untracked_files
+        .iter()
+        .map(String::as_str)
+        .filter(|path| {
+            let path = Path::new(path);
+            path != directory && path.starts_with(directory)
+        })
+        .collect()
+}
+
+fn is_listed_untracked_file(relative_path: &str, untracked_files: &[String]) -> bool {
+    let relative_path = Path::new(relative_path);
+    untracked_files
+        .iter()
+        .any(|path| Path::new(path) == relative_path)
+}
+
+fn is_protected_worktree_relative_path(
+    worktree_root: &Path,
+    project_path: &str,
+    relative_path: &str,
+) -> bool {
+    if is_protected_project_relative_path(relative_path) {
+        return true;
+    }
+
+    let rel = Path::new(relative_path);
+    if rel.is_absolute() {
+        return false;
+    }
+
+    let canonical_project = match Path::new(project_path).canonicalize() {
+        Ok(path) => path,
+        Err(_) => return false,
+    };
+    let target = worktree_root.join(rel);
+    let Some(file_name) = target.file_name() else {
+        return false;
+    };
+    let Some(parent) = target.parent() else {
+        return false;
+    };
+    let Ok(canonical_parent) = parent.canonicalize() else {
+        return false;
+    };
+    let resolved = canonical_parent.join(file_name);
+
+    resolved
+        .strip_prefix(&canonical_project)
+        .ok()
+        .map(|rel_from_project| {
+            is_protected_project_relative_path(&rel_from_project.to_string_lossy())
+        })
+        .unwrap_or(false)
+}
+
+/// Move a worktree-relative path to the system trash. Canonicalize only the parent directory so
+/// symlinks at the leaf are deleted as themselves rather than followed to their target. Reject
+/// absolute or `..`-escaping relative paths defensively even though `git status` should never emit them.
+fn trash_worktree_relative_path(
+    worktree_root: &Path,
+    project_path: &str,
+    relative_path: &str,
+) -> Result<(), String> {
+    let rel = Path::new(relative_path);
+    if rel.is_absolute() {
+        return Err("Untracked path must be relative".to_string());
+    }
+
+    let target = worktree_root.join(rel);
+    let file_name = target
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?
+        .to_string();
+    let parent = target
+        .parent()
+        .ok_or_else(|| "Cannot resolve parent directory".to_string())?;
+
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve parent directory: {}", e))?;
+    let canonical_root = worktree_root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve git worktree root: {}", e))?;
+    let canonical_project = Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err("Path is outside the git worktree".to_string());
+    }
+
+    let resolved = canonical_parent.join(&file_name);
+    if resolved == canonical_root {
+        return Err("Refusing to delete project root".to_string());
+    }
+    if resolved.symlink_metadata().is_err() {
+        return Err("Path does not exist".to_string());
+    }
+    if is_protected_project_relative_path(relative_path) {
+        return Err("Refusing to delete protected project metadata".to_string());
+    }
+    if let Ok(rel_from_project) = resolved.strip_prefix(&canonical_project) {
+        let rel_from_project = rel_from_project.to_string_lossy();
+        if is_protected_project_relative_path(&rel_from_project) {
+            return Err("Refusing to delete protected project metadata".to_string());
+        }
+    }
+
+    trash::delete(&resolved).map_err(|e| e.to_string())
+}
+
+fn discard_untracked_file(
+    project_path: &str,
+    worktree_root: &Path,
+    relative_path: &str,
+) -> Result<(), String> {
+    let rel = Path::new(relative_path);
+    if rel.is_absolute() {
+        return Err("Untracked path must be relative".to_string());
+    }
+    if is_protected_worktree_relative_path(worktree_root, project_path, relative_path) {
+        return Err("Refusing to delete protected project metadata".to_string());
+    }
+
+    let target = worktree_root.join(rel);
+    let metadata = target
+        .symlink_metadata()
+        .map_err(|_| "Path does not exist".to_string())?;
+
+    let worktree_root = worktree_root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve git worktree root: {}", e))?;
+    let worktree_root_string = path_to_string(&worktree_root)?;
+    let untracked_files = list_untracked_files(&worktree_root_string)?;
+
+    if metadata.file_type().is_dir() {
+        for rel in untracked_files_under_directory(relative_path, &untracked_files) {
+            if is_protected_worktree_relative_path(&worktree_root, project_path, rel) {
+                continue;
+            }
+            trash_worktree_relative_path(&worktree_root, project_path, rel)?;
+        }
+        return Ok(());
+    }
+
+    if !is_listed_untracked_file(relative_path, &untracked_files) {
+        return Err("Path is not an untracked file".to_string());
+    }
+
+    trash_worktree_relative_path(&worktree_root, project_path, relative_path)
+}
+
+fn list_untracked_files(project_path: &str) -> Result<Vec<String>, String> {
+    let output = run_git(
+        project_path,
+        &[
+            "-c",
+            "core.quotePath=false",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(output
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| String::from_utf8_lossy(entry).into_owned())
+        .collect())
+}
+
+/// Discard a single file's pending changes.
+///
+/// - Untracked files: moved to the system trash.
+/// - Tracked unstaged changes: `git restore -- <file>` resets the worktree to the index, leaving
+///   any staged half intact (so MM files don't lose their staged portion).
+///
+/// We deliberately don't expose a "discard staged" path here — staged-only files have no per-row
+/// discard button in the UI (matching VSCode), and "Discard All" handles the staged side via
+/// `git_discard_all` which correctly undoes renames too.
+#[tauri::command]
+pub async fn git_discard_file(
+    project_path: String,
+    file_path: String,
+    untracked: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        validate_project_path(&project_path)?;
+        let worktree_root = git_worktree_root(&project_path)?;
+        let worktree_root_string = path_to_string(&worktree_root)?;
+        if untracked {
+            discard_untracked_file(&project_path, &worktree_root, &file_path)
+        } else {
+            run_git_check(&worktree_root_string, &["restore", "--", &file_path])
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_discard_all(project_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        validate_project_path(&project_path)?;
+        let worktree_root = git_worktree_root(&project_path)?;
+        let worktree_root_string = path_to_string(&worktree_root)?;
+        // Reset every tracked file (staged + worktree) back to HEAD.
+        // Staged-only adds become untracked after this; they are cleaned in the second pass.
+        if git_has_head(&worktree_root_string)? {
+            run_git_check(
+                &worktree_root_string,
+                &["restore", "--source=HEAD", "--staged", "--worktree", "."],
+            )?;
+        } else {
+            run_git_check(
+                &worktree_root_string,
+                &["rm", "-r", "--cached", "--ignore-unmatch", "--", "."],
+            )?;
+        }
+
+        for rel in list_untracked_files(&worktree_root_string)? {
+            if is_protected_worktree_relative_path(&worktree_root, &project_path, &rel) {
+                continue;
+            }
+            trash_worktree_relative_path(&worktree_root, &project_path, &rel)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn git_show_file_diff(
     project_path: String,
@@ -650,8 +993,12 @@ pub async fn git_show_file_diff(
     }
     let raw = output.stdout;
     let limit = 500 * 1024;
-    Ok(String::from_utf8_lossy(if raw.len() > limit { &raw[..limit] } else { &raw })
-        .into_owned())
+    Ok(String::from_utf8_lossy(if raw.len() > limit {
+        &raw[..limit]
+    } else {
+        &raw
+    })
+    .into_owned())
 }
 
 #[tauri::command]
@@ -702,9 +1049,10 @@ pub async fn git_remote_counts(
     let branch = if let Some(b) = branch.filter(|s| !s.is_empty()) {
         b
     } else {
-        let branch_out =
-            run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-        String::from_utf8_lossy(&branch_out.stdout).trim().to_string()
+        let branch_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        String::from_utf8_lossy(&branch_out.stdout)
+            .trim()
+            .to_string()
     };
 
     let rev_str = format!("{}...@{{u}}", branch);
@@ -726,12 +1074,50 @@ pub async fn git_remote_counts(
         _ => (0, 0),
     };
 
-    Ok(GitRemoteCounts { ahead, behind, branch })
+    Ok(GitRemoteCounts {
+        ahead,
+        behind,
+        branch,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_porcelain_z_status, GitFileChange};
+    use super::{
+        git_has_head, git_worktree_root, is_protected_project_relative_path, list_untracked_files,
+        parse_porcelain_z_status, path_to_string, run_git_check, untracked_files_under_directory,
+        GitFileChange,
+    };
+    use std::{fs, path::PathBuf, process::Command};
+
+    struct TempRepo {
+        path: PathBuf,
+    }
+
+    impl TempRepo {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("nezha-git-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            let output = Command::new("git").arg("init").arg(&path).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            Self { path }
+        }
+
+        fn path_string(&self) -> String {
+            path_to_string(&self.path.canonicalize().unwrap()).unwrap()
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn parses_untracked_path_with_spaces_without_quotes() {
@@ -779,6 +1165,66 @@ mod tests {
                 status: "R".to_string(),
                 staged: true,
             }]
+        );
+    }
+
+    #[test]
+    fn detects_protected_project_metadata_paths() {
+        assert!(is_protected_project_relative_path(".nezha/config.toml"));
+        assert!(is_protected_project_relative_path("./.git/index"));
+        assert!(is_protected_project_relative_path(
+            ".Nezha/attachments/file.png"
+        ));
+        assert!(!is_protected_project_relative_path(
+            "src/.nezha/config.toml"
+        ));
+        assert!(!is_protected_project_relative_path(".gitignore"));
+        assert!(!is_protected_project_relative_path("src/git.rs"));
+    }
+
+    #[test]
+    fn lists_only_untracked_files_under_requested_directory() {
+        let untracked_files = vec![
+            "dir/file.txt".to_string(),
+            "dir/nested/other.txt".to_string(),
+            "dir2/file.txt".to_string(),
+            "other.txt".to_string(),
+        ];
+
+        assert_eq!(
+            untracked_files_under_directory("dir/", &untracked_files),
+            vec!["dir/file.txt", "dir/nested/other.txt"]
+        );
+    }
+
+    #[test]
+    fn resolves_worktree_root_for_nested_project_paths() {
+        let repo = TempRepo::new();
+        let nested_project = repo.path.join("nested/project");
+        fs::create_dir_all(&nested_project).unwrap();
+
+        let resolved = git_worktree_root(nested_project.to_str().unwrap()).unwrap();
+
+        assert_eq!(resolved, repo.path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn unborn_repository_can_prepare_staged_files_for_untracked_cleanup() {
+        let repo = TempRepo::new();
+        let repo_path = repo.path_string();
+        fs::write(repo.path.join("new-file.txt"), "content").unwrap();
+
+        assert!(!git_has_head(&repo_path).unwrap());
+        run_git_check(&repo_path, &["add", "new-file.txt"]).unwrap();
+        run_git_check(
+            &repo_path,
+            &["rm", "-r", "--cached", "--ignore-unmatch", "--", "."],
+        )
+        .unwrap();
+
+        assert_eq!(
+            list_untracked_files(&repo_path).unwrap(),
+            vec!["new-file.txt".to_string()]
         );
     }
 }
