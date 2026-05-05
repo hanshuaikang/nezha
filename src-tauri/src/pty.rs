@@ -7,7 +7,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher};
+use crate::session::{spawn_codex_hook_session_watcher, spawn_known_session_watcher};
 use crate::TaskManager;
 
 const SESSION_WAIT_POLL: Duration = Duration::from_millis(50);
@@ -81,6 +81,11 @@ fn finalize_task_exit(
         if let Some(path) = claude_path {
             claimed.remove(&path);
         }
+        tm.codex_hook_tokens.lock().remove(task_id);
+    }
+
+    if is_codex {
+        let _ = fs::remove_file(crate::config::codex_session_link_path(project_path, task_id));
     }
 
     if is_cancelled {
@@ -452,26 +457,24 @@ pub async fn run_task(
     let agent_bin = launch.program.clone();
     let is_codex = agent == "codex";
 
-    // 读取项目配置中已保存的 Claude 版本，用于判断是否支持 --session-id
-    let saved_claude_version = config.agent.claude_version.clone();
-    let use_explicit_session =
-        !is_codex && crate::app_settings::claude_version_gte(&saved_claude_version, "2.1.87");
-
-    // 预生成 session id（仅 Claude >= 2.1.87 使用）
-    let pre_session_id = if use_explicit_session {
-        Some(uuid::Uuid::new_v4().to_string())
-    } else {
+    // Claude 通过 `--session-id` 直接指定会话；Codex 通过 SessionStart hook 上报。
+    // 调用方负责保证最低版本（Claude >= 2.1.87、Codex >= 0.114.0）。
+    let pre_session_id = if is_codex {
         None
+    } else {
+        Some(uuid::Uuid::new_v4().to_string())
     };
 
     let mut cmd = if is_codex {
+        let _ = crate::config::ensure_codex_project_hook(&project_path);
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
+        c.arg("--enable");
+        c.arg("codex_hooks");
         c.arg("--");
         c.arg(&final_prompt);
         c
     } else {
         let mut c = build_claude_cmd(&agent_bin, &permission_mode);
-        // Claude >= 2.1.87：通过 --session-id 指定会话，跳过 /status 发现
         if let Some(ref sid) = pre_session_id {
             c.arg("--session-id");
             c.arg(sid);
@@ -485,7 +488,33 @@ pub async fn run_task(
         cmd.env(key, value);
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let codex_hook_link_path = if is_codex {
+        let token = uuid::Uuid::new_v4().to_string();
+        let link_path = crate::config::codex_session_link_path(&project_path, &task_id);
+        if let Some(parent) = link_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::remove_file(&link_path);
+        cmd.env("NEZHA_TASK_ID", &task_id);
+        cmd.env("NEZHA_HOOK_TOKEN", &token);
+        cmd.env("NEZHA_SESSION_LINK_PATH", link_path.to_string_lossy().into_owned());
+        cmd.env("NEZHA_PROJECT_PATH", &project_path);
+        task_manager
+            .codex_hook_tokens
+            .lock()
+            .insert(task_id.clone(), token);
+        Some(link_path)
+    } else {
+        None
+    };
+
+    let child = match pair.slave.spawn_command(cmd) {
+        Ok(child) => child,
+        Err(e) => {
+            task_manager.codex_hook_tokens.lock().remove(&task_id);
+            return Err(e.to_string());
+        }
+    };
     drop(pair.slave);
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
@@ -496,16 +525,23 @@ pub async fn run_task(
         serde_json::json!({ "task_id": task_id, "status": "running" }),
     );
 
-    // 用于将 PTY 输出转发给 session watcher 的 channel
-    let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
-    spawn_status_session_watcher(
-        app.clone(),
-        task_id.clone(),
-        project_path.clone(),
-        is_codex,
-        session_rx,
-        pre_session_id,
-    );
+    if let Some(sid) = pre_session_id {
+        spawn_known_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            sid,
+            false,
+        );
+    }
+    if let Some(link_path) = codex_hook_link_path {
+        spawn_codex_hook_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            link_path,
+        );
+    }
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),
@@ -515,7 +551,7 @@ pub async fn run_task(
             max_batch_bytes: PTY_EMIT_MAX_BATCH_BYTES,
         },
         reader,
-        Some(session_tx),
+        None,
         None,
     );
     spawn_exit_monitor(app, task_id, project_path, is_codex);
@@ -563,6 +599,7 @@ pub async fn cancel_task(
         if let Some(path) = claude_path {
             claimed.remove(&path);
         }
+        task_manager.codex_hook_tokens.lock().remove(&task_id);
     }
 
     let _ = app.emit(
@@ -602,7 +639,10 @@ pub async fn resume_task(
     let launch = crate::app_settings::get_agent_launch_spec(&agent);
     let agent_bin = launch.program.clone();
     let mut cmd = if agent == "codex" {
+        let _ = crate::config::ensure_codex_project_hook(&project_path);
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
+        c.arg("--enable");
+        c.arg("codex_hooks");
         c.arg("resume");
         c.arg(&session_id);
         c
@@ -633,7 +673,7 @@ pub async fn resume_task(
     let is_codex = agent == "codex";
 
     // resume 时 session_id 已知，直接查找文件并开始监视
-    spawn_resume_session_watcher(
+    spawn_known_session_watcher(
         app.clone(),
         task_id.clone(),
         project_path.clone(),

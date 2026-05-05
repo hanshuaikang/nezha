@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n";
@@ -9,52 +8,6 @@ import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings, type 
 import { getAgentExecutablePlaceholder } from "./shared";
 
 const AUTO_VERSION_DETECT_DELAY_MS = 350;
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "7px 10px",
-  background: "var(--bg-input)",
-  border: "1px solid var(--border-medium)",
-  borderRadius: 7,
-  color: "var(--text-primary)",
-  fontSize: 12.5,
-  fontFamily: "var(--font-mono)",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: "var(--text-secondary)",
-  marginBottom: 5,
-  display: "block",
-};
-
-const fieldStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 5,
-};
-
-const hintStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: "var(--text-hint)",
-  marginTop: 3,
-};
-
-const actionButtonStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 5,
-  padding: "5px 10px",
-  background: "none",
-  border: "1px solid var(--border-medium)",
-  borderRadius: 6,
-  fontSize: 12,
-  color: "var(--text-secondary)",
-  cursor: "pointer",
-};
 
 export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   const { t } = useI18n();
@@ -200,26 +153,16 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   const versionValue = versions[versionField];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
-      {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
+    <div style={s.agentPathSection}>
+      {error && <div style={s.agentPathErrorText}>{error}</div>}
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-          {t("appSettings.installation")}
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {loading && (
-            <span style={{ color: "var(--text-hint)", fontSize: 12 }}>{t("common.loading")}</span>
-          )}
+      <div style={s.agentPathHeader}>
+        <span style={s.agentPathHeading}>{t("appSettings.installation")}</span>
+        <div style={s.agentPathHeaderActions}>
+          {loading && <span style={s.agentPathHeaderLoading}>{t("common.loading")}</span>}
           <button
             style={{
-              ...actionButtonStyle,
+              ...s.agentPathActionButton,
               cursor: detecting ? "default" : "pointer",
               opacity: detecting ? 0.6 : 1,
             }}
@@ -231,7 +174,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
           </button>
           <button
             style={{
-              ...actionButtonStyle,
+              ...s.agentPathActionButton,
               cursor: refreshing ? "default" : "pointer",
               opacity: refreshing ? 0.6 : 1,
             }}
@@ -244,11 +187,11 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
         </div>
       </div>
 
-      <div style={fieldStyle}>
-        <label style={labelStyle}>{pathLabel}</label>
+      <div style={s.agentPathField}>
+        <label style={s.agentPathLabel}>{pathLabel}</label>
         <input
           style={{
-            ...inputStyle,
+            ...s.agentPathInput,
             opacity: loading ? 0.65 : 1,
             cursor: loading ? "wait" : "text",
           }}
@@ -261,40 +204,30 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
           disabled={loading}
           spellCheck={false}
         />
-        <span style={hintStyle}>{pathHint}</span>
+        <span style={s.agentPathHint}>{pathHint}</span>
       </div>
 
-      <div style={fieldStyle}>
-        <label style={labelStyle}>{t("appSettings.installedVersions")}</label>
+      <div style={s.agentPathField}>
+        <label style={s.agentPathLabel}>{t("appSettings.installedVersions")}</label>
         <input
-          style={inputStyle}
+          style={s.agentPathInput}
           value={versionValue}
           readOnly
           placeholder={t("common.notDetected")}
           spellCheck={false}
         />
-        <span style={hintStyle}>{t("appSettings.versionsHint")}</span>
+        <span style={s.agentPathHint}>{t("appSettings.versionsHint")}</span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
+      <div style={s.agentPathFooter}>
         {saved && (
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 12,
-              color: "var(--success)",
-            }}
-          >
+          <span style={s.agentPathSavedBadge}>
             <Check size={12} /> {t("common.saved")}
           </span>
         )}
         <button
           style={{
-            ...s.modalSaveBtn,
-            padding: "5px 14px",
-            fontSize: 12,
+            ...s.agentPathSaveButton,
             cursor: saving || !isDirty ? "default" : "pointer",
             opacity: saving || !isDirty ? 0.5 : 1,
           }}

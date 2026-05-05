@@ -33,6 +33,32 @@ interface PastedImage {
   dataUrl: string;
 }
 
+const MIN_AGENT_VERSIONS: Record<AgentType, string> = {
+  claude: "2.1.87",
+  codex: "0.114.0",
+};
+
+function agentDisplayName(agent: AgentType): string {
+  return agent === "claude" ? "Claude Code" : "Codex";
+}
+
+function parseSemver(v: string): [number, number, number] {
+  const parts = v.split(".").map((p) => parseInt(p, 10));
+  return [
+    Number.isFinite(parts[0]) ? parts[0] : 0,
+    Number.isFinite(parts[1]) ? parts[1] : 0,
+    Number.isFinite(parts[2]) ? parts[2] : 0,
+  ];
+}
+
+function isVersionAtLeast(detected: string, min: string): boolean {
+  const a = parseSemver(detected);
+  const b = parseSemver(min);
+  if (a[0] !== b[0]) return a[0] > b[0];
+  if (a[1] !== b[1]) return a[1] > b[1];
+  return a[2] >= b[2];
+}
+
 export interface NewTaskDraft {
   promptHtml: string;
   agent: AgentType;
@@ -198,6 +224,45 @@ export function NewTaskView({
       .catch(() => setHasMdFile(false));
   }, [project.path, agent]);
 
+  // Agent 最低版本检测：版本不达标时禁用启动按钮并提示用户升级。
+  const [agentVersions, setAgentVersions] = useState<{
+    claude_version: string;
+    codex_version: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<{ claude_version: string; codex_version: string }>("detect_agent_versions")
+      .then((versions) => {
+        if (!cancelled) setAgentVersions(versions);
+      })
+      .catch(() => {
+        if (!cancelled) setAgentVersions({ claude_version: "", codex_version: "" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const detectedVersion =
+    agentVersions === null
+      ? null
+      : agent === "claude"
+      ? agentVersions.claude_version
+      : agentVersions.codex_version;
+  const minVersion = MIN_AGENT_VERSIONS[agent];
+  // 仍在加载时按通过处理，避免短暂闪现禁用状态。
+  const versionOk =
+    detectedVersion === null || (!!detectedVersion && isVersionAtLeast(detectedVersion, minVersion));
+  const versionBannerKey =
+    detectedVersion === null
+      ? null
+      : !detectedVersion
+      ? "newTask.versionMissing"
+      : !versionOk
+      ? "newTask.versionTooLow"
+      : null;
+
   // Load current project file list
   useEffect(() => {
     if (!project.path) return;
@@ -303,6 +368,7 @@ export function NewTaskView({
   }
 
   function handleSubmit(immediate: boolean) {
+    if (!versionOk) return;
     const text = editorHandle.serialize();
     if (!text && pastedImages.length === 0) return;
     submittedRef.current = true;
@@ -352,6 +418,20 @@ export function NewTaskView({
         />
         <span style={s.newTaskTitle}>{t("newTask.title")}</span>
       </div>
+
+      {/* Agent version too low / missing */}
+      {versionBannerKey && (
+        <div style={s.agentMissingMdBanner}>
+          <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
+            {t(versionBannerKey, {
+              agent: agentDisplayName(agent),
+              detected: detectedVersion || "",
+              min: minVersion,
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Missing context file warning */}
       {hasMdFile === false && (
@@ -441,6 +521,7 @@ export function NewTaskView({
           planMode={planMode}
           isEmpty={isEmpty}
           hasImages={pastedImages.length > 0}
+          submitDisabled={!versionOk}
           sendShortcutKeys={getSendShortcutKeys(sendShortcut, APP_PLATFORM)}
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}

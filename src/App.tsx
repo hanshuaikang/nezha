@@ -197,7 +197,11 @@ function App() {
         }
       },
     );
-    const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
+    const p2 = listen<{
+      task_id: string;
+      session_id: string;
+      session_path: string;
+    }>(
       "task-session",
       (e) => {
         const { task_id, session_id, session_path } = e.payload;

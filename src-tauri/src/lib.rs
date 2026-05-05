@@ -29,6 +29,7 @@ pub struct TaskManager {
     pub(crate) codex_sessions: Mutex<HashMap<String, CodexSessionInfo>>,
     pub(crate) claude_sessions: Mutex<HashMap<String, ClaudeSessionInfo>>,
     pub(crate) claimed_session_paths: Mutex<HashSet<String>>,
+    pub(crate) codex_hook_tokens: Mutex<HashMap<String, String>>,
     /// Persistent `codex app-server` process reused across `read_usage_snapshot` calls.
     pub(crate) codex_rpc: Arc<Mutex<Option<CodexRpcClient>>>,
 }
@@ -64,6 +65,7 @@ pub fn run() {
             codex_sessions: Mutex::new(HashMap::new()),
             claude_sessions: Mutex::new(HashMap::new()),
             claimed_session_paths: Mutex::new(HashSet::new()),
+            codex_hook_tokens: Mutex::new(HashMap::new()),
             codex_rpc: Arc::new(Mutex::new(None)),
         })
         .plugin(tauri_plugin_opener::init())

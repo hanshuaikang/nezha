@@ -1,6 +1,7 @@
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
@@ -19,6 +20,15 @@ pub(crate) struct CodexSessionInfo {
 pub(crate) struct ClaudeSessionInfo {
     pub(crate) session_id: String,
     pub(crate) session_path: String,
+}
+
+#[derive(Deserialize)]
+struct CodexSessionLink {
+    task_id: String,
+    token: String,
+    session_id: String,
+    session_path: String,
+    cwd: String,
 }
 
 // ── 公共辅助函数 ──────────────────────────────────────────────────────────────
@@ -889,34 +899,6 @@ fn parse_codex_session(lines: &[&str]) -> Vec<SessionMessage> {
 
 // ── 会话文件工具函数 ──────────────────────────────────────────────────────────
 
-/// Strip ANSI escape sequences so we can do plain-text matching.
-fn strip_ansi(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            match chars.peek() {
-                Some(&'[') => {
-                    chars.next(); // consume '['
-                                  // consume until a byte that terminates a CSI sequence (ASCII letter)
-                    while let Some(&c2) = chars.peek() {
-                        chars.next();
-                        if c2.is_ascii_alphabetic() {
-                            break;
-                        }
-                    }
-                }
-                _ => {
-                    chars.next(); // skip the char after bare ESC
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
 fn is_uuid_like(s: &str) -> bool {
     let parts: Vec<&str> = s.split('-').collect();
     parts.len() == 5
@@ -995,46 +977,7 @@ fn find_codex_session_file(session_id: &str, project_path: &str) -> Option<PathB
         .max_by_key(|p| session_modified_at(p))
 }
 
-// ── /status-based session discovery ──────────────────────────────────────────
-
-/// 从 Claude Code 的 `/status` 输出中提取 Session ID。
-/// 输出示例: "Session ID: 1aee0948-e0f2-4ad1-b710-ba236fab378a"
-fn extract_claude_status_session_id(output: &str) -> Option<String> {
-    let clean = strip_ansi(output);
-    // Use find() instead of line-by-line matching because Claude Code renders /status
-    // using cursor-positioning escape sequences, which collapse multiple lines into one
-    // after ANSI stripping (no \r\n between positioned text fragments).
-    let pos = clean.find("Session ID:")?;
-    let after = clean[pos + "Session ID:".len()..].trim_start();
-    let id: String = after
-        .chars()
-        .take_while(|c| c.is_ascii_hexdigit() || *c == '-')
-        .collect();
-    if is_uuid_like(&id) { Some(id) } else { None }
-}
-
-/// 从 Codex 的 `/status` 输出中提取 Session ID。
-/// 输出示例: "│  Session:                     019d247a-2a83-76f3-b5c6-e4a59955af3f  │"
-///
-/// Codex renders /status using cursor-positioning escape sequences, which collapse
-/// multiple lines into one after ANSI stripping (same issue as Claude Code).
-/// Use find() instead of line-by-line matching to handle both cases.
-fn extract_codex_status_session_id(output: &str) -> Option<String> {
-    let clean = strip_ansi(output);
-    // 先过滤掉盒状边框字符，再用 find() 搜索 "Session:" 关键词，
-    // 避免光标定位序列导致多行塌缩成一行后 lines() 无法匹配的问题
-    let stripped: String = clean
-        .chars()
-        .filter(|c| !matches!(*c, '│' | '╭' | '╰' | '─' | '╮' | '╯' | '├' | '┤'))
-        .collect();
-    let pos = stripped.find("Session:")?;
-    let after = stripped[pos + "Session:".len()..].trim_start();
-    let id: String = after
-        .chars()
-        .take_while(|c| c.is_ascii_hexdigit() || *c == '-')
-        .collect();
-    if is_uuid_like(&id) { Some(id) } else { None }
-}
+// ── 已知 session id 的注册流程 ────────────────────────────────────────────────
 
 /// 轮询最多 5 秒，直到会话文件出现。
 fn wait_for_session_file(session_id: &str, project_path: &str, is_codex: bool) -> Option<PathBuf> {
@@ -1064,6 +1007,17 @@ pub(crate) fn register_and_watch_session(
         Some(p) => p,
         None => return,
     };
+    register_and_watch_session_path(app, task_id, session_id, project_path, is_codex, path);
+}
+
+fn register_and_watch_session_path(
+    app: &AppHandle,
+    task_id: &str,
+    session_id: &str,
+    project_path: &str,
+    is_codex: bool,
+    path: PathBuf,
+) {
     let path_string = path.to_string_lossy().into_owned();
 
     if !claim_session_path(app, &path_string) {
@@ -1095,7 +1049,7 @@ pub(crate) fn register_and_watch_session(
         serde_json::json!({
             "task_id": task_id,
             "session_id": session_id,
-            "session_path": path_string
+            "session_path": path_string,
         }),
     );
 
@@ -1109,213 +1063,74 @@ pub(crate) fn register_and_watch_session(
     }
 }
 
-/// 监听 PTY 输出流，通过 `/status` 响应获取 Session ID。
-/// Claude 启动后 1.5 秒发送 `/status`；Codex 则在收到首个输出后再等待 1 秒，
-/// 避免 session 尚未创建时过早查询。
-fn should_send_status_command(
-    status_sent: bool,
-    is_codex: bool,
-    start_elapsed: Duration,
-    first_output_elapsed: Option<Duration>,
+fn try_register_codex_hook_session(
+    app: &AppHandle,
+    task_id: &str,
+    project_path: &str,
+    link_path: &Path,
 ) -> bool {
-    if status_sent {
+    let raw = match fs::read_to_string(link_path) {
+        Ok(raw) => raw,
+        Err(_) => return false,
+    };
+    let Ok(link) = serde_json::from_str::<CodexSessionLink>(&raw) else {
+        return false;
+    };
+    if link.task_id != task_id || link.cwd != project_path || !is_uuid_like(&link.session_id) {
+        return false;
+    }
+    let expected_token = {
+        let tm = app.state::<TaskManager>();
+        let token = tm.codex_hook_tokens.lock().get(task_id).cloned();
+        token
+    };
+    if expected_token.as_deref() != Some(link.token.as_str()) {
         return false;
     }
 
-    if is_codex {
-        first_output_elapsed
-            .map(|elapsed| elapsed >= Duration::from_secs(1))
-            .unwrap_or(false)
-            // 兜底：若 Codex 长时间无输出，也不要无限等待
-            || start_elapsed >= Duration::from_secs(8)
+    let linked_path = PathBuf::from(&link.session_path);
+    let session_path = if !link.session_path.is_empty() && linked_path.exists() {
+        linked_path
     } else {
-        start_elapsed >= Duration::from_millis(1500)
-    }
+        match wait_for_session_file(&link.session_id, project_path, true) {
+            Some(path) => path,
+            None => return false,
+        }
+    };
+    register_and_watch_session_path(
+        app,
+        task_id,
+        &link.session_id,
+        project_path,
+        true,
+        session_path,
+    );
+
+    let tm = app.state::<TaskManager>();
+    let registered = tm.codex_sessions.lock().contains_key(task_id);
+    registered
 }
 
-fn send_status_command(app: &AppHandle, task_id: &str, is_codex: bool) {
-    if is_codex {
-        // Codex 有自动补全菜单，需先输入 /status 触发菜单，
-        // 再延迟发送 \r 选中执行；两次写入之间释放锁，避免长时间持锁
-        {
-            let tm = app.state::<TaskManager>();
-            let mut writers = tm.pty_writers.lock();
-            if let Some(writer) = writers.get_mut(task_id) {
-                let _ = writer.write_all(b"/status");
-                let _ = writer.flush();
-            }
-        }
-        thread::sleep(Duration::from_millis(100));
-        {
-            let tm = app.state::<TaskManager>();
-            let mut writers = tm.pty_writers.lock();
-            if let Some(writer) = writers.get_mut(task_id) {
-                let _ = writer.write_all(b"\r");
-                let _ = writer.flush();
-            }
-        }
-    } else {
-        let tm = app.state::<TaskManager>();
-        let mut writers = tm.pty_writers.lock();
-        if let Some(writer) = writers.get_mut(task_id) {
-            let _ = writer.write_all(b"/status\r");
-            let _ = writer.flush();
-        }
-    }
-}
-
-/// 监听 PTY 输出流，通过 `/status` 响应获取 Session ID。
-/// Claude 启动后 1.5 秒发送 `/status`；Codex 则在收到首个输出后再等待 1 秒，
-/// 避免 session 尚未创建时过早查询。
-///
-/// 当 `pre_session_id` 为 `Some` 时（Claude >= 2.1.87），跳过 `/status` 发现，
-/// 直接使用预置 session id 注册会话文件。若文件在超时内未出现，自动回退到 `/status` 流程。
-pub(crate) fn spawn_status_session_watcher(
+pub(crate) fn spawn_codex_hook_session_watcher(
     app: AppHandle,
     task_id: String,
     project_path: String,
-    is_codex: bool,
-    rx: mpsc::Receiver<String>,
-    pre_session_id: Option<String>,
+    link_path: PathBuf,
 ) {
-    // ── Claude >= 2.1.87 快速路径：预置 session id，不发 /status ──
-    if let Some(ref sid) = pre_session_id {
-        if !is_codex {
-            let app2 = app.clone();
-            let tid2 = task_id.clone();
-            let pp2 = project_path.clone();
-            let sid2 = sid.clone();
-            thread::spawn(move || {
-                // 等待 Claude 创建 session 文件，最长 10 秒
-                register_and_watch_session(&app2, &tid2, &sid2, &pp2, false);
-
-                // 如果 register_and_watch_session 无法找到文件（内部 wait_for_session_file 超时），
-                // 检查是否已经成功注册；若未注册则回退到旧的 /status 流程。
-                let registered = {
-                    let tm = app2.state::<TaskManager>();
-                    let sessions = tm.claude_sessions.lock();
-                    sessions
-                        .get(&tid2)
-                        .map(|info| !info.session_path.is_empty())
-                        .unwrap_or(false)
-                };
-                if registered {
-                    return; // 成功，rx 仍会被 drop 但不影响 pty_reader
-                }
-
-                // 回退：启动旧的 /status 流程
-                run_status_session_watcher(app2, tid2, pp2, false, rx);
-            });
-            return;
-        }
-    }
-
-    // ── 原始路径：Codex 或 Claude < 2.1.87 ──
     thread::spawn(move || {
-        run_status_session_watcher(app, task_id, project_path, is_codex, rx);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while Instant::now() < deadline && is_task_active(&app, &task_id) {
+            if try_register_codex_hook_session(&app, &task_id, &project_path, &link_path) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
     });
 }
 
-/// 旧的 /status 轮询流程：Codex 始终走此路径，Claude < 2.1.87 也走此路径。
-fn run_status_session_watcher(
-    app: AppHandle,
-    task_id: String,
-    project_path: String,
-    is_codex: bool,
-    rx: mpsc::Receiver<String>,
-) {
-        let start_time = Instant::now();
-        let mut status_sent = false;
-        let mut status_sent_at: Option<Instant> = None;
-        let mut status_send_count: u32 = 0;
-        let mut first_output_at = None;
-        let mut accumulated = String::new();
-        // 发送 /status 后的独立缓冲，避免大量输出将 /status 响应挤出裁剪窗口
-        let mut status_response_buf = String::new();
-        let mut collecting_response = false;
-
-        loop {
-            if !is_task_active(&app, &task_id) {
-                break;
-            }
-
-            let should_send_status = should_send_status_command(
-                status_sent,
-                is_codex,
-                start_time.elapsed(),
-                first_output_at.map(|instant: Instant| instant.elapsed()),
-            );
-
-            // 首次发送或重试：若已发送但 3 秒内未提取到 Session ID，则再发一次。
-            // Codex 在 session 创建前 /status 不含 Session 字段，需要在任务真正开始后重试。
-            // 最多重试 5 次（含首次发送），避免对长时间无法解析的任务持续干扰 PTY 输入流。
-            let should_retry = status_sent
-                && status_send_count < 5
-                && status_sent_at
-                    .map(|t| t.elapsed() >= Duration::from_secs(3))
-                    .unwrap_or(false);
-
-            if should_send_status || should_retry {
-                status_sent = true;
-                status_send_count += 1;
-                status_sent_at = Some(Instant::now());
-                collecting_response = true;
-                status_response_buf.clear();
-                send_status_command(&app, &task_id, is_codex);
-            }
-
-            match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(chunk) => {
-                    if is_codex && first_output_at.is_none() {
-                        first_output_at = Some(Instant::now());
-                    }
-                    accumulated.push_str(&chunk);
-                    // 限制缓冲区大小，防止内存占用过大
-                    if accumulated.len() > 65536 {
-                        let trim = accumulated.len() - 32768;
-                        accumulated.drain(..trim);
-                    }
-
-                    // /status 发送后，额外收集响应到独立缓冲（最多 8KB），
-                    // 避免主缓冲裁剪把 Session ID 丢掉
-                    if collecting_response {
-                        status_response_buf.push_str(&chunk);
-                        if status_response_buf.len() > 8192 {
-                            collecting_response = false;
-                        }
-                    }
-
-                    let session_id = if is_codex {
-                        extract_codex_status_session_id(&status_response_buf)
-                            .or_else(|| extract_codex_status_session_id(&accumulated))
-                    } else {
-                        extract_claude_status_session_id(&status_response_buf)
-                            .or_else(|| extract_claude_status_session_id(&accumulated))
-                    };
-
-                    if let Some(sid) = session_id {
-                        register_and_watch_session(&app, &task_id, &sid, &project_path, is_codex);
-                        // Claude Code 的 /status 以全屏面板形式展示，需发送 ESC 关闭；
-                        // Codex 无此面板，无需处理
-                        if !is_codex {
-                            let tm = app.state::<TaskManager>();
-                            let mut writers = tm.pty_writers.lock();
-                            if let Some(writer) = writers.get_mut(&task_id) {
-                                let _ = writer.write_all(b"\x1b");
-                                let _ = writer.flush();
-                            }
-                        }
-                        break;
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-}
-
-/// 供 `resume_task` 使用：根据已知的 session_id 查找会话文件并开始监视。
-pub(crate) fn spawn_resume_session_watcher(
+/// 启动后台线程，依据已知的 session_id 等待会话文件出现并开始监视。
+/// 适用于 Claude 通过 `--session-id` 启动以及 `resume_task` 复用已有会话两种场景。
+pub(crate) fn spawn_known_session_watcher(
     app: AppHandle,
     task_id: String,
     project_path: String,
@@ -1332,114 +1147,6 @@ pub(crate) fn spawn_resume_session_watcher(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn extract_claude_status_session_id_from_status_output() {
-        // Simple \r\n separated output
-        let output = "\x1b[0m\r\n  Version: 2.1.81\r\n  Session ID: 1aee0948-e0f2-4ad1-b710-ba236fab378a\r\n  cwd: /workspace\r\n\x1b[0m";
-        assert_eq!(
-            extract_claude_status_session_id(output),
-            Some("1aee0948-e0f2-4ad1-b710-ba236fab378a".to_string())
-        );
-    }
-
-    #[test]
-    fn extract_claude_status_session_id_cursor_positioned() {
-        // Claude Code renders /status using cursor-positioning sequences; after ANSI
-        // stripping the text collapses onto one line with no \r\n separators.
-        let output = "\x1b[1;1H  Version: 2.1.83\x1b[2;1H  Session ID: 9d5533cd-af1e-48d5-99d3-a9e61b2a5250\x1b[3;1H  cwd: /workspace";
-        assert_eq!(
-            extract_claude_status_session_id(output),
-            Some("9d5533cd-af1e-48d5-99d3-a9e61b2a5250".to_string())
-        );
-    }
-
-    #[test]
-    fn extract_claude_status_session_id_returns_none_when_absent() {
-        assert_eq!(extract_claude_status_session_id("no session info here"), None);
-    }
-
-    #[test]
-    fn extract_codex_status_session_id_from_status_output() {
-        let output = "\r\n│  Session:                     019d247a-2a83-76f3-b5c6-e4a59955af3f                                │\r\n";
-        assert_eq!(
-            extract_codex_status_session_id(output),
-            Some("019d247a-2a83-76f3-b5c6-e4a59955af3f".to_string())
-        );
-    }
-
-    #[test]
-    fn extract_codex_status_session_id_with_ansi() {
-        let output = "\x1b[0m\r\n\u{2502}  Session:                     019d0a3e-3cf7-7513-b7de-e3e9bc6c7f4d  \u{2502}\r\n\x1b[0m";
-        assert_eq!(
-            extract_codex_status_session_id(output),
-            Some("019d0a3e-3cf7-7513-b7de-e3e9bc6c7f4d".to_string())
-        );
-    }
-
-    #[test]
-    fn extract_codex_status_session_id_cursor_positioned() {
-        // Codex renders /status using cursor-positioning sequences; after ANSI stripping
-        // all content collapses onto one line with no \r\n separators — same as Claude Code.
-        let output = "\x1b[1;1H  OpenAI Codex (v0.116.0)\x1b[3;1H  Session:                     019d28df-14c0-7d03-8209-07dd4ae22cd1\x1b[4;1H  Context window:  100% left";
-        assert_eq!(
-            extract_codex_status_session_id(output),
-            Some("019d28df-14c0-7d03-8209-07dd4ae22cd1".to_string())
-        );
-    }
-
-    #[test]
-    fn extract_codex_status_session_id_returns_none_when_absent() {
-        assert_eq!(extract_codex_status_session_id("no session info here"), None);
-    }
-
-    #[test]
-    fn codex_status_waits_for_first_output_then_one_second() {
-        assert!(!should_send_status_command(
-            false,
-            true,
-            Duration::from_secs(2),
-            None,
-        ));
-        assert!(!should_send_status_command(
-            false,
-            true,
-            Duration::from_millis(2200),
-            Some(Duration::from_millis(900)),
-        ));
-        assert!(should_send_status_command(
-            false,
-            true,
-            Duration::from_millis(2200),
-            Some(Duration::from_secs(1)),
-        ));
-    }
-
-    #[test]
-    fn codex_status_has_global_timeout_fallback() {
-        assert!(should_send_status_command(
-            false,
-            true,
-            Duration::from_secs(8),
-            None,
-        ));
-    }
-
-    #[test]
-    fn claude_status_keeps_original_delay() {
-        assert!(!should_send_status_command(
-            false,
-            false,
-            Duration::from_millis(1499),
-            None,
-        ));
-        assert!(should_send_status_command(
-            false,
-            false,
-            Duration::from_millis(1500),
-            None,
-        ));
-    }
 
     #[test]
     fn read_only_command_detection_is_conservative() {

@@ -168,6 +168,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "newTask.newLine": "New line",
     "newTask.saveAsTodo": "Save as Todo",
     "newTask.imagesMustSend": "Tasks with images must be sent immediately.",
+    "newTask.versionTooLow":
+      "Detected {agent} version {detected} is below the minimum requirement of {min}. Upgrade {agent} to start tasks again.",
+    "newTask.versionMissing":
+      "{agent} was not detected. Configure its executable path in Settings → Agents (minimum supported version: {min}).",
     "mention.loadingFiles": "Loading files…",
     "mention.allFiles": "all files",
     "mention.startTyping": "Start typing to search files",
@@ -454,6 +458,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "newTask.newLine": "换行",
     "newTask.saveAsTodo": "保存为待办",
     "newTask.imagesMustSend": "包含图片的任务必须立即发送。",
+    "newTask.versionTooLow":
+      "当前 {agent} 版本 {detected} 过低，最低支持 {min}，升级后则可以正常使用。",
+    "newTask.versionMissing":
+      "未检测到 {agent}，请在「设置 → 智能体」中配置可执行路径（最低支持 {min}）。",
     "mention.loadingFiles": "正在加载文件…",
     "mention.allFiles": "全部文件",
     "mention.startTyping": "开始输入以搜索文件",

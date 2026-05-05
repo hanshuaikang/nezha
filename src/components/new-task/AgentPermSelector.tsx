@@ -72,6 +72,7 @@ export function AgentPermSelector({
   planMode,
   isEmpty,
   hasImages,
+  submitDisabled = false,
   sendShortcutKeys,
   onSetAgent,
   onSetPermMode,
@@ -84,6 +85,7 @@ export function AgentPermSelector({
   planMode: boolean;
   isEmpty: boolean;
   hasImages: boolean;
+  submitDisabled?: boolean;
   sendShortcutKeys: string[];
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
@@ -93,7 +95,7 @@ export function AgentPermSelector({
 }) {
   const { t } = useI18n();
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const canSend = !isEmpty || hasImages;
+  const canSend = (!isEmpty || hasImages) && !submitDisabled;
   const sendShortcutLabel = sendShortcutKeys.join("");
 
   async function handleImageFiles(files: FileList | null) {
