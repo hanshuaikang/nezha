@@ -88,6 +88,11 @@ fn finalize_task_exit(
         return;
     }
 
+    {
+        let tm = app.state::<TaskManager>();
+        tm.finalized_tasks.lock().insert(task_id.to_string());
+    }
+
     let status = if exit_ok || had_agent_session { "done" } else { "failed" };
     let payload = if status == "failed" {
         let reason = match exit_code {
@@ -532,6 +537,10 @@ pub async fn cancel_task(
 ) -> Result<(), String> {
     task_manager
         .cancelled_tasks
+        .lock()
+        .insert(task_id.clone());
+    task_manager
+        .finalized_tasks
         .lock()
         .insert(task_id.clone());
 
