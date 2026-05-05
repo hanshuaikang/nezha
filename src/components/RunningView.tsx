@@ -14,6 +14,9 @@ import { X, RotateCcw, Pencil } from "lucide-react";
 
 interface SessionMetrics {
   duration_secs: number;
+  total_tokens: number;
+  context_tokens: number;
+  context_window: number;
 }
 
 function formatDuration(secs: number): string {
@@ -21,6 +24,12 @@ function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = Math.round(secs % 60);
   return `${m}m ${s}s`;
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`;
 }
 
 function InlineWindow({ label, window }: { label: string; window: UsageWindow }) {
@@ -285,6 +294,15 @@ export function RunningView({
             }}
           >
             <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
+            <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
+            {metrics.context_window > 0 && metrics.context_tokens > 0 && (
+              <MetricPill
+                label={t("running.context")}
+                value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
+                  (metrics.context_tokens / metrics.context_window) * 100,
+                )}%)`}
+              />
+            )}
           </div>
         )}
       </div>
