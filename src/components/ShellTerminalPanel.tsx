@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
-import type { TerminalFontSize } from "../types";
+import type { TerminalFontSize, FontFamily } from "../types";
 import {
   DARK_THEME,
   LIGHT_THEME,
@@ -14,6 +14,7 @@ import {
   safeFit,
   createSmartWriter,
   applyTerminalFontSize,
+  applyTerminalFontFamily,
 } from "./terminalShared";
 import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
@@ -45,6 +46,7 @@ interface Props {
   onClose: () => void;
   isDark: boolean;
   terminalFontSize: TerminalFontSize;
+  monoFontFamily: FontFamily;
   onReady?: () => void;
   height?: number;
   onResizeStart?: (e: React.MouseEvent) => void;
@@ -65,10 +67,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   isActive: boolean;
   isDark: boolean;
   terminalFontSize: TerminalFontSize;
+  monoFontFamily: FontFamily;
   onReady?: () => void;
 }>(
   function ShellTerminalInstance(
-    { shellId, projectPath, isActive, isDark, terminalFontSize, onReady },
+    { shellId, projectPath, isActive, isDark, terminalFontSize, monoFontFamily, onReady },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -77,11 +80,13 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const isDarkRef = useRef(isDark);
     const isActiveRef = useRef(isActive);
     const terminalFontSizeRef = useRef(terminalFontSize);
+    const monoFontFamilyRef = useRef(monoFontFamily);
     const onReadyRef = useRef(onReady);
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
     isDarkRef.current = isDark;
     isActiveRef.current = isActive;
     terminalFontSizeRef.current = terminalFontSize;
+    monoFontFamilyRef.current = monoFontFamily;
     onReadyRef.current = onReady;
 
     useImperativeHandle(
@@ -101,7 +106,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
 
-      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000, terminalFontSizeRef.current);
+      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000, terminalFontSizeRef.current, monoFontFamilyRef.current);
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
@@ -236,6 +241,16 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
     }, [terminalFontSize, shellId]);
 
+    useEffect(() => {
+      if (!terminalRef.current || !fitAddonRef.current) return;
+      const size = applyTerminalFontFamily(terminalRef.current, fitAddonRef.current, monoFontFamily);
+      if (!size) return;
+      const last = lastSizeRef.current;
+      if (last && last.cols === size.cols && last.rows === size.rows) return;
+      lastSizeRef.current = { cols: size.cols, rows: size.rows };
+      invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+    }, [monoFontFamily, shellId]);
+
     return (
       <div
         ref={containerRef}
@@ -262,6 +277,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       onClose,
       isDark,
       terminalFontSize,
+      monoFontFamily,
       onReady,
       height = 240,
       onResizeStart,
@@ -396,6 +412,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 isActive={isActive && activeShellId === shell.id}
                 isDark={isDark}
                 terminalFontSize={terminalFontSize}
+                monoFontFamily={monoFontFamily}
                 onReady={onReady}
               />
             ))}
