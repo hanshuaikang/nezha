@@ -40,6 +40,7 @@ libc = "0.2"
 parking_lot = "0.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 uuid = { version = "1", features = ["v4"] }
+trash = "=5.2.6"
 
 [profile.dev]
 debug = 0
