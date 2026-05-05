@@ -1,10 +1,28 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { ChevronRight, ChevronDown, RotateCcw } from "lucide-react";
 import { getFileColor } from "../utils";
 import { useToast } from "./Toast";
 import { useI18n } from "../i18n";
+
+type CreateKind = "file" | "folder";
+
+function pathSeparator(path: string): "/" | "\\" {
+  return path.includes("\\") && !path.includes("/") ? "\\" : "/";
+}
+
+function joinPath(parent: string, name: string): string {
+  const sep = pathSeparator(parent);
+  const trimmed = parent.replace(/[\\/]+$/, "");
+  return `${trimmed}${sep}${name}`;
+}
+
+function parentPathOf(path: string): string {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return idx > 0 ? path.slice(0, idx) : path;
+}
 
 interface FsEntry {
   name: string;
@@ -113,12 +131,31 @@ async function writeClipboardText(text: string) {
   }
 }
 
-function flattenVisible(nodes: TreeNode[]): Array<{ node: TreeNode; depth: number }> {
-  const result: Array<{ node: TreeNode; depth: number }> = [];
+type FlatRow =
+  | { kind: "node"; node: TreeNode; depth: number }
+  | { kind: "input"; parentPath: string; depth: number; createKind: CreateKind };
+
+function flattenVisible(
+  nodes: TreeNode[],
+  rootPath: string,
+  creating: { parentPath: string; kind: CreateKind } | null,
+): FlatRow[] {
+  const result: FlatRow[] = [];
+  if (creating && creating.parentPath === rootPath) {
+    result.push({ kind: "input", parentPath: rootPath, depth: 0, createKind: creating.kind });
+  }
   function walk(items: TreeNode[], depth: number) {
     for (const n of items) {
-      result.push({ node: n, depth });
+      result.push({ kind: "node", node: n, depth });
       if (n.is_dir && n.expanded && n.children) {
+        if (creating && creating.parentPath === n.path) {
+          result.push({
+            kind: "input",
+            parentPath: n.path,
+            depth: depth + 1,
+            createKind: creating.kind,
+          });
+        }
         walk(n.children, depth + 1);
       }
     }
@@ -207,6 +244,88 @@ function TreeItem({
       >
         {node.name}
       </span>
+    </div>
+  );
+}
+
+function CreateInputRow({
+  depth,
+  kind,
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+  inputRef,
+}: {
+  depth: number;
+  kind: CreateKind;
+  value: string;
+  onChange: (next: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        height: ROW_HEIGHT,
+        paddingLeft: 8 + depth * 14,
+        paddingRight: 8,
+        margin: "0 4px",
+        boxSizing: "border-box",
+        background: "var(--bg-selected)",
+        borderRadius: 4,
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <FileIcon
+        name={kind === "file" ? value || "untitled" : ""}
+        ext={undefined}
+        isDir={kind === "folder"}
+        expanded={false}
+      />
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onCommit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={() => {
+          // Commit is intentionally only triggered by Enter; blurring discards the input
+          // to prevent racing the keyboard handler (which used to double-fire commit).
+          onCancel();
+        }}
+        spellCheck={false}
+        autoComplete="off"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          height: 18,
+          padding: "0 4px",
+          fontSize: 12.5,
+          fontFamily: "var(--font-ui)",
+          color: "var(--text-primary)",
+          background: "var(--bg-input, var(--bg-sidebar))",
+          border: "1px solid var(--accent)",
+          borderRadius: 3,
+          outline: "none",
+        }}
+      />
     </div>
   );
 }
@@ -328,13 +447,45 @@ export function FileExplorer({
     x: number;
     y: number;
     path: string;
+    isDir: boolean;
+    isRoot: boolean;
   } | null>(null);
+  const [creating, setCreating] = useState<{
+    parentPath: string;
+    kind: CreateKind;
+  } | null>(null);
+  const [creatingValue, setCreatingValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const commitInFlightRef = useRef(false);
+  const deleteInFlightRef = useRef(false);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY, path: node.path });
+    setCtxMenu({
+      x: e.clientX,
+      y: e.clientY,
+      path: node.path,
+      isDir: node.is_dir,
+      isRoot: false,
+    });
   }, []);
+
+  const handleEmptyContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target !== e.currentTarget) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setCtxMenu({
+        x: e.clientX,
+        y: e.clientY,
+        path: projectPath,
+        isDir: true,
+        isRoot: true,
+      });
+    },
+    [projectPath],
+  );
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
@@ -439,7 +590,22 @@ export function FileExplorer({
     return () => ro.disconnect();
   }, []);
 
-  const flat = useMemo(() => flattenVisible(nodes), [nodes]);
+  const flat = useMemo(
+    () => flattenVisible(nodes, projectPath, creating),
+    [nodes, projectPath, creating],
+  );
+
+  // The create-input row is rendered outside the virtualized slice (see render block) so its
+  // DOM node remains mounted even when scrolled out of view — otherwise the input ref would
+  // race with focus/scroll on long trees. We still need its index from `flat` to position it.
+  const creatingPlacement = useMemo(() => {
+    if (!creating) return null;
+    const idx = flat.findIndex((r) => r.kind === "input");
+    if (idx < 0) return null;
+    const row = flat[idx];
+    if (row.kind !== "input") return null;
+    return { index: idx, depth: row.depth, kind: row.createKind };
+  }, [flat, creating]);
 
   const OVERSCAN = 5;
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -487,6 +653,156 @@ export function FileExplorer({
     [onFileSelect],
   );
 
+  const ensureExpanded = useCallback(
+    (dirPath: string) => {
+      if (dirPath === projectPath) return;
+      const current = findNode(nodesRef.current, dirPath);
+      if (!current?.expanded) {
+        handleToggle(dirPath);
+      }
+    },
+    [handleToggle, projectPath],
+  );
+
+  const startCreate = useCallback(
+    (kind: CreateKind) => {
+      if (!ctxMenu) return;
+      let parentPath: string;
+      if (ctxMenu.isRoot) {
+        parentPath = projectPath;
+      } else if (ctxMenu.isDir) {
+        parentPath = ctxMenu.path;
+        ensureExpanded(parentPath);
+      } else {
+        parentPath = parentPathOf(ctxMenu.path);
+      }
+      setCtxMenu(null);
+      setCreatingValue("");
+      setCreating({ parentPath, kind });
+    },
+    [ctxMenu, ensureExpanded, projectPath],
+  );
+
+  const cancelCreate = useCallback(() => {
+    setCreating(null);
+    setCreatingValue("");
+  }, []);
+
+  const commitCreate = useCallback(async () => {
+    if (!creating) return;
+    if (commitInFlightRef.current) return;
+    const name = creatingValue.trim();
+    if (!name) {
+      cancelCreate();
+      return;
+    }
+    if (name.includes("/") || name.includes("\\")) {
+      showToast(t("file.createFailed", { error: "Invalid file name" }));
+      return;
+    }
+    commitInFlightRef.current = true;
+    const fullPath = joinPath(creating.parentPath, name);
+    const kind = creating.kind;
+    const parentPath = creating.parentPath;
+    try {
+      if (kind === "file") {
+        await safeInvoke("create_file", { path: fullPath, projectPath });
+      } else {
+        await safeInvoke("create_directory", { path: fullPath, projectPath });
+      }
+      if (isCancelled()) return;
+      setCreating(null);
+      setCreatingValue("");
+      if (parentPath !== projectPath) {
+        ensureExpanded(parentPath);
+      }
+      await refresh();
+      if (isCancelled()) return;
+      setSelectedPath(fullPath);
+      if (kind === "file") {
+        onFileSelect(fullPath, name);
+      }
+    } catch (error) {
+      if (!isCancelled()) {
+        showToast(t("file.createFailed", { error: String(error) }));
+      }
+    } finally {
+      commitInFlightRef.current = false;
+    }
+  }, [
+    cancelCreate,
+    creating,
+    creatingValue,
+    ensureExpanded,
+    isCancelled,
+    onFileSelect,
+    projectPath,
+    refresh,
+    safeInvoke,
+    showToast,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (!creating || !creatingPlacement) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const rowTop = creatingPlacement.index * ROW_HEIGHT;
+    const rowBottom = rowTop + ROW_HEIGHT;
+    if (rowTop < el.scrollTop || rowBottom > el.scrollTop + el.clientHeight) {
+      const targetTop = Math.max(0, rowTop - el.clientHeight / 2 + ROW_HEIGHT);
+      el.scrollTo({ top: targetTop, behavior: "auto" });
+    }
+  }, [creating, creatingPlacement]);
+
+  useEffect(() => {
+    if (creating && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [creating]);
+
+  const handleDelete = useCallback(async () => {
+    if (!ctxMenu || ctxMenu.isRoot) return;
+    if (deleteInFlightRef.current) return;
+    const targetPath = ctxMenu.path;
+    const isDir = ctxMenu.isDir;
+    const idx = Math.max(targetPath.lastIndexOf("/"), targetPath.lastIndexOf("\\"));
+    const name = idx >= 0 ? targetPath.slice(idx + 1) : targetPath;
+    setCtxMenu(null);
+
+    const ok = await confirm(
+      t(isDir ? "file.confirmDeleteFolder" : "file.confirmDeleteFile", { name }),
+      {
+        title: t("file.confirmDeleteTitle", { name }),
+        kind: "warning",
+        okLabel: t("file.delete"),
+      },
+    );
+    if (!ok) return;
+
+    deleteInFlightRef.current = true;
+    try {
+      await safeInvoke("delete_path", { path: targetPath, projectPath });
+      if (isCancelled()) return;
+      const sep = pathSeparator(targetPath);
+      const descendantPrefix = targetPath + sep;
+      setSelectedPath((prev) => {
+        if (!prev) return prev;
+        if (prev === targetPath) return null;
+        if (prev.startsWith(descendantPrefix)) return null;
+        return prev;
+      });
+      await refresh();
+    } catch (error) {
+      if (!isCancelled()) {
+        showToast(t("file.deleteFailed", { error: String(error) }));
+      }
+    } finally {
+      deleteInFlightRef.current = false;
+    }
+  }, [ctxMenu, isCancelled, projectPath, refresh, safeInvoke, showToast, t]);
+
   return (
     <div
       style={{
@@ -530,51 +846,104 @@ export function FileExplorer({
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {[
-              { label: t("file.openInSystemFolder"), action: "open" as const },
-              { label: t("file.copyFullPath"), withAt: false },
-              { label: t("file.copyAtFullPath"), withAt: true },
-            ].map((item) => (
-              <button
-                type="button"
-                key={item.label}
-                style={{
-                  display: "block",
-                  width: "calc(100% - 8px)",
-                  height: 26,
-                  padding: "0 10px",
-                  cursor: "pointer",
-                  color: "var(--text-primary)",
-                  whiteSpace: "nowrap",
-                  borderRadius: 3,
-                  margin: "2px 4px",
-                  transition: "background 0.1s",
-                  background: "transparent",
-                  border: "none",
-                  textAlign: "left",
-                  fontSize: 12.5,
-                  fontFamily: "var(--font-ui)",
-                  lineHeight: "26px",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--accent)";
-                  e.currentTarget.style.color = "var(--fg-on-accent)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color = "var(--text-primary)";
-                }}
-                onClick={(event) => {
-                  if (item.action === "open") {
-                    void openInSystemFolder(event, ctxMenu.path);
-                    return;
-                  }
-                  void copyPath(event, ctxMenu.path, item.withAt);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
+            {(
+              [
+                { label: t("file.newFile"), action: "newFile" },
+                { label: t("file.newFolder"), action: "newFolder" },
+                { action: "separator" },
+                { label: t("file.openInSystemFolder"), action: "open" },
+                { label: t("file.copyFullPath"), action: "copy", withAt: false },
+                { label: t("file.copyAtFullPath"), action: "copy", withAt: true },
+                ...(ctxMenu.isRoot
+                  ? []
+                  : ([
+                      { action: "separator" },
+                      { label: t("file.delete"), action: "delete", destructive: true },
+                    ] as const)),
+              ] as const
+            ).map((item, idx) => {
+              if (item.action === "separator") {
+                return (
+                  <div
+                    key={`sep-${idx}`}
+                    style={{
+                      height: 1,
+                      background: "var(--border-dim)",
+                      margin: "4px 6px",
+                    }}
+                  />
+                );
+              }
+              const isDestructive = item.action === "delete";
+              const baseColor = isDestructive
+                ? "var(--danger-action-bg, #d23f3f)"
+                : "var(--text-primary)";
+              return (
+                <button
+                  type="button"
+                  key={item.label}
+                  style={{
+                    display: "block",
+                    width: "calc(100% - 8px)",
+                    height: 26,
+                    padding: "0 10px",
+                    cursor: "pointer",
+                    color: baseColor,
+                    whiteSpace: "nowrap",
+                    borderRadius: 3,
+                    margin: "2px 4px",
+                    transition: "background 0.1s",
+                    background: "transparent",
+                    border: "none",
+                    textAlign: "left",
+                    fontSize: 12.5,
+                    fontFamily: "var(--font-ui)",
+                    lineHeight: "26px",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = isDestructive
+                      ? "var(--danger-action-bg, #d23f3f)"
+                      : "var(--accent)";
+                    e.currentTarget.style.color = isDestructive
+                      ? "var(--danger-action-fg, #ffffff)"
+                      : "var(--fg-on-accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = baseColor;
+                  }}
+                  onClick={(event) => {
+                    if (item.action === "newFile") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      startCreate("file");
+                      return;
+                    }
+                    if (item.action === "newFolder") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      startCreate("folder");
+                      return;
+                    }
+                    if (item.action === "delete") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void handleDelete();
+                      return;
+                    }
+                    if (item.action === "open") {
+                      void openInSystemFolder(event, ctxMenu.path);
+                      return;
+                    }
+                    if (item.action === "copy") {
+                      void copyPath(event, ctxMenu.path, item.withAt);
+                    }
+                  }}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -655,10 +1024,12 @@ export function FileExplorer({
       <div
         ref={scrollRef}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        onContextMenu={handleEmptyContextMenu}
         style={{ flex: 1, overflowY: "auto", position: "relative" }}
       >
         {loading ? (
           <div
+            onContextMenu={handleEmptyContextMenu}
             style={{
               padding: "16px 12px",
               fontSize: 12,
@@ -670,6 +1041,7 @@ export function FileExplorer({
           </div>
         ) : flat.length === 0 ? (
           <div
+            onContextMenu={handleEmptyContextMenu}
             style={{
               padding: "16px 12px",
               fontSize: 12,
@@ -680,27 +1052,56 @@ export function FileExplorer({
             {t("file.emptyDirectory")}
           </div>
         ) : (
-          <div style={{ height: flat.length * ROW_HEIGHT + 12, position: "relative" }}>
-            {flat.slice(startIdx, endIdx + 1).map(({ node, depth }, i) => (
+          <div
+            style={{ height: flat.length * ROW_HEIGHT + 12, position: "relative" }}
+            onContextMenu={handleEmptyContextMenu}
+          >
+            {flat.slice(startIdx, endIdx + 1).map((row, i) => {
+              if (row.kind === "input") return null;
+              const top = (startIdx + i) * ROW_HEIGHT + 2;
+              return (
+                <div
+                  key={row.node.path}
+                  style={{
+                    position: "absolute",
+                    top,
+                    width: "100%",
+                  }}
+                >
+                  <TreeItem
+                    node={row.node}
+                    depth={row.depth}
+                    selectedPath={selectedPath}
+                    contextPath={ctxMenu?.path ?? null}
+                    onSelect={handleSelect}
+                    onToggle={handleToggle}
+                    onContextMenu={handleContextMenu}
+                  />
+                </div>
+              );
+            })}
+            {creating && creatingPlacement && (
               <div
-                key={node.path}
+                key="__create_row__"
                 style={{
                   position: "absolute",
-                  top: (startIdx + i) * ROW_HEIGHT + 2,
+                  top: creatingPlacement.index * ROW_HEIGHT + 2,
                   width: "100%",
                 }}
               >
-                <TreeItem
-                  node={node}
-                  depth={depth}
-                  selectedPath={selectedPath}
-                  contextPath={ctxMenu?.path ?? null}
-                  onSelect={handleSelect}
-                  onToggle={handleToggle}
-                  onContextMenu={handleContextMenu}
+                <CreateInputRow
+                  depth={creatingPlacement.depth}
+                  kind={creatingPlacement.kind}
+                  value={creatingValue}
+                  onChange={setCreatingValue}
+                  onCommit={() => {
+                    void commitCreate();
+                  }}
+                  onCancel={cancelCreate}
+                  inputRef={inputRef}
                 />
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
