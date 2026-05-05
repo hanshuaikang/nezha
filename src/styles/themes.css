@@ -127,6 +127,7 @@
   --shadow-switch-thumb: 0 1px 2px rgba(0, 0, 0, 0.18);
   --shadow-toast: 0 4px 16px rgba(0, 0, 0, 0.24), 0 1px 4px rgba(0, 0, 0, 0.14);
   --shadow-media: 0 16px 40px rgba(0, 0, 0, 0.25);
+  --agent-badge-filter: none;
 
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -236,4 +237,5 @@ html.dark {
   --shadow-switch-thumb: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-toast: 0 4px 16px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
   --shadow-media: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --agent-badge-filter: brightness(0) invert(1) opacity(0.7);
 }
