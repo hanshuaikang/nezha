@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
-import type { TerminalFontSize } from "../types";
+import type { TerminalFontSize, FontFamily } from "../types";
 import {
   DARK_THEME,
   LIGHT_THEME,
@@ -12,6 +12,7 @@ import {
   safeFit,
   createSmartWriter,
   applyTerminalFontSize,
+  applyTerminalFontFamily,
 } from "./terminalShared";
 import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
@@ -25,6 +26,7 @@ interface TerminalViewProps {
   onReady?: (generation: number) => void;
   isDark: boolean;
   terminalFontSize: TerminalFontSize;
+  monoFontFamily: FontFamily;
   isActive?: boolean;
   initialData?: string;
   initialSnapshot?: string;
@@ -38,6 +40,7 @@ export function TerminalView({
   onReady,
   isDark,
   terminalFontSize,
+  monoFontFamily,
   isActive = true,
   initialData,
   initialSnapshot,
@@ -73,7 +76,7 @@ export function TerminalView({
     if (!containerRef.current) return;
     const container = containerRef.current;
 
-    const { term, fitAddon } = initTerminal(isDark, 1000, terminalFontSize);
+    const { term, fitAddon } = initTerminal(isDark, 1000, terminalFontSize, monoFontFamily);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
@@ -210,6 +213,12 @@ export function TerminalView({
     const size = applyTerminalFontSize(terminalRef.current, fitAddonRef.current, terminalFontSize);
     if (size) notifyResize(size.cols, size.rows);
   }, [terminalFontSize, notifyResize]);
+
+  useEffect(() => {
+    if (!terminalRef.current || !fitAddonRef.current) return;
+    const size = applyTerminalFontFamily(terminalRef.current, fitAddonRef.current, monoFontFamily);
+    if (size) notifyResize(size.cols, size.rows);
+  }, [monoFontFamily, notifyResize]);
 
   return (
     <div

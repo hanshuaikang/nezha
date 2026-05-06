@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
-import { X, Keyboard, Monitor, Info, Settings as SettingsIcon } from "lucide-react";
-import type { ThemeMode, TerminalFontSize, TaskDisplayWindow } from "../types";
+import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type } from "lucide-react";
+import type { ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -10,12 +10,14 @@ import { AgentConfigPanel } from "./app-settings/AgentConfigPanel";
 import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
+import { FontPanel } from "./app-settings/FontPanel";
 import { getAgentSettingsFilePath } from "./app-settings/shared";
 import type { AgentKey, AppSettingsNavItem, NavKey, NavSection } from "./app-settings/types";
 
 const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "general", labelKey: "appSettings.general", section: "application", icon: SettingsIcon },
   { key: "theme", labelKey: "appSettings.theme", section: "application", icon: Monitor },
+  { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
   {
     key: "claude",
@@ -70,6 +72,10 @@ export function AppSettingsDialog({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  uiFontFamily,
+  onUiFontFamilyChange,
+  monoFontFamily,
+  onMonoFontFamilyChange,
 }: {
   onClose: () => void;
   isDark: boolean;
@@ -80,6 +86,10 @@ export function AppSettingsDialog({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  uiFontFamily: FontFamily;
+  onUiFontFamilyChange: (family: FontFamily) => void;
+  monoFontFamily: FontFamily;
+  onMonoFontFamilyChange: (family: FontFamily) => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
@@ -153,8 +163,16 @@ export function AppSettingsDialog({
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={onThemeModeChange}
+            />
+          ) : activeNav === "fonts" ? (
+            <FontPanel
+              key="fonts"
               terminalFontSize={terminalFontSize}
               onTerminalFontSizeChange={onTerminalFontSizeChange}
+              uiFontFamily={uiFontFamily}
+              onUiFontFamilyChange={onUiFontFamilyChange}
+              monoFontFamily={monoFontFamily}
+              onMonoFontFamilyChange={onMonoFontFamilyChange}
             />
           ) : activeNav === "shortcuts" ? (
             <ShortcutsPanel key="shortcuts" />

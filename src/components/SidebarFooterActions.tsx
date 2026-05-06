@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
-import type { ThemeMode, TerminalFontSize, TaskDisplayWindow } from "../types";
+import type { ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
@@ -18,6 +18,10 @@ export function SidebarFooterActions({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  uiFontFamily,
+  onUiFontFamilyChange,
+  monoFontFamily,
+  onMonoFontFamilyChange,
 }: {
   isDark: boolean;
   themeMode: ThemeMode;
@@ -28,6 +32,10 @@ export function SidebarFooterActions({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  uiFontFamily: FontFamily;
+  onUiFontFamilyChange: (family: FontFamily) => void;
+  monoFontFamily: FontFamily;
+  onMonoFontFamilyChange: (family: FontFamily) => void;
 }) {
   const { t } = useI18n();
   const [showAppSettings, setShowAppSettings] = useState(false);
@@ -67,6 +75,10 @@ export function SidebarFooterActions({
           onTerminalFontSizeChange={onTerminalFontSizeChange}
           taskDisplayWindow={taskDisplayWindow}
           onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+          uiFontFamily={uiFontFamily}
+          onUiFontFamilyChange={onUiFontFamilyChange}
+          monoFontFamily={monoFontFamily}
+          onMonoFontFamilyChange={onMonoFontFamilyChange}
           onClose={() => setShowAppSettings(false)}
         />
       )}

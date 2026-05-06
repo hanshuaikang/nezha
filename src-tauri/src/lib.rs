@@ -125,6 +125,7 @@ pub fn run() {
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,
+            app_settings::get_system_fonts,
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,

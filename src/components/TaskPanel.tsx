@@ -9,7 +9,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow } from "../types";
+import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -38,6 +38,10 @@ export function TaskPanel({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  uiFontFamily,
+  onUiFontFamilyChange,
+  monoFontFamily,
+  onMonoFontFamilyChange,
   active = true,
   collapsed = false,
   onToggleCollapsed,
@@ -62,6 +66,10 @@ export function TaskPanel({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  uiFontFamily: FontFamily;
+  onUiFontFamilyChange: (family: FontFamily) => void;
+  monoFontFamily: FontFamily;
+  onMonoFontFamilyChange: (family: FontFamily) => void;
   active?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -201,6 +209,10 @@ export function TaskPanel({
           onTerminalFontSizeChange={onTerminalFontSizeChange}
           taskDisplayWindow={taskDisplayWindow}
           onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+          uiFontFamily={uiFontFamily}
+          onUiFontFamilyChange={onUiFontFamilyChange}
+          monoFontFamily={monoFontFamily}
+          onMonoFontFamilyChange={onMonoFontFamilyChange}
         />
       </div>
     </div>
