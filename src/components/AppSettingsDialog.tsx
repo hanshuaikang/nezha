@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { X, Keyboard, Monitor, Info, Settings as SettingsIcon } from "lucide-react";
-import type { ThemeMode, TerminalFontSize } from "../types";
+import type { ThemeMode, TerminalFontSize, TaskDisplayWindow } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -11,12 +11,7 @@ import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
 import { getAgentSettingsFilePath } from "./app-settings/shared";
-import type {
-  AgentKey,
-  AppSettingsNavItem,
-  NavKey,
-  NavSection,
-} from "./app-settings/types";
+import type { AgentKey, AppSettingsNavItem, NavKey, NavSection } from "./app-settings/types";
 
 const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "general", labelKey: "appSettings.general", section: "application", icon: SettingsIcon },
@@ -73,6 +68,8 @@ export function AppSettingsDialog({
   onThemeModeChange,
   terminalFontSize,
   onTerminalFontSizeChange,
+  taskDisplayWindow,
+  onTaskDisplayWindowChange,
 }: {
   onClose: () => void;
   isDark: boolean;
@@ -81,6 +78,8 @@ export function AppSettingsDialog({
   onThemeModeChange: (mode: ThemeMode) => void;
   terminalFontSize: TerminalFontSize;
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
+  taskDisplayWindow: TaskDisplayWindow;
+  onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
@@ -118,8 +117,7 @@ export function AppSettingsDialog({
                   style={{
                     ...s.settingsNavItem,
                     background: activeNav === item.key ? "var(--bg-hover)" : "none",
-                    color:
-                      activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
+                    color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
                     fontWeight: activeNav === item.key ? 600 : 500,
                   }}
                   onClick={() => setActiveNav(item.key)}
@@ -144,7 +142,11 @@ export function AppSettingsDialog({
           </div>
 
           {activeNav === "general" ? (
-            <GeneralPanel key="general" />
+            <GeneralPanel
+              key="general"
+              taskDisplayWindow={taskDisplayWindow}
+              onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+            />
           ) : activeNav === "theme" ? (
             <ThemePanel
               key="theme"

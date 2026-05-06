@@ -7,6 +7,7 @@ import type {
   TaskStatus,
   ThemeMode,
   TerminalFontSize,
+  TaskDisplayWindow,
 } from "../types";
 import { TaskPanel } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
@@ -61,6 +62,8 @@ export function ProjectPage({
   onToggleTheme,
   terminalFontSize,
   onTerminalFontSizeChange,
+  taskDisplayWindow,
+  onTaskDisplayWindowChange,
 }: {
   project: Project;
   visible?: boolean;
@@ -109,6 +112,8 @@ export function ProjectPage({
   onToggleTheme: () => void;
   terminalFontSize: TerminalFontSize;
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
+  taskDisplayWindow: TaskDisplayWindow;
+  onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
 }) {
   const {
     rightPanel,
@@ -245,6 +250,8 @@ export function ProjectPage({
         onToggleTheme={onToggleTheme}
         terminalFontSize={terminalFontSize}
         onTerminalFontSizeChange={onTerminalFontSizeChange}
+        taskDisplayWindow={taskDisplayWindow}
+        onTaskDisplayWindowChange={onTaskDisplayWindowChange}
         active={visible}
         collapsed={taskPanelCollapsed}
         onToggleCollapsed={() => setTaskPanelCollapsed((v) => !v)}

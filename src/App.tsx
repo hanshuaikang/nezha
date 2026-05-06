@@ -11,8 +11,15 @@ import type {
   PermissionMode,
   ThemeMode,
   TerminalFontSize,
+  TaskDisplayWindow,
 } from "./types";
-import { isActiveTaskStatus, DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "./types";
+import {
+  isActiveTaskStatus,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  clampTerminalFontSize,
+  DEFAULT_TASK_DISPLAY_WINDOW,
+  normalizeTaskDisplayWindow,
+} from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
@@ -80,6 +87,11 @@ function getInitialTerminalFontSize(): TerminalFontSize {
   return Number.isFinite(parsed) ? clampTerminalFontSize(parsed) : DEFAULT_TERMINAL_FONT_SIZE;
 }
 
+function getInitialTaskDisplayWindow(): TaskDisplayWindow {
+  const stored = localStorage.getItem("nezha:taskDisplayWindow");
+  return stored == null ? DEFAULT_TASK_DISPLAY_WINDOW : normalizeTaskDisplayWindow(stored);
+}
+
 function App() {
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -89,6 +101,9 @@ function App() {
   const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
   const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
     getInitialTerminalFontSize,
+  );
+  const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(
+    getInitialTaskDisplayWindow,
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -160,6 +175,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("nezha:terminalFontSize", String(terminalFontSize));
   }, [terminalFontSize]);
+
+  useEffect(() => {
+    localStorage.setItem("nezha:taskDisplayWindow", String(taskDisplayWindow));
+  }, [taskDisplayWindow]);
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
@@ -619,6 +638,8 @@ function App() {
               onToggleTheme={handleToggleTheme}
               terminalFontSize={terminalFontSize}
               onTerminalFontSizeChange={setTerminalFontSize}
+              taskDisplayWindow={taskDisplayWindow}
+              onTaskDisplayWindowChange={setTaskDisplayWindow}
             />
           );
         })}
@@ -643,6 +664,8 @@ function App() {
             onToggleTheme={handleToggleTheme}
             terminalFontSize={terminalFontSize}
             onTerminalFontSizeChange={setTerminalFontSize}
+            taskDisplayWindow={taskDisplayWindow}
+            onTaskDisplayWindowChange={setTaskDisplayWindow}
           />
         </div>
       )}
