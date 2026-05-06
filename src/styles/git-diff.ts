@@ -170,4 +170,31 @@ export const gitDiff = {
     fontSize: 12,
     fontFamily: "var(--font-mono)",
   },
+
+  // ── GitChanges discard controls ───────────────────────────────────────────
+  gitChangesHeaderIconBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: 4,
+    borderRadius: 4,
+    color: "var(--text-hint)",
+    display: "flex",
+    alignItems: "center",
+  },
+  gitChangesHeaderIconBtnDisabled: {
+    cursor: "default",
+    opacity: 0.4,
+  },
+  gitChangesRowDiscardBtn: {
+    flexShrink: 0,
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-dim)",
+    borderRadius: 4,
+    padding: "2px 5px",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+  },
 } satisfies Record<string, React.CSSProperties>;

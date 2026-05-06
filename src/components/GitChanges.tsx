@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RefreshCw, Filter, GitCommit, Sparkles, ChevronRight, ChevronDown } from "lucide-react";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import {
+  RefreshCw,
+  Filter,
+  GitCommit,
+  Sparkles,
+  ChevronRight,
+  ChevronDown,
+  Undo2,
+} from "lucide-react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
+import s from "../styles";
 import { getGitStatusColor, getGitStatusLabel } from "../utils";
 import { useI18n } from "../i18n";
 
@@ -47,9 +57,9 @@ export function GitChanges({
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { clearError?: boolean }) => {
     setLoading(true);
-    setError(null);
+    if (options?.clearError !== false) setError(null);
     try {
       const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath });
       if (result === null) return; // Component unmounted
@@ -108,6 +118,50 @@ export function GitChanges({
       refresh();
     } catch (err) {
       setError(String(err));
+    }
+  };
+
+  const handleDiscardFile = async (c: GitFileChange, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const untracked = c.status === "?";
+    const name = fileName(c.path);
+    const ok = await confirm(
+      t(untracked ? "git.confirmDiscardUntracked" : "git.confirmDiscardTracked", { name }),
+      {
+        title: t("git.confirmDiscardTitle", { name }),
+        kind: "warning",
+        okLabel: t("git.discard"),
+      },
+    );
+    if (!ok) return;
+    try {
+      setError(null);
+      await invoke("git_discard_file", {
+        projectPath,
+        filePath: c.path,
+        untracked,
+      });
+    } catch (err) {
+      setError(t("git.discardFailed", { error: String(err) }));
+    } finally {
+      await refresh({ clearError: false });
+    }
+  };
+
+  const handleDiscardAll = async () => {
+    const ok = await confirm(t("git.confirmDiscardAll"), {
+      title: t("git.confirmDiscardAllTitle"),
+      kind: "warning",
+      okLabel: t("git.discardAll"),
+    });
+    if (!ok) return;
+    try {
+      setError(null);
+      await invoke("git_discard_all", { projectPath });
+    } catch (err) {
+      setError(t("git.discardFailed", { error: String(err) }));
+    } finally {
+      await refresh({ clearError: false });
     }
   };
 
@@ -176,7 +230,7 @@ export function GitChanges({
           {t("git.changes")}
         </span>
         <button
-          onClick={refresh}
+          onClick={() => refresh()}
           title={t("common.refresh")}
           style={{
             background: "none",
@@ -190,6 +244,18 @@ export function GitChanges({
           }}
         >
           <RefreshCw size={13} className={loading ? "spin" : ""} />
+        </button>
+        <button
+          onClick={handleDiscardAll}
+          disabled={allChanges.length === 0}
+          title={t("git.discardAll")}
+          style={
+            allChanges.length === 0
+              ? { ...s.gitChangesHeaderIconBtn, ...s.gitChangesHeaderIconBtnDisabled }
+              : s.gitChangesHeaderIconBtn
+          }
+        >
+          <Undo2 size={13} />
         </button>
         <button
           title={t("git.filter")}
@@ -331,6 +397,7 @@ export function GitChanges({
                           onFileSelect(c.path, false, `${fileName(c.path)} (unstaged)`)
                         }
                         onToggle={(e) => handleStageToggle(c, e)}
+                        onDiscard={(e) => handleDiscardFile(c, e)}
                       />
                     ))}
                   </>
@@ -356,6 +423,7 @@ export function GitChanges({
                   change={c}
                   onFileClick={() => onFileSelect(c.path, false, `${fileName(c.path)} (untracked)`)}
                   onToggle={(e) => handleStageToggle(c, e)}
+                  onDiscard={(e) => handleDiscardFile(c, e)}
                 />
               ))}
           </>
@@ -583,10 +651,12 @@ function FileRow({
   change,
   onFileClick,
   onToggle,
+  onDiscard,
 }: {
   change: GitFileChange;
   onFileClick: () => void;
   onToggle: (e: React.MouseEvent) => void;
+  onDiscard?: (e: React.MouseEvent) => void;
 }) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
@@ -639,24 +709,31 @@ function FileRow({
         )}
       </span>
 
-      {/* Stage/unstage toggle on hover */}
+      {/* Discard + stage/unstage on hover */}
       {hovered && (
-        <button
-          onClick={onToggle}
-          title={change.staged ? t("git.unstage") : t("git.stage")}
-          style={{
-            flexShrink: 0,
-            background: "var(--bg-card)",
-            border: "1px solid var(--border-dim)",
-            borderRadius: 4,
-            fontSize: 10,
-            padding: "2px 6px",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-          }}
-        >
-          {change.staged ? "−" : "+"}
-        </button>
+        <>
+          {onDiscard && (
+            <button onClick={onDiscard} title={t("git.discard")} style={s.gitChangesRowDiscardBtn}>
+              <Undo2 size={11} />
+            </button>
+          )}
+          <button
+            onClick={onToggle}
+            title={change.staged ? t("git.unstage") : t("git.stage")}
+            style={{
+              flexShrink: 0,
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-dim)",
+              borderRadius: 4,
+              fontSize: 10,
+              padding: "2px 6px",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            {change.staged ? "−" : "+"}
+          </button>
+        </>
       )}
     </div>
   );
