@@ -9,6 +9,18 @@ export interface Project {
 export type AgentType = "claude" | "codex";
 export type ThemeMode = "system" | "dark" | "light";
 export type PermissionMode = "ask" | "auto_edit" | "full_access";
+export type TaskDisplayWindow = 3 | 7 | 15 | 30 | "all";
+
+export const TASK_DISPLAY_WINDOW_VALUES = [3, 7, 15, 30, "all"] as const;
+export const DEFAULT_TASK_DISPLAY_WINDOW: TaskDisplayWindow = 3;
+
+export function normalizeTaskDisplayWindow(value: unknown): TaskDisplayWindow {
+  if (value === "all") return "all";
+  const parsed = typeof value === "number" ? value : Number(value);
+  return TASK_DISPLAY_WINDOW_VALUES.includes(parsed as TaskDisplayWindow)
+    ? (parsed as TaskDisplayWindow)
+    : DEFAULT_TASK_DISPLAY_WINDOW;
+}
 
 export type TerminalFontSize = number;
 

@@ -25,6 +25,11 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.language": "Language",
     "appSettings.appLanguage": "App Language",
     "appSettings.languageHint": "Controls the language used by the Nezha interface.",
+    "appSettings.taskDisplayWindow": "Task History",
+    "appSettings.taskDisplayWindowHint":
+      "Controls how far back regular tasks appear in the task list. Starred, todo, and attention-needed tasks are always shown.",
+    "appSettings.taskDisplayRecentDays": "Recent {days} days",
+    "appSettings.taskDisplayAll": "All tasks",
     "appSettings.agentPaths": "Agent Installation Paths",
     "appSettings.installation": "Installation",
     "appSettings.configFile": "Configuration File",
@@ -338,6 +343,11 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.language": "语言",
     "appSettings.appLanguage": "应用语言",
     "appSettings.languageHint": "控制 Nezha 界面的显示语言。",
+    "appSettings.taskDisplayWindow": "任务展示范围",
+    "appSettings.taskDisplayWindowHint":
+      "控制任务列表中普通任务的展示时间范围。收藏、待办和需要注意的任务始终显示。",
+    "appSettings.taskDisplayRecentDays": "最近 {days} 天",
+    "appSettings.taskDisplayAll": "所有任务",
     "appSettings.agentPaths": "智能体安装路径",
     "appSettings.installation": "安装",
     "appSettings.configFile": "配置文件",

@@ -9,7 +9,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode, TerminalFontSize } from "../types";
+import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -36,6 +36,8 @@ export function TaskPanel({
   onToggleTheme,
   terminalFontSize,
   onTerminalFontSizeChange,
+  taskDisplayWindow,
+  onTaskDisplayWindowChange,
   active = true,
   collapsed = false,
   onToggleCollapsed,
@@ -58,6 +60,8 @@ export function TaskPanel({
   onToggleTheme: () => void;
   terminalFontSize: TerminalFontSize;
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
+  taskDisplayWindow: TaskDisplayWindow;
+  onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   active?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -177,6 +181,7 @@ export function TaskPanel({
       {/* Task list */}
       <TaskList
         tasks={tasks}
+        taskDisplayWindow={taskDisplayWindow}
         query={query}
         selectedId={selectedId}
         isNewTask={isNewTask}
@@ -194,6 +199,8 @@ export function TaskPanel({
           onToggleTheme={onToggleTheme}
           terminalFontSize={terminalFontSize}
           onTerminalFontSizeChange={onTerminalFontSizeChange}
+          taskDisplayWindow={taskDisplayWindow}
+          onTaskDisplayWindowChange={onTaskDisplayWindowChange}
         />
       </div>
     </div>
