@@ -64,7 +64,6 @@ fn finalize_task_exit(
     {
         let tm = app.state::<TaskManager>();
         tm.remove_pty_handles(task_id);
-
         let codex_info = tm.codex_sessions.lock().remove(task_id);
         let codex_path = codex_info.map(|info| info.session_path);
         let claude_info = tm.claude_sessions.lock().remove(task_id);
@@ -665,9 +664,7 @@ pub async fn send_input(
 ) -> Result<(), String> {
     let mut writers = task_manager.pty_writers.lock();
     if let Some(writer) = writers.get_mut(&task_id) {
-        writer
-            .write_all(data.as_bytes())
-            .map_err(|e| e.to_string())?;
+        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())?;
     }
     Ok(())

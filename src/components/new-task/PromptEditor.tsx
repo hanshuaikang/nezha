@@ -291,13 +291,13 @@ export function PromptEditor({
   function handleInput() {
     const editor = editorRef.current;
     if (!editor) return;
+    // Skip processing during IME composition to prevent duplicate text on Linux WebKitGTK
+    if (isComposingRef.current) return;
     const text = editor.textContent || "";
     const hasChips = !!editor.querySelector("[data-file-path]");
     onSetIsEmpty(!text.trim() && !hasChips);
     captureContent();
-    if (!isComposingRef.current) {
-      onUpdateMention();
-    }
+    onUpdateMention();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
@@ -398,10 +398,19 @@ export function PromptEditor({
         onPaste={handlePaste}
         onSelect={updateMentionState}
         onCompositionStart={() => {
+          console.log("[IME-DEBUG] PromptEditor compositionstart");
           isComposingRef.current = true;
         }}
         onCompositionEnd={() => {
           isComposingRef.current = false;
+          // Capture the final composed text after IME composition completes
+          const editor = editorRef.current;
+          if (editor) {
+            const text = editor.textContent || "";
+            const hasChips = !!editor.querySelector("[data-file-path]");
+            onSetIsEmpty(!text.trim() && !hasChips);
+          }
+          captureContent();
           onUpdateMention();
         }}
         style={
