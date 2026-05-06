@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import * as RadixSelect from "@radix-ui/react-select";
 import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
 import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
 import { useI18n } from "../i18n";
@@ -29,7 +30,6 @@ const NAV_ITEMS: Array<{ key: NavKey; label: string }> = [
   { key: "project", label: "settings.projectSettings" },
 ];
 
-// Custom select dropdown component
 function Select({
   value,
   onChange,
@@ -40,81 +40,40 @@ function Select({
   options: Array<{ value: string; label: string }>;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
   const current = options.find((o) => o.value === value);
 
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-block", width: "100%" }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          padding: "8px 10px",
-          background: "var(--bg-input)",
-          border: "1px solid var(--border-medium)",
-          borderRadius: 8,
-          color: "var(--text-primary)",
-          fontSize: 13,
-          fontFamily: "var(--font-ui)",
-          cursor: "pointer",
-          textAlign: "left",
-        }}
-      >
-        <span>{current?.label ?? value}</span>
-        <ChevronDown
-          size={13}
-          style={{
-            flexShrink: 0,
-            color: "var(--text-hint)",
-            transform: open ? "rotate(180deg)" : "none",
-            transition: "transform 0.15s",
-          }}
-        />
-      </button>
-      {open && (
-        <div
-          style={{ ...s.dropdownPanel, top: "calc(100% + 4px)", minWidth: "100%", zIndex: 2000 }}
-        >
-          {options.map((opt) => (
-            <div
-              key={opt.value}
-              style={{
-                ...s.dropdownOption,
-                background: opt.value === value ? "var(--accent-subtle)" : "transparent",
-                color: "var(--text-primary)",
-                fontSize: 13,
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onChange(opt.value);
-                setOpen(false);
-              }}
-            >
-              <span style={{ flex: 1 }}>{opt.label}</span>
-              {opt.value === value && (
-                <Check size={13} style={{ color: "var(--accent)", flexShrink: 0 }} />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <RadixSelect.Root value={value} onValueChange={onChange} open={open} onOpenChange={setOpen}>
+      <RadixSelect.Trigger aria-label={current?.label ?? value} style={s.settingsSelectTrigger}>
+        <RadixSelect.Value>{current?.label ?? value}</RadixSelect.Value>
+        <RadixSelect.Icon asChild>
+          <ChevronDown size={13} style={open ? s.settingsSelectIconOpen : s.settingsSelectIcon} />
+        </RadixSelect.Icon>
+      </RadixSelect.Trigger>
+      <RadixSelect.Portal>
+        <RadixSelect.Content position="popper" sideOffset={4} style={s.settingsSelectContent}>
+          <RadixSelect.Viewport style={s.settingsSelectViewport}>
+            {options.map((opt) => {
+              const selected = opt.value === value;
+
+              return (
+                <RadixSelect.Item
+                  key={opt.value}
+                  value={opt.value}
+                  className="radix-select-item"
+                  style={selected ? s.settingsSelectOptionSelected : s.settingsSelectOption}
+                >
+                  <RadixSelect.ItemText>{opt.label}</RadixSelect.ItemText>
+                  <RadixSelect.ItemIndicator style={s.settingsSelectIndicator}>
+                    <Check size={13} style={s.settingsSelectCheck} />
+                  </RadixSelect.ItemIndicator>
+                </RadixSelect.Item>
+              );
+            })}
+          </RadixSelect.Viewport>
+        </RadixSelect.Content>
+      </RadixSelect.Portal>
+    </RadixSelect.Root>
   );
 }
 
