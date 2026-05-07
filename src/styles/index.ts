@@ -2,6 +2,7 @@ import type React from "react";
 
 import { common } from "./common";
 import { dialogs } from "./dialogs";
+import { font } from "./font";
 import { gitDiff } from "./git-diff";
 import { layout } from "./layout";
 import { panels } from "./panels";
@@ -16,8 +17,9 @@ const s = {
   ...task,
   ...gitDiff,
   ...common,
+  ...font,
 } satisfies Record<string, React.CSSProperties>;
 
 export default s;
 
-export { common, dialogs, gitDiff, layout, panels, task, terminal };
+export { common, dialogs, font, gitDiff, layout, panels, task, terminal };

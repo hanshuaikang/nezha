@@ -1,12 +1,6 @@
 import type React from "react";
 import { Check, Monitor } from "lucide-react";
-import type { ThemeMode, TerminalFontSize } from "../../types";
-import {
-  TERMINAL_FONT_SIZE_MIN,
-  TERMINAL_FONT_SIZE_MAX,
-  TERMINAL_FONT_SIZE_STEP,
-  clampTerminalFontSize,
-} from "../../types";
+import type { ThemeMode } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
 
@@ -14,16 +8,12 @@ interface ThemePanelProps {
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
-  terminalFontSize: TerminalFontSize;
-  onTerminalFontSizeChange: (size: TerminalFontSize) => void;
 }
 
 export function ThemePanel({
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
-  terminalFontSize,
-  onTerminalFontSizeChange,
 }: ThemePanelProps) {
   const { t } = useI18n();
   const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
@@ -36,12 +26,6 @@ export function ThemePanel({
 
   function handleSystemThemeToggle() {
     onThemeModeChange(themeMode === "system" ? "light" : "system");
-  }
-
-  function handleTerminalFontSizeStep(direction: 1 | -1) {
-    onTerminalFontSizeChange(
-      clampTerminalFontSize(terminalFontSize + direction * TERMINAL_FONT_SIZE_STEP),
-    );
   }
 
   function handleManualThemeKeyDown(
@@ -454,90 +438,6 @@ export function ThemePanel({
             previewBorder: "rgba(23,27,36,0.08)",
             previewAccent: "#171b24",
           })}
-        </div>
-      </div>
-
-      {/* Terminal Font Size */}
-      <div
-        style={{
-          padding: "16px 18px",
-          borderRadius: 8,
-          border: "1px solid var(--border-dim)",
-          background: "var(--bg-subtle)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-              {t("theme.terminalFontSize")}
-            </span>
-            <span style={{ fontSize: 11.5, color: "var(--text-hint)", lineHeight: 1.45 }}>
-              {t("theme.terminalFontSizeHint")}
-            </span>
-          </div>
-          <div
-            style={{
-              flexShrink: 0,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              color: "var(--text-secondary)",
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-            }}
-          >
-            <input
-              type="number"
-              min={TERMINAL_FONT_SIZE_MIN}
-              max={TERMINAL_FONT_SIZE_MAX}
-              step={TERMINAL_FONT_SIZE_STEP}
-              value={terminalFontSize}
-              onChange={(e) => {
-                const next = Number(e.target.value);
-                if (Number.isFinite(next)) {
-                  onTerminalFontSizeChange(clampTerminalFontSize(next));
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  handleTerminalFontSizeStep(1);
-                  return;
-                }
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  handleTerminalFontSizeStep(-1);
-                  return;
-                }
-                if (e.key !== "Tab") {
-                  e.preventDefault();
-                }
-              }}
-              onPaste={(e) => e.preventDefault()}
-              style={{
-                width: 54,
-                height: 28,
-                padding: "0 6px",
-                borderRadius: 6,
-                border: "1px solid var(--border-medium)",
-                background: "var(--bg-card)",
-                color: "var(--text-secondary)",
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: "var(--font-mono)",
-                textAlign: "center",
-                outline: "none",
-              }}
-            />
-            <span style={{ color: "var(--text-hint)" }}>px</span>
-          </div>
         </div>
       </div>
     </div>

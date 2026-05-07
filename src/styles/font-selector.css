@@ -1,0 +1,76 @@
+.font-selector-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  z-index: 2000;
+  width: var(--radix-popover-trigger-width);
+  overflow: hidden;
+}
+.font-selector-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-dim);
+}
+.font-selector-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+}
+.font-selector-search-input::placeholder {
+  color: var(--text-hint);
+}
+.font-selector-clear {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--text-hint);
+  border-radius: 4px;
+}
+.font-selector-clear:hover {
+  color: var(--text-muted);
+}
+.font-selector-list {
+  padding: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.font-selector-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+}
+.font-selector-item:hover {
+  background: var(--bg-hover);
+}
+.font-selector-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.font-selector-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--text-hint);
+  text-align: center;
+}

@@ -133,12 +133,13 @@ export function initTerminal(
   isDark: boolean,
   scrollback = 1000,
   fontSize = 12,
+  fontFamily = "monospace",
 ): InitTerminalResult {
   const term = new Terminal({
     convertEol: false,
     scrollback,
     cursorBlink: true,
-    fontFamily: "monospace",
+    fontFamily,
     fontSize,
     theme: isDark ? DARK_THEME : LIGHT_THEME,
     allowProposedApi: true,
@@ -194,5 +195,15 @@ export function applyTerminalFontSize(
 ): { cols: number; rows: number } | null {
   if (term.options.fontSize === fontSize) return null;
   term.options.fontSize = fontSize;
+  return safeFit(fitAddon, term);
+}
+
+export function applyTerminalFontFamily(
+  term: Terminal,
+  fitAddon: FitAddon,
+  fontFamily: string,
+): { cols: number; rows: number } | null {
+  if (term.options.fontFamily === fontFamily) return null;
+  term.options.fontFamily = fontFamily;
   return safeFit(fitAddon, term);
 }
