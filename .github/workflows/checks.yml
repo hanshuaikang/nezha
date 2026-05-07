@@ -31,6 +31,13 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.1 --locked
+
+      - name: Run cargo audit
+        working-directory: src-tauri
+        run: cargo audit
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
