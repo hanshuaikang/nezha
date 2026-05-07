@@ -478,6 +478,55 @@ function App() {
     });
   }
 
+  async function handleGenerateTaskName(taskId: string) {
+    const task = tasks.find((x) => x.id === taskId);
+    if (!task) return;
+    const project = projects.find((p) => p.id === task.projectId);
+    if (!project) return;
+    // 按 agent 选择对应字段，避免历史数据两个字段都有时取错
+    const sessionPath =
+      task.agent === "codex"
+        ? (task.codexSessionPath ?? null)
+        : (task.claudeSessionPath ?? null);
+    // 点击瞬间的快照，用于 await 完成后的并发校验（防止用户期间 rerun/resume/手改名）
+    const expectedPriorName = task.name ?? "";
+    const expectedPrompt = task.prompt;
+    const expectedStatus = task.status;
+    const expectedSessionPath = sessionPath;
+    try {
+      const name = await invoke<string>("generate_task_name", {
+        projectPath: project.path,
+        agent: task.agent,
+        sessionPath,
+        originalPrompt: task.prompt,
+      });
+      const trimmed = name.trim();
+      if (!trimmed) return;
+
+      // await 期间用户可能删除任务、改名、重跑、resume 进新 session → 用 setTasks callback
+      // 拿到当前 state 重新校验，任一条件失配就跳过 rename，避免用过期结果覆盖用户操作
+      let shouldRename = false;
+      setTasks((prev) => {
+        const current = prev.find((x) => x.id === taskId);
+        if (!current) return prev;
+        if ((current.name ?? "") !== expectedPriorName) return prev;
+        if (current.prompt !== expectedPrompt) return prev;
+        if (current.status !== expectedStatus) return prev;
+        const currentSessionPath =
+          current.agent === "codex"
+            ? (current.codexSessionPath ?? null)
+            : (current.claudeSessionPath ?? null);
+        if (currentSessionPath !== expectedSessionPath) return prev;
+        shouldRename = true;
+        return prev;
+      });
+      if (shouldRename) handleRenameTask(taskId, trimmed);
+    } catch (e) {
+      showToast(t("task.generateNameFailed", { error: String(e) }), "error");
+      throw e;
+    }
+  }
+
   function handleUpdateTodo(
     taskId: string,
     updates: { prompt: string; agent: AgentType; permissionMode: PermissionMode },
@@ -618,6 +667,7 @@ function App() {
               onDeleteAllTasks={() => handleDeleteAllTasks(project)}
               onToggleTaskStar={handleToggleTaskStar}
               onRenameTask={handleRenameTask}
+              onGenerateTaskName={handleGenerateTaskName}
               onSubmitTask={(taskInput) => handleSubmitTask(project, taskInput)}
               onRunTodoTask={handleRunTodoTask}
               onUpdateTodo={handleUpdateTodo}

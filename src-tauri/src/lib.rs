@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use usage::CodexRpcClient;
 
+mod agent_assist;
 mod analytics;
 mod app_settings;
 mod config;
@@ -86,6 +87,7 @@ pub fn run() {
             fs::delete_path,
             fs::list_project_files,
             git::generate_commit_message,
+            agent_assist::generate_task_name,
             git::git_status,
             git::git_list_branches,
             git::git_create_branch,

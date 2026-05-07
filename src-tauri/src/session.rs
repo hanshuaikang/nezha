@@ -887,6 +887,207 @@ fn parse_codex_session(lines: &[&str]) -> Vec<SessionMessage> {
     messages
 }
 
+// ── 会话摘要提取（供任务命名等上下文感知功能复用） ─────────────────────────────
+
+/// 摘要提取允许读取的最大会话文件尺寸。超过该值直接返回 None，
+/// 防止 100MB+ 长会话把整文件载入内存。
+const MAX_SESSION_BYTES_FOR_SUMMARY: u64 = 50 * 1024 * 1024;
+
+/// 摘要提取允许处理的最大行数。超过后只取头/尾各 `MAX_SESSION_LINES_FOR_SUMMARY / 2` 行，
+/// 中间整段丢弃，避免 50MB 文件×几 MB JSON 行导致解析阶段峰值内存爆炸。
+const MAX_SESSION_LINES_FOR_SUMMARY: usize = 20_000;
+
+/// 校验前端传入的 session_path 是否合法：
+/// - 必须绝对路径且文件存在
+/// - canonicalize 后必须位于该 agent 允许的 session 根目录之内
+///   （Claude: `~/.claude/projects/<encoded-project>/`；
+///    Codex: `<project_path>/.codex/sessions/` 或 `~/.codex/sessions/`）
+///
+/// 这一关把死路径遍历——任意 `*.jsonl` 文件都不能被读取。
+pub(crate) fn validate_session_path(
+    session_path: &str,
+    project_path: &str,
+    is_codex: bool,
+) -> Result<PathBuf, String> {
+    let path = Path::new(session_path);
+    if !path.is_absolute() {
+        return Err("Session path must be absolute".into());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve session path: {}", e))?;
+    if !canonical.is_file() {
+        return Err("Session path is not a regular file".into());
+    }
+
+    let allowed_roots: Vec<PathBuf> = if is_codex {
+        codex_sessions_roots(project_path)
+            .into_iter()
+            .filter_map(|p| p.canonicalize().ok())
+            .collect()
+    } else {
+        claude_sessions_dir_for_project(project_path)
+            .and_then(|p| p.canonicalize().ok())
+            .into_iter()
+            .collect()
+    };
+
+    if allowed_roots.is_empty() {
+        return Err("No allowed session roots are available for this agent".into());
+    }
+    if allowed_roots
+        .iter()
+        .any(|root| canonical.starts_with(root))
+    {
+        Ok(canonical)
+    } else {
+        Err(format!(
+            "Session path is outside allowed session roots: {}",
+            canonical.display()
+        ))
+    }
+}
+
+/// 读取并解析会话 JSONL，输出一段紧凑的纯文本摘要供 LLM 二次处理。
+/// 超出 `budget_bytes` 时按"头 + 中间省略 + 尾"裁剪。
+/// 当文件超过 `MAX_SESSION_BYTES_FOR_SUMMARY` 时返回 `None`，由调用方回退到仅 prompt 模式。
+pub(crate) fn extract_session_summary_text(
+    session_path: &str,
+    budget_bytes: usize,
+) -> Option<String> {
+    let metadata = std::fs::metadata(session_path).ok()?;
+    if metadata.len() > MAX_SESSION_BYTES_FOR_SUMMARY {
+        return None;
+    }
+
+    // 使用 BufReader 流式读取；hard cap 行数，超过则丢弃中间段（仅留首尾各一半）。
+    use std::io::BufRead;
+    let file = File::open(session_path).ok()?;
+    let reader = BufReader::new(file);
+    let mut head: Vec<String> = Vec::new();
+    let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let half = MAX_SESSION_LINES_FOR_SUMMARY / 2;
+    for line in reader
+        .lines()
+        .map_while(Result::ok)
+        .filter(|l| !l.trim().is_empty())
+    {
+        if head.len() < half {
+            head.push(line);
+        } else {
+            tail.push_back(line);
+            if tail.len() > half {
+                tail.pop_front();
+            }
+        }
+    }
+    head.extend(tail);
+    let lines = head;
+    let line_refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+
+    let messages = if is_codex_format(&line_refs) {
+        parse_codex_session(&line_refs)
+    } else {
+        parse_claude_session(&line_refs)
+    };
+
+    let formatted: Vec<String> = messages
+        .iter()
+        .filter_map(format_message_for_summary)
+        .collect();
+    if formatted.is_empty() {
+        return None;
+    }
+
+    let total: usize = formatted.iter().map(|s| s.len() + 1).sum();
+    if total <= budget_bytes {
+        return Some(formatted.join("\n"));
+    }
+
+    // 头 + 尾切片
+    let half = budget_bytes / 2;
+    let mut head_msgs: Vec<&str> = Vec::new();
+    let mut head_size = 0usize;
+    for msg in &formatted {
+        if head_size + msg.len() + 1 > half {
+            break;
+        }
+        head_size += msg.len() + 1;
+        head_msgs.push(msg.as_str());
+    }
+
+    let mut tail_msgs: Vec<&str> = Vec::new();
+    let mut tail_size = 0usize;
+    let head_count = head_msgs.len();
+    for msg in formatted.iter().rev() {
+        if tail_msgs.len() + head_count >= formatted.len() {
+            break;
+        }
+        if tail_size + msg.len() + 1 > half {
+            break;
+        }
+        tail_size += msg.len() + 1;
+        tail_msgs.push(msg.as_str());
+    }
+    tail_msgs.reverse();
+
+    let omitted = formatted.len() - head_count - tail_msgs.len();
+    let head_text = head_msgs.join("\n");
+    let tail_text = tail_msgs.join("\n");
+    if omitted == 0 {
+        Some(format!("{}\n{}", head_text, tail_text))
+    } else {
+        Some(format!(
+            "{}\n... [{} messages omitted] ...\n{}",
+            head_text, omitted, tail_text
+        ))
+    }
+}
+
+/// 仅保留 user / assistant 的纯文本块。tool_use 和 thinking 都丢弃：
+/// - tool_use：长任务里能凑出几十上百次 Read/Bash，很容易把预算挤爆，
+///             把真正有信号的对话文本挤到尾部裁剪窗口外。
+/// - thinking：不属于"实际成果"，模型自言自语对命名无价值。
+/// - tool_result：上游 parse_codex_session / parse_claude_session 已不会输出。
+fn format_message_for_summary(msg: &SessionMessage) -> Option<String> {
+    let role = match msg.role.as_str() {
+        "user" => "[user]",
+        "assistant" => "[assistant]",
+        _ => return None,
+    };
+
+    let mut parts: Vec<String> = Vec::new();
+    for block in &msg.content {
+        if let SessionContent::Text { text } = block {
+            let cleaned = truncate_summary_chars(text, 400);
+            if !cleaned.is_empty() {
+                parts.push(cleaned);
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!("{} {}", role, parts.join(" ")))
+}
+
+fn truncate_summary_chars(s: &str, max_chars: usize) -> String {
+    let collapsed: String = s
+        .replace(['\r', '\n'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let trimmed = collapsed.trim();
+    let count = trimmed.chars().count();
+    if count <= max_chars {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
 // ── 会话文件工具函数 ──────────────────────────────────────────────────────────
 
 /// Strip ANSI escape sequences so we can do plain-text matching.

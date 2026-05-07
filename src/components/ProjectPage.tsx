@@ -42,6 +42,7 @@ export function ProjectPage({
   onDeleteAllTasks,
   onToggleTaskStar,
   onRenameTask,
+  onGenerateTaskName,
   onSubmitTask,
   onRunTodoTask,
   onUpdateTodo,
@@ -80,6 +81,7 @@ export function ProjectPage({
   onDeleteAllTasks: () => void;
   onToggleTaskStar: (id: string) => void;
   onRenameTask: (id: string, name: string) => void;
+  onGenerateTaskName: (id: string) => Promise<void>;
   onSubmitTask: (t: {
     prompt: string;
     agent: AgentType;
@@ -377,6 +379,7 @@ export function ProjectPage({
                   onSnapshot={(snapshot) => onSnapshot(task.id, snapshot)}
                   getRestoreState={() => getTaskRestoreState(task.id)}
                   onRename={(name) => onRenameTask(task.id, name)}
+                  onGenerateName={() => onGenerateTaskName(task.id)}
                   isDark={isDark}
                   terminalFontSize={terminalFontSize}
                 />
