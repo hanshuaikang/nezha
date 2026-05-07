@@ -54,40 +54,6 @@ export function FontPanel({
 
   return (
     <div style={s.fontPanel}>
-      {/* Font Preview */}
-      <div style={s.fontPreviewSection}>
-        <span style={s.fontPreviewLabel}>
-          {t("font.preview")}
-        </span>
-        <div style={s.fontPreviewInner}>
-          <span style={{ ...s.fontPreviewText, fontFamily: pendingUiFont }}>
-            一只敏捷的棕色狐狸跳过一只懒惰的狗。
-          </span>
-          <span style={{ ...s.fontPreviewText, fontFamily: pendingUiFont }}>
-            The quick brown fox jumps over the lazy dog.
-          </span>
-          <span style={{ ...s.fontPreviewText, fontFamily: pendingUiFont }}>
-            0123456789 !@#$%^&*()_+-={"{}"}[]|:;"&#39;&lt;&gt;,.?/
-          </span>
-          <div style={s.fontPreviewDivider} />
-          <span
-            style={{ ...s.fontPreviewCode, fontFamily: pendingMonoFont, fontSize: pendingFontSize }}
-          >
-            {"$ const msg = \"hello world\";"}
-          </span>
-          <span
-            style={{
-              ...s.fontPreviewCode,
-              fontFamily: pendingMonoFont,
-              fontSize: pendingFontSize,
-              color: "var(--text-hint)",
-            }}
-          >
-            {"// 0123456789 !@#$%^&*()"}
-          </span>
-        </div>
-      </div>
-
       {/* Terminal Font Size */}
       <div style={s.fontSection}>
         <div style={s.fontSizeRow}>
@@ -142,6 +108,20 @@ export function FontPanel({
         label={t("font.uiFontFamily")}
         hint={t("font.uiFontFamilyHint")}
         defaultFont={DEFAULT_UI_FONT}
+        preview={(
+          <div style={s.fontInlinePreview}>
+            <span style={s.fontPreviewLabel}>{t("font.preview")}</span>
+            <span style={{ ...s.fontPreviewText, fontFamily: pendingUiFont }}>
+              这是一段测试文字，用于预览字体效果。
+            </span>
+            <span style={{ ...s.fontPreviewText, fontFamily: pendingUiFont }}>
+              The quick brown fox jumps over the lazy dog.
+            </span>
+            <span style={{ ...s.fontPreviewText, fontFamily: pendingUiFont }}>
+              0123456789 !@#$%^&*()_+-={"{}"}[]|:;"&#39;&lt;&gt;,.?/
+            </span>
+          </div>
+        )}
       />
 
       {/* Monospace Font Family */}
@@ -151,6 +131,49 @@ export function FontPanel({
         label={t("font.monoFontFamily")}
         hint={t("font.monoFontFamilyHint")}
         defaultFont={DEFAULT_MONO_FONT}
+        preview={(
+          <div style={s.fontInlinePreview}>
+            <div style={s.fontPreviewHeaderRow}>
+              <span style={s.fontPreviewLabel}>{t("font.preview")}</span>
+              <span style={{ ...s.fontPreviewMeta, fontFamily: pendingMonoFont }}>0O · 1lI · {}[]()</span>
+            </div>
+            <pre
+              style={{
+                ...s.fontCodePreviewWindow,
+                fontFamily: pendingMonoFont,
+              }}
+            >
+              <code>
+                <span style={s.fontCodeLine}>
+                  <span style={s.fontCodeLineNo}>1</span>
+                  <span style={s.fontCodeText}>
+                    <span style={s.fontCodeKeyword}>const</span> task = {"{"}
+                  </span>
+                </span>
+                <span style={s.fontCodeLine}>
+                  <span style={s.fontCodeLineNo}>2</span>
+                  <span style={s.fontCodeText}>
+                    {"  "}name: <span style={s.fontCodeString}>"Nezha"</span>,
+                    status: <span style={s.fontCodeString}>"running"</span>,
+                  </span>
+                </span>
+                <span style={s.fontCodeLine}>
+                  <span style={s.fontCodeLineNo}>3</span>
+                  <span style={s.fontCodeText}>
+                    {"  "}tokens: <span style={s.fontCodeNumber}>24860</span>,
+                    tools: [<span style={s.fontCodeString}>"read"</span>, <span style={s.fontCodeString}>"edit"</span>],
+                  </span>
+                </span>
+                <span style={s.fontCodeLine}>
+                  <span style={s.fontCodeLineNo}>4</span>
+                  <span style={s.fontCodeText}>
+                    {"}"} <span style={s.fontCodeComment}>// 0O 1lI == =&gt; =&lt; =&gt;</span>
+                  </span>
+                </span>
+              </code>
+            </pre>
+          </div>
+        )}
       />
 
       {/* Save Button */}
@@ -160,7 +183,7 @@ export function FontPanel({
           onClick={handleSave}
           style={s.fontSaveBtn}
         >
-          {t("common.save")}
+          {t("common.apply")}
         </button>
       )}
     </div>

@@ -43,11 +43,17 @@
   padding: 4px;
   max-height: 280px;
   overflow-y: auto;
+  position: relative;
+}
+.font-selector-virtual-spacer {
+  position: relative;
 }
 .font-selector-item {
   display: flex;
   align-items: center;
   gap: 7px;
+  position: absolute;
+  left: 0;
   width: 100%;
   padding: 6px 10px;
   border: none;
