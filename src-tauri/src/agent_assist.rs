@@ -76,9 +76,27 @@ async fn run_naming_agent_with_timeout(
     let mut cmd = tokio::process::Command::new(&launch.program);
     crate::subprocess::configure_background_tokio_command(&mut cmd);
     if agent == "codex" {
-        cmd.args(["exec", prompt]);
+        cmd.args([
+            "exec",
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "-c",
+            "approval_policy=\"never\"",
+            prompt,
+        ]);
     } else {
-        cmd.args(["-p", prompt, "--output-format", "text"]);
+        cmd.args([
+            "-p",
+            prompt,
+            "--output-format",
+            "text",
+            "--permission-mode",
+            "plan",
+            "--tools",
+            "",
+            "--no-session-persistence",
+        ]);
     }
     cmd.current_dir(project_path);
     cmd.stdin(Stdio::null());
@@ -118,10 +136,7 @@ async fn run_naming_agent_with_timeout(
             stderr_task.abort();
             let _ = stdout_task.await;
             let _ = stderr_task.await;
-            return Err(format!(
-                "生成任务名称超时（{} 秒）",
-                timeout_dur.as_secs()
-            ));
+            return Err(format!("生成任务名称超时（{} 秒）", timeout_dur.as_secs()));
         }
     };
 
@@ -217,6 +232,11 @@ fn extract_codex_final_message(stdout: &str) -> String {
 
 fn sanitize_title(raw: &str) -> String {
     let trimmed = raw.trim();
+    let trimmed = trimmed
+        .strip_prefix("<TITLE>")
+        .and_then(|value| value.strip_suffix("</TITLE>"))
+        .unwrap_or(trimmed)
+        .trim();
     let stripped = trimmed.trim_matches(|c: char| {
         matches!(
             c,
@@ -278,10 +298,9 @@ pub async fn generate_task_name(
         let project_for_summary = project_path.clone();
         tokio::task::spawn_blocking(move || {
             match crate::session::validate_session_path(&raw_path, &project_for_summary, is_codex) {
-                Ok(canonical) => crate::session::extract_session_summary_text(
-                    &canonical.to_string_lossy(),
-                    7000,
-                ),
+                Ok(canonical) => {
+                    crate::session::extract_session_summary_text(&canonical.to_string_lossy(), 7000)
+                }
                 Err(e) => {
                     eprintln!("[generate_task_name] session_path 校验失败：{}", e);
                     None
@@ -399,6 +418,14 @@ mod tests {
         assert_eq!(
             sanitize_title("「修复登录 token 过期。」"),
             "修复登录 token 过期"
+        );
+    }
+
+    #[test]
+    fn sanitize_strips_wrapping_title_tags() {
+        assert_eq!(
+            sanitize_title("<TITLE>熟悉项目 README 和 AGENTS 规范</TITLE>"),
+            "熟悉项目 README 和 AGENTS 规范"
         );
     }
 

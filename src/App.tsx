@@ -503,9 +503,8 @@ function App() {
       const trimmed = name.trim();
       if (!trimmed) return;
 
-      // await 期间用户可能删除任务、改名、重跑、resume 进新 session → 用 setTasks callback
-      // 拿到当前 state 重新校验，任一条件失配就跳过 rename，避免用过期结果覆盖用户操作
-      let shouldRename = false;
+      // await 期间用户可能删除任务、改名、重跑、resume 进新 session → 在同一个
+      // setTasks updater 内完成校验和写入，避免依赖 React 对 updater 的同步调度。
       setTasks((prev) => {
         const current = prev.find((x) => x.id === taskId);
         if (!current) return prev;
@@ -517,10 +516,11 @@ function App() {
             ? (current.codexSessionPath ?? null)
             : (current.claudeSessionPath ?? null);
         if (currentSessionPath !== expectedSessionPath) return prev;
-        shouldRename = true;
-        return prev;
+
+        const next = prev.map((x) => (x.id === taskId ? { ...x, name: trimmed || undefined } : x));
+        persistProjectTasks(current.projectId, next, showToast, formatSaveTasksError);
+        return next;
       });
-      if (shouldRename) handleRenameTask(taskId, trimmed);
     } catch (e) {
       showToast(t("task.generateNameFailed", { error: String(e) }), "error");
       throw e;
