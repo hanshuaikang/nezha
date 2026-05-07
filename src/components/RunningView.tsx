@@ -10,7 +10,7 @@ import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
 import s from "../styles";
-import { X, RotateCcw, Pencil } from "lucide-react";
+import { X, RotateCcw, Pencil, Sparkles } from "lucide-react";
 
 interface SessionMetrics {
   duration_secs: number;
@@ -57,6 +57,7 @@ export function RunningView({
   onSnapshot,
   getRestoreState,
   onRename,
+  onGenerateName,
   isDark,
   terminalFontSize,
   monoFontFamily,
@@ -74,6 +75,7 @@ export function RunningView({
   onSnapshot?: (snapshot: string) => void;
   getRestoreState?: () => { initialData?: string; initialSnapshot?: string };
   onRename: (name: string) => void;
+  onGenerateName: () => Promise<void>;
   isDark: boolean;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
@@ -90,7 +92,26 @@ export function RunningView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [hoverHeader, setHoverHeader] = useState(false);
+  const [generatingName, setGeneratingName] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  const generateTooltip = generatingName
+    ? t("task.generatingName")
+    : sessionPath
+      ? t("task.generateName")
+      : t("task.generateNameNoSession");
+
+  const handleGenerateClick = async () => {
+    if (generatingName || isActive) return;
+    setGeneratingName(true);
+    try {
+      await onGenerateName();
+    } catch {
+      // toast already shown by parent handler
+    } finally {
+      setGeneratingName(false);
+    }
+  };
 
   useEffect(() => {
     if (!sessionPath) {
@@ -209,8 +230,10 @@ export function RunningView({
               style={{
                 ...s.taskRenameBtn,
                 flexShrink: 0,
-                opacity: hoverHeader ? 0.8 : 0.35,
-                transition: "opacity 0.15s ease",
+                color: "var(--text-secondary)",
+                opacity: hoverHeader ? 1 : 0.65,
+                background: hoverHeader ? "var(--bg-input)" : "transparent",
+                transition: "opacity 0.15s ease, background 0.15s ease",
               }}
               onClick={() => {
                 setEditValue(task.name ?? "");
@@ -218,7 +241,33 @@ export function RunningView({
                 setTimeout(() => titleInputRef.current?.focus(), 0);
               }}
             >
-              <Pencil size={12} strokeWidth={2} />
+              <Pencil size={13} strokeWidth={2.25} />
+            </button>
+          )}
+          {!editingTitle && (
+            <button
+              type="button"
+              title={generateTooltip}
+              disabled={generatingName || isActive}
+              style={{
+                ...s.taskRenameBtn,
+                flexShrink: 0,
+                color: isActive ? "var(--text-hint)" : "var(--text-secondary)",
+                opacity: generatingName ? 1 : isActive ? 0.4 : hoverHeader ? 1 : 0.65,
+                background:
+                  hoverHeader && !isActive && !generatingName
+                    ? "var(--bg-input)"
+                    : "transparent",
+                cursor: generatingName || isActive ? "not-allowed" : "pointer",
+                transition: "opacity 0.15s ease, background 0.15s ease, color 0.15s ease",
+              }}
+              onClick={handleGenerateClick}
+            >
+              <Sparkles
+                size={13}
+                strokeWidth={2.25}
+                className={generatingName ? "spin" : ""}
+              />
             </button>
           )}
         </div>
