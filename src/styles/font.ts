@@ -38,6 +38,29 @@ export const font = {
     flexDirection: "column" as const,
     gap: 6,
   },
+  fontInlinePreview: {
+    marginTop: 4,
+    padding: "10px 12px",
+    borderRadius: 6,
+    border: "1px solid var(--border-dim)",
+    background: "var(--bg-card)",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+  },
+  fontPreviewHeaderRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  fontPreviewMeta: {
+    fontSize: 11,
+    color: "var(--text-hint)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   fontPreviewText: {
     fontSize: 13,
     color: "var(--text-primary)",
@@ -51,6 +74,48 @@ export const font = {
     height: 1,
     background: "var(--border-dim)",
     margin: "2px 0",
+  },
+  fontCodePreviewWindow: {
+    margin: 0,
+    padding: "10px 0",
+    borderRadius: 6,
+    border: "1px solid rgba(255, 255, 255, 0.09)",
+    background: "linear-gradient(180deg, #171b24, #10141d)",
+    color: "#d6deeb",
+    boxShadow: "var(--shadow-sm)",
+    overflowX: "auto" as const,
+    lineHeight: 1.55,
+  },
+  fontCodeLine: {
+    display: "flex",
+    minWidth: "max-content",
+  },
+  fontCodeLineNo: {
+    width: 34,
+    paddingRight: 10,
+    color: "rgba(214, 222, 235, 0.36)",
+    textAlign: "right" as const,
+    userSelect: "none" as const,
+    flexShrink: 0,
+    fontVariantNumeric: "tabular-nums" as const,
+  },
+  fontCodeText: {
+    paddingRight: 14,
+    whiteSpace: "pre" as const,
+  },
+  fontCodeKeyword: {
+    color: "#c792ea",
+    fontWeight: 650,
+  },
+  fontCodeString: {
+    color: "#ecc48d",
+  },
+  fontCodeNumber: {
+    color: "#f78c6c",
+  },
+  fontCodeComment: {
+    color: "#7f8da3",
+    fontStyle: "italic",
   },
   fontSettingLabel: {
     fontSize: 13,
