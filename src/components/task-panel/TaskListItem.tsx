@@ -1,5 +1,5 @@
 import { useState, memo } from "react";
-import { Trash2, Star, Play } from "lucide-react";
+import { Trash2, Star, Play, GitBranch } from "lucide-react";
 import type { Task } from "../../types";
 import { StatusIcon } from "../StatusIcon";
 import { useI18n } from "../../i18n";
@@ -81,6 +81,14 @@ export const TaskListItem = memo(
             zIndex: 1,
           }}
         />
+        {task.worktreePath && task.worktreeBranch && (
+          <span
+            title={t("task.worktreeBadge", { branch: task.worktreeBranch })}
+            style={{ ...s.worktreeBadge, opacity: hov ? 0 : 1 }}
+          >
+            <GitBranch size={11} strokeWidth={2.2} />
+          </span>
+        )}
         <button
           type="button"
           aria-label={task.starred ? t("task.unstar") : t("task.star")}

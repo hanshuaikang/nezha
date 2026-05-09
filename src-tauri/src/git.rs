@@ -1081,6 +1081,205 @@ pub async fn git_remote_counts(
     })
 }
 
+// ── Task worktree management ─────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub(crate) struct WorktreeCreated {
+    #[serde(rename = "worktreePath")]
+    worktree_path: String,
+    #[serde(rename = "worktreeBranch")]
+    worktree_branch: String,
+    #[serde(rename = "baseBranch")]
+    base_branch: String,
+}
+
+fn task_worktree_branch_name(task_id: &str) -> String {
+    let short = if task_id.len() > 6 {
+        &task_id[task_id.len() - 6..]
+    } else {
+        task_id
+    };
+    format!("nezha/task-{}", short)
+}
+
+/// 校验 worktree 路径必须落在 `<project>/.nezha/worktrees/` 之下，
+/// 防止 remove_task_worktree 被传入任意路径。
+fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> Result<(), String> {
+    let project = Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    let expected_root = project.join(".nezha").join("worktrees");
+    let target = Path::new(worktree_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve worktree path: {}", e))?;
+    if !target.starts_with(&expected_root) {
+        return Err("Worktree path is outside .nezha/worktrees".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_task_worktree(
+    project_path: String,
+    task_id: String,
+    base_branch: String,
+) -> Result<WorktreeCreated, String> {
+    validate_project_path(&project_path)?;
+    if task_id.trim().is_empty() {
+        return Err("Task id is required".to_string());
+    }
+    if base_branch.trim().is_empty() {
+        return Err("Base branch is required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<WorktreeCreated, String> {
+        let worktrees_dir = Path::new(&project_path).join(".nezha").join("worktrees");
+        std::fs::create_dir_all(&worktrees_dir)
+            .map_err(|e| format!("Failed to create worktrees dir: {}", e))?;
+
+        let worktree_path = worktrees_dir.join(&task_id);
+        if worktree_path.exists() {
+            return Err(format!(
+                "Worktree path already exists: {}",
+                worktree_path.display()
+            ));
+        }
+
+        let wt_path_str = path_to_string(&worktree_path)?;
+        let branch = task_worktree_branch_name(&task_id);
+
+        let output = run_git(
+            &project_path,
+            &[
+                "worktree",
+                "add",
+                &wt_path_str,
+                "-b",
+                &branch,
+                &base_branch,
+            ],
+        )?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        Ok(WorktreeCreated {
+            worktree_path: wt_path_str,
+            worktree_branch: branch,
+            base_branch,
+        })
+    })
+    .await
+    .map_err(|e| format!("Worktree task panicked: {}", e))?
+}
+
+#[tauri::command]
+pub async fn merge_task_worktree(
+    project_path: String,
+    worktree_path: String,
+    branch: String,
+    base_branch: String,
+) -> Result<String, String> {
+    validate_project_path(&project_path)?;
+    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+    if branch.trim().is_empty() || base_branch.trim().is_empty() {
+        return Err("Branch and base branch are required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        // 0) worktree 自身有未提交修改 → 拒绝合并，避免丢失工作进度
+        let wt_status = run_git(&worktree_path, &["status", "--porcelain"])?;
+        if !wt_status.status.success() {
+            return Err(String::from_utf8_lossy(&wt_status.stderr).trim().to_string());
+        }
+        if !wt_status.stdout.is_empty() {
+            return Err(
+                "Worktree has uncommitted changes; commit or stash them before merging".into(),
+            );
+        }
+
+        // 拿主仓当前 HEAD：HEAD == base 时直接 merge，否则用 fetch ff（不切走 HEAD）。
+        let head_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if !head_out.status.success() {
+            return Err(String::from_utf8_lossy(&head_out.stderr).trim().to_string());
+        }
+        let original_branch = String::from_utf8_lossy(&head_out.stdout).trim().to_string();
+
+        if original_branch == base_branch {
+            // 主仓正在 base 上，直接合并（保留 merge commit 让历史可追溯）
+            let merge_out = run_git(&project_path, &["merge", "--no-ff", &branch])?;
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&merge_out.stdout),
+                String::from_utf8_lossy(&merge_out.stderr)
+            );
+            if !merge_out.status.success() {
+                return Err(format!(
+                    "Merge failed (main repo on '{}'; please resolve manually): {}",
+                    base_branch, combined
+                ));
+            }
+            return Ok(combined.trim().to_string());
+        }
+
+        // 主仓不在 base：用 `git fetch . <src>:<dst>` 把 worktree 分支 ff 到 base ref，不动主仓 HEAD。
+        // git fetch 默认仅允许 fast-forward 更新（用 `+` 前缀才强制），刚好阻止误覆盖 base 的提交。
+        let refspec = format!("{}:{}", branch, base_branch);
+        let ff_out = run_git(&project_path, &["fetch", ".", &refspec])?;
+        if !ff_out.status.success() {
+            let err = String::from_utf8_lossy(&ff_out.stderr);
+            return Err(format!(
+                "Cannot fast-forward '{}' (worktree may have diverged from base). \
+                 Pull base into the worktree and retry, or merge manually. Detail: {}",
+                base_branch,
+                err.trim()
+            ));
+        }
+        Ok(format!(
+            "Fast-forwarded '{}' to '{}'",
+            base_branch, branch
+        ))
+    })
+    .await
+    .map_err(|e| format!("Merge task panicked: {}", e))?
+}
+
+#[tauri::command]
+pub async fn remove_task_worktree(
+    project_path: String,
+    worktree_path: String,
+    branch: String,
+) -> Result<(), String> {
+    validate_project_path(&project_path)?;
+    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        // worktree remove --force 既可移除有未提交修改的工作树，也会清理元数据。
+        let remove_out = run_git(
+            &project_path,
+            &["worktree", "remove", "--force", &worktree_path],
+        )?;
+        if !remove_out.status.success() {
+            return Err(String::from_utf8_lossy(&remove_out.stderr)
+                .trim()
+                .to_string());
+        }
+
+        if !branch.trim().is_empty() {
+            // -D 允许删除未合并分支（丢弃语义）。已合并分支也能成功。
+            let branch_out = run_git(&project_path, &["branch", "-D", &branch])?;
+            if !branch_out.status.success() {
+                return Err(String::from_utf8_lossy(&branch_out.stderr)
+                    .trim()
+                    .to_string());
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Remove worktree task panicked: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

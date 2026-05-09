@@ -49,6 +49,8 @@ export function ProjectPage({
   onUpdateTodo,
   onCancelTask,
   onResumeTask,
+  onMergeWorktree,
+  onDiscardWorktree,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -93,6 +95,8 @@ export function ProjectPage({
     permissionMode: PermissionMode;
     images: string[];
     immediate: boolean;
+    launchMode: "local" | "worktree";
+    baseBranch: string;
   }) => void;
   onRunTodoTask: (task: Task) => void;
   onUpdateTodo: (
@@ -101,6 +105,8 @@ export function ProjectPage({
   ) => void;
   onCancelTask: (id: string) => void;
   onResumeTask: (id: string) => void;
+  onMergeWorktree: (id: string) => Promise<void>;
+  onDiscardWorktree: (id: string) => Promise<void>;
   onInput: (taskId: string, data: string) => void;
   onResize: (taskId: string, cols: number, rows: number) => void;
   onRegisterTerminal: (
@@ -166,6 +172,12 @@ export function ProjectPage({
     [tasks, project.id],
   );
   const selectedTask = projectTasks.find((t) => t.id === selectedTaskId) ?? null;
+  // GitChanges/GitHistory 的 cwd：worktree 任务用 worktree 路径，否则用主仓。
+  // 主仓 git status 看不到 worktree 内未提交修改，必须切到 worktree cwd 才能查看 / 暂存 / 提交。
+  const gitContextPath =
+    selectedTask?.worktreePath && !selectedTask.worktreeDiscarded
+      ? selectedTask.worktreePath
+      : project.path;
 
   // 只挂载当前选中的任务的 xterm 实例，其他任务通过 snapshot 序列化后卸载。
   // 这样同时只有 1 个 WebGL context 存活，避免长时间运行后 GPU 内存累积。
@@ -310,7 +322,7 @@ export function ProjectPage({
             {openDiff ? (
               openDiff.kind === "file" ? (
                 <GitDiffViewer
-                  projectPath={project.path}
+                  projectPath={gitContextPath}
                   mode="file"
                   filePath={openDiff.filePath}
                   staged={openDiff.staged}
@@ -319,7 +331,7 @@ export function ProjectPage({
                 />
               ) : openDiff.kind === "commit-file" ? (
                 <GitDiffViewer
-                  projectPath={project.path}
+                  projectPath={gitContextPath}
                   mode="commit-file"
                   commitHash={openDiff.hash}
                   filePath={openDiff.filePath}
@@ -328,7 +340,7 @@ export function ProjectPage({
                 />
               ) : (
                 <GitDiffViewer
-                  projectPath={project.path}
+                  projectPath={gitContextPath}
                   mode="commit"
                   commitHash={openDiff.hash}
                   title={openDiff.message}
@@ -385,6 +397,8 @@ export function ProjectPage({
                   projectActive={visible}
                   onCancel={() => onCancelTask(task.id)}
                   onResume={() => onResumeTask(task.id)}
+                  onMergeWorktree={() => onMergeWorktree(task.id)}
+                  onDiscardWorktree={() => onDiscardWorktree(task.id)}
                   onInput={(data) => onInput(task.id, data)}
                   onResize={(cols, rows) => onResize(task.id, cols, rows)}
                   onRegisterTerminal={(fn) => onRegisterTerminal(task.id, fn)}
@@ -446,7 +460,7 @@ export function ProjectPage({
           {rightPanel === "git-changes" && (
             <ErrorBoundary label="Git 变更">
               <GitChanges
-                projectPath={project.path}
+                projectPath={gitContextPath}
                 currentTaskCreatedAt={currentTaskCreatedAt}
                 onFileSelect={handleDiffFileSelect}
                 width={rightPanelWidth}
@@ -456,7 +470,7 @@ export function ProjectPage({
           {rightPanel === "git-history" && (
             <ErrorBoundary label="Git 历史">
               <GitHistory
-                projectPath={project.path}
+                projectPath={gitContextPath}
                 onCommitSelect={handleCommitSelect}
                 onFileClick={handleCommitFileClick}
                 width={rightPanelWidth}

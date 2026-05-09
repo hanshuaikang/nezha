@@ -117,6 +117,9 @@ body {
   box-shadow: var(--shadow-md);
   z-index: 2000;
   width: var(--radix-popover-trigger-width);
+  /* trigger 较窄（如 NewTaskView 的 launch-mode 行）时兜底，避免分支名被截断 */
+  min-width: 220px;
+  max-width: 360px;
   overflow: hidden;
 }
 .branch-popover-search {

@@ -66,6 +66,11 @@ export interface Task {
   codexSessionPath?: string;
   claudeSessionId?: string;
   claudeSessionPath?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
+  baseBranch?: string;
+  /** worktree 已被合并或丢弃后置 true：保留分支/路径用于审计，但禁用 resume / 合并 / 丢弃 */
+  worktreeDiscarded?: boolean;
 }
 
 export const PERM_LABELS: Record<PermissionMode, string> = {

@@ -10,7 +10,7 @@ import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
 import s from "../styles";
-import { X, RotateCcw, Pencil, Sparkles } from "lucide-react";
+import { X, RotateCcw, Pencil, Sparkles, GitMerge, Trash2 } from "lucide-react";
 
 interface SessionMetrics {
   duration_secs: number;
@@ -50,6 +50,8 @@ export function RunningView({
   projectActive = true,
   onCancel,
   onResume,
+  onMergeWorktree,
+  onDiscardWorktree,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -68,6 +70,8 @@ export function RunningView({
   projectActive?: boolean;
   onCancel: () => void;
   onResume?: () => void;
+  onMergeWorktree?: () => Promise<void>;
+  onDiscardWorktree?: () => Promise<void>;
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
   onRegisterTerminal: (writeFn: ((data: string, callback?: () => void) => void) | null) => number;
@@ -93,6 +97,7 @@ export function RunningView({
   const [editValue, setEditValue] = useState("");
   const [hoverHeader, setHoverHeader] = useState(false);
   const [generatingName, setGeneratingName] = useState(false);
+  const [worktreeBusy, setWorktreeBusy] = useState<"merge" | "discard" | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const generateTooltip = generatingName
@@ -277,10 +282,70 @@ export function RunningView({
             <span>{t("running.cancel")}</span>
           </button>
         )}
-        {!isActive && onResume && (task.claudeSessionId || task.codexSessionId) && (
-          <button style={s.resumeBtn} onClick={onResume}>
-            <RotateCcw size={12} strokeWidth={2.5} />
-            <span>{t("running.resume")}</span>
+        {!isActive &&
+          onResume &&
+          (task.claudeSessionId || task.codexSessionId) &&
+          !task.worktreeDiscarded && (
+            <button style={s.resumeBtn} onClick={onResume}>
+              <RotateCcw size={12} strokeWidth={2.5} />
+              <span>{t("running.resume")}</span>
+            </button>
+          )}
+        {!isActive &&
+          task.status === "done" &&
+          task.worktreePath &&
+          task.worktreeBranch &&
+          !task.worktreeDiscarded &&
+          onMergeWorktree && (
+            <button
+              style={{
+                ...s.resumeBtn,
+                opacity: worktreeBusy ? 0.6 : 1,
+                cursor: worktreeBusy ? "not-allowed" : "pointer",
+              }}
+              disabled={!!worktreeBusy}
+              onClick={async () => {
+                setWorktreeBusy("merge");
+                try {
+                  await onMergeWorktree();
+                } finally {
+                  setWorktreeBusy(null);
+                }
+              }}
+            >
+              <GitMerge size={12} strokeWidth={2.5} />
+              <span>
+                {worktreeBusy === "merge"
+                  ? t("running.merging")
+                  : t("running.mergeTo", { branch: task.baseBranch ?? "" })}
+              </span>
+            </button>
+          )}
+        {!isActive &&
+          task.worktreePath &&
+          task.worktreeBranch &&
+          !task.worktreeDiscarded &&
+          onDiscardWorktree && (
+          <button
+            style={{
+              ...s.cancelBtn,
+              opacity: worktreeBusy ? 0.6 : 1,
+              cursor: worktreeBusy ? "not-allowed" : "pointer",
+            }}
+            disabled={!!worktreeBusy}
+            onClick={async () => {
+              setWorktreeBusy("discard");
+              try {
+                await onDiscardWorktree();
+              } finally {
+                setWorktreeBusy(null);
+              }
+            }}
+          >
+            <Trash2 size={12} strokeWidth={2.5} />
+            <span>
+              {worktreeBusy === "discard" ? t("running.discarding") : t("running.discardWorktree")}
+            </span>
           </button>
         )}
       </div>
