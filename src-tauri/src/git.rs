@@ -417,11 +417,14 @@ pub async fn git_create_branch(
     project_path: String,
     branch_name: String,
     from_branch: String,
+    checkout: bool,
 ) -> Result<(), String> {
-    run_git_check(
-        &project_path,
-        &["checkout", "-b", &branch_name, &from_branch],
-    )
+    let args: &[&str] = if checkout {
+        &["checkout", "-b", &branch_name, &from_branch]
+    } else {
+        &["branch", &branch_name, &from_branch]
+    };
+    run_git_check(&project_path, args)
 }
 
 #[tauri::command]

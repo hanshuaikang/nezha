@@ -28,6 +28,7 @@ function BranchDialog({
   const [fromBranch, setFromBranch] = useState(currentBranch?.name ?? "");
   const [branchSearch, setBranchSearch] = useState("");
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [splitMenuOpen, setSplitMenuOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -52,27 +53,31 @@ function BranchDialog({
     setBranchSearch("");
   };
 
-  const handleCreate = useCallback(async () => {
-    const name = branchName.trim();
-    if (!name) return;
-    setLoading(true);
-    setError("");
-    try {
-      await invoke("git_create_branch", {
-        projectPath,
-        branchName: name,
-        fromBranch,
-      });
-      onCreated();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [branchName, fromBranch, projectPath, onCreated]);
+  const handleCreate = useCallback(
+    async (checkout: boolean) => {
+      const name = branchName.trim();
+      if (!name) return;
+      setLoading(true);
+      setError("");
+      try {
+        await invoke("git_create_branch", {
+          projectPath,
+          branchName: name,
+          fromBranch,
+          checkout,
+        });
+        onCreated();
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [branchName, fromBranch, projectPath, onCreated],
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && branchName.trim() && !loading) handleCreate();
+    if (e.key === "Enter" && branchName.trim() && !loading) handleCreate(true);
     if (e.key === "Escape") onClose();
   };
 
@@ -249,17 +254,57 @@ function BranchDialog({
           <button style={s.modalCancelBtn} onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button
-            style={{
-              ...s.modalSaveBtn,
-              opacity: !branchName.trim() || loading ? 0.5 : 1,
-              cursor: !branchName.trim() || loading ? "default" : "pointer",
-            }}
-            disabled={!branchName.trim() || loading}
-            onClick={handleCreate}
-          >
-            {loading ? t("branch.creating") : t("branch.create")}
-          </button>
+          <Popover.Root open={splitMenuOpen} onOpenChange={setSplitMenuOpen}>
+            <Popover.Trigger asChild>
+              <button
+                style={{
+                  ...s.modalSaveSelectTrigger,
+                  opacity: !branchName.trim() || loading ? 0.5 : 1,
+                  cursor: !branchName.trim() || loading ? "default" : "pointer",
+                }}
+                disabled={!branchName.trim() || loading}
+              >
+                <span>{loading ? t("branch.creating") : t("branch.createAndSwitch")}</span>
+                <ChevronDown size={12} strokeWidth={2.5} style={{ opacity: 0.7 }} />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                side="bottom"
+                align="end"
+                sideOffset={6}
+                avoidCollisions={false}
+                style={s.toolbarMenuContent}
+              >
+                <Popover.Close asChild>
+                  <button
+                    style={s.modalSaveMenuItem}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background = "var(--accent-subtle)")
+                    }
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    onClick={() => handleCreate(true)}
+                  >
+                    <GitFork size={13} strokeWidth={2} color="var(--text-muted)" />
+                    {t("branch.createAndSwitch")}
+                  </button>
+                </Popover.Close>
+                <Popover.Close asChild>
+                  <button
+                    style={s.modalSaveMenuItem}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background = "var(--accent-subtle)")
+                    }
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    onClick={() => handleCreate(false)}
+                  >
+                    <Plus size={13} strokeWidth={2} color="var(--text-muted)" />
+                    {t("branch.createOnly")}
+                  </button>
+                </Popover.Close>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         </div>
       </div>
     </div>
