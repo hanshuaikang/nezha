@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -120,6 +120,10 @@ function normalizeInterruptedTasksOnStartup(
   return { tasks: normalized, changedProjectIds };
 }
 
+function shouldIgnoreTaskStatusTransition(current: TaskStatus, next: TaskStatus): boolean {
+  return current === "detached" && (next === "running" || next === "input_required");
+}
+
 function getSystemPrefersDark() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -173,6 +177,7 @@ function App() {
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
 
   const tm = useTerminalManager();
+  const pendingResumeStartsRef = useRef<Record<string, () => void>>({});
 
   const formatSaveProjectsError = useCallback(
     (error: string) => t("toast.saveProjectsFailed", { error }),
@@ -424,10 +429,29 @@ function App() {
   }
 
   function handleCancelTask(taskId: string) {
+    delete pendingResumeStartsRef.current[taskId];
     const task = tasks.find((t) => t.id === taskId);
     const project = projects.find((p) => p.id === task?.projectId);
     invoke("cancel_task", { taskId, projectPath: project?.path ?? "" }).catch((e: unknown) => {
       showToast(t("toast.cancelTaskFailed", { error: String(e) }));
+    });
+  }
+
+  function invokeResumeTask(task: Task, project: Project, sessionId: string) {
+    invoke("resume_task", {
+      taskId: task.id,
+      projectPath: project.path,
+      agent: task.agent,
+      sessionId,
+      prompt: task.prompt,
+      permissionMode: task.permissionMode,
+      cols: tm.terminalSizeRef.current.cols,
+      rows: tm.terminalSizeRef.current.rows,
+      onOutput: tm.createOutputChannel(task.id),
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      tm.writeErrorToTerminal(task.id, `\r\nError: ${msg}\r\n`);
+      updateTaskStatus(task.id, "failed", undefined, msg);
     });
   }
 
@@ -455,21 +479,9 @@ function App() {
     tm.resetTaskTerminal(taskId);
     setTaskRunCounts((prev) => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
 
-    invoke("resume_task", {
-      taskId,
-      projectPath: project.path,
-      agent: task.agent,
-      sessionId,
-      prompt: task.prompt,
-      permissionMode: task.permissionMode,
-      cols: tm.terminalSizeRef.current.cols,
-      rows: tm.terminalSizeRef.current.rows,
-      onOutput: tm.createOutputChannel(taskId),
-    }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      tm.writeErrorToTerminal(taskId, `\r\nError: ${msg}\r\n`);
-      updateTaskStatus(taskId, "failed", undefined, msg);
-    });
+    pendingResumeStartsRef.current[taskId] = () => {
+      invokeResumeTask(task, project, sessionId);
+    };
   }
 
   async function handleReconnectTask(taskId: string) {
@@ -491,6 +503,7 @@ function App() {
   }
 
   function handleMarkTaskDone(taskId: string) {
+    delete pendingResumeStartsRef.current[taskId];
     updateTaskStatus(taskId, "done");
     tm.removeTaskBuffers([taskId]);
   }
@@ -503,6 +516,10 @@ function App() {
       const deletingTasks = prev.filter((task) => toDelete.has(task.id));
 
       if (deletingTasks.length === 0) return prev;
+
+      taskIds.forEach((taskId) => {
+        delete pendingResumeStartsRef.current[taskId];
+      });
 
       deletingTasks
         .filter((task) => isActiveTaskStatus(task.status))
@@ -677,6 +694,7 @@ function App() {
       let changed = false;
       const next = prev.map((task) => {
         if (task.id !== taskId) return task;
+        if (shouldIgnoreTaskStatusTransition(task.status, status)) return task;
 
         const attentionRequestedAt =
           status === "input_required" ? (extra?.attentionRequestedAt ?? Date.now()) : undefined;
@@ -723,6 +741,14 @@ function App() {
       }
       return changed ? next : prev;
     });
+  }
+
+  function handleTerminalReady(taskId: string, generation: number) {
+    tm.handleTerminalReady(taskId, generation);
+    const startResume = pendingResumeStartsRef.current[taskId];
+    if (!startResume) return;
+    delete pendingResumeStartsRef.current[taskId];
+    startResume();
   }
 
   const sortedProjects = useMemo(
@@ -785,7 +811,7 @@ function App() {
               onInput={tm.handleInput}
               onResize={tm.handleResize}
               onRegisterTerminal={tm.handleRegisterTerminal}
-              onTerminalReady={tm.handleTerminalReady}
+              onTerminalReady={handleTerminalReady}
               onSnapshot={tm.handleSnapshot}
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
