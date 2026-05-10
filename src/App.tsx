@@ -67,6 +67,13 @@ function persistProjectTasks(
   });
 }
 
+function persistProjectTasksQuietly(projectId: string, allTasks: Task[]) {
+  invoke("save_project_tasks", {
+    projectId,
+    tasks: allTasks.filter((t) => t.projectId === projectId),
+  }).catch(console.error);
+}
+
 interface ProjectViewState {
   selectedTaskId: string | null;
   isNewTask: boolean;
@@ -74,6 +81,43 @@ interface ProjectViewState {
 
 function createDefaultProjectViewState(): ProjectViewState {
   return { selectedTaskId: null, isNewTask: true };
+}
+
+function normalizeInterruptedTasksOnStartup(
+  tasks: Task[],
+  activeTaskIds: Set<string>,
+): {
+  tasks: Task[];
+  changedProjectIds: Set<string>;
+} {
+  const interruptedAt = Date.now();
+  const changedProjectIds = new Set<string>();
+  const normalized = tasks.map((task) => {
+    const hasLiveChild = activeTaskIds.has(task.id);
+    if (!isActiveTaskStatus(task.status) && !(task.status === "interrupted" && hasLiveChild)) {
+      return task;
+    }
+
+    if (hasLiveChild) {
+      if (task.status === "detached") return task;
+      changedProjectIds.add(task.projectId);
+      return {
+        ...task,
+        status: "detached" as TaskStatus,
+        attentionRequestedAt: task.attentionRequestedAt ?? interruptedAt,
+      };
+    }
+
+    if (task.status === "interrupted") return task;
+    changedProjectIds.add(task.projectId);
+    return {
+      ...task,
+      status: "interrupted" as TaskStatus,
+      attentionRequestedAt: task.attentionRequestedAt ?? interruptedAt,
+    };
+  });
+
+  return { tasks: normalized, changedProjectIds };
 }
 
 function getSystemPrefersDark() {
@@ -226,7 +270,15 @@ function App() {
       const chunks = await Promise.all(
         loadedProjects.map((p) => invoke<Task[]>("load_project_tasks", { projectId: p.id })),
       );
-      setTasks(chunks.flat());
+      const activeTaskIds = new Set(await invoke<string[]>("get_active_task_ids"));
+      const { tasks: loadedTasks, changedProjectIds } = normalizeInterruptedTasksOnStartup(
+        chunks.flat(),
+        activeTaskIds,
+      );
+      setTasks(loadedTasks);
+      changedProjectIds.forEach((projectId) => {
+        persistProjectTasksQuietly(projectId, loadedTasks);
+      });
     }
 
     init().catch(console.error);
@@ -382,7 +434,11 @@ function App() {
   function handleResumeTask(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
     const sessionId = task?.agent === "codex" ? task.codexSessionId : task?.claudeSessionId;
-    if (!task || !sessionId) return;
+    if (!task) return;
+    if (!sessionId) {
+      showToast(t("running.resumeUnavailable"), "warning");
+      return;
+    }
     const project = projects.find((p) => p.id === task.projectId);
     if (!project) return;
 
@@ -414,6 +470,29 @@ function App() {
       tm.writeErrorToTerminal(taskId, `\r\nError: ${msg}\r\n`);
       updateTaskStatus(taskId, "failed", undefined, msg);
     });
+  }
+
+  async function handleReconnectTask(taskId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const sessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
+    if (!sessionId) {
+      showToast(t("running.resumeUnavailable"), "warning");
+      return;
+    }
+
+    try {
+      await invoke("detach_task_process", { taskId });
+    } catch (e: unknown) {
+      showToast(t("toast.cancelTaskFailed", { error: String(e) }));
+      return;
+    }
+    handleResumeTask(taskId);
+  }
+
+  function handleMarkTaskDone(taskId: string) {
+    updateTaskStatus(taskId, "done");
+    tm.removeTaskBuffers([taskId]);
   }
 
   function deleteTasks(taskIds: string[]) {
@@ -701,6 +780,8 @@ function App() {
               onUpdateTodo={handleUpdateTodo}
               onCancelTask={handleCancelTask}
               onResumeTask={handleResumeTask}
+              onReconnectTask={handleReconnectTask}
+              onMarkTaskDone={handleMarkTaskDone}
               onInput={tm.handleInput}
               onResize={tm.handleResize}
               onRegisterTerminal={tm.handleRegisterTerminal}

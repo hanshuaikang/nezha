@@ -11,7 +11,7 @@ use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher}
 use crate::TaskManager;
 
 const SESSION_WAIT_POLL: Duration = Duration::from_millis(50);
-const SESSION_WAIT_MAX: Duration = Duration::from_millis(500);
+const SESSION_WAIT_MAX: Duration = Duration::from_secs(5);
 const PTY_READ_BUFFER_SIZE: usize = 32 * 1024;
 const PTY_EMIT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
@@ -35,7 +35,7 @@ fn has_task_session(app: &AppHandle, task_id: &str, is_codex: bool) -> bool {
     }
 }
 
-/// 任务结束后，等待会话注册完成，最长等待 500ms。
+/// 任务结束后，等待会话注册完成，最长等待 5s。
 fn wait_for_session(app: &AppHandle, task_id: &str, is_codex: bool) {
     let deadline = Instant::now() + SESSION_WAIT_MAX;
     while Instant::now() < deadline {
@@ -542,6 +542,10 @@ pub async fn cancel_task(
         .cloned();
     if let Some(arc) = child_arc {
         let _ = arc.lock().unwrap().kill();
+    } else {
+        // Orphaned/interrupted tasks have no live child in this app process.
+        // Avoid leaving a stale cancellation marker that would affect a later manual resume.
+        task_manager.cancelled_tasks.lock().remove(&task_id);
     }
 
     // 释放已声明的会话路径，确保相同提示词的任务可以重新运行
@@ -572,6 +576,40 @@ pub async fn cancel_task(
 
     // 清理任务附件
     let _ = fs::remove_dir_all(task_attachments_dir(&project_path, &task_id));
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_active_task_ids(
+    task_manager: State<'_, TaskManager>,
+) -> Result<Vec<String>, String> {
+    Ok(task_manager
+        .child_handles
+        .lock()
+        .keys()
+        .cloned()
+        .collect())
+}
+
+#[tauri::command]
+pub async fn detach_task_process(
+    task_manager: State<'_, TaskManager>,
+    task_id: String,
+) -> Result<(), String> {
+    task_manager.cancelled_tasks.lock().remove(&task_id);
+    let child_arc = {
+        let mut masters = task_manager.pty_masters.lock();
+        let mut writers = task_manager.pty_writers.lock();
+        let mut children = task_manager.child_handles.lock();
+        masters.remove(&task_id);
+        writers.remove(&task_id);
+        children.remove(&task_id)
+    };
+
+    if let Some(arc) = child_arc {
+        let _ = arc.lock().unwrap().kill();
+    }
 
     Ok(())
 }
