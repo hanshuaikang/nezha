@@ -123,19 +123,6 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
   <img src="docs/images/light.png" alt="Light Theme" width="48%" />
 </p>
 
- ## 后续计划
-| <small>模块</small> | <small>计划功能</small> | <small>状态</small> |
-| --- | --- | :---: |
-| <small>**跨平台支持**</small> | <small>支持 Linux 平台</small> | <small>⏳ 规划中</small> |
-| <small>**Agent 配置**</small> | <small>可视化配置管理</small> | <small>⏳ 规划中</small> |
-| | <small>多账号管理</small> | <small>⏳ 规划中</small> |
-| <small>**开发流程**</small> | <small>新增 Code Review 视图</small> | <small>⏳ 规划中</small> |
-| | <small>新增 Git Worktree 支持</small> | <small>⏳ 规划中</small> |
-
-
-
-
-
 ## 🙏 鸣谢
 
 Nezha 的诞生离不开以下优秀的开源项目，向它们致敬：
