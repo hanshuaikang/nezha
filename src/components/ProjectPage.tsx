@@ -49,6 +49,8 @@ export function ProjectPage({
   onUpdateTodo,
   onCancelTask,
   onResumeTask,
+  onReconnectTask,
+  onMarkTaskDone,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -101,6 +103,8 @@ export function ProjectPage({
   ) => void;
   onCancelTask: (id: string) => void;
   onResumeTask: (id: string) => void;
+  onReconnectTask: (id: string) => void;
+  onMarkTaskDone: (id: string) => void;
   onInput: (taskId: string, data: string) => void;
   onResize: (taskId: string, cols: number, rows: number) => void;
   onRegisterTerminal: (
@@ -385,6 +389,8 @@ export function ProjectPage({
                   projectActive={visible}
                   onCancel={() => onCancelTask(task.id)}
                   onResume={() => onResumeTask(task.id)}
+                  onReconnect={() => onReconnectTask(task.id)}
+                  onMarkDone={() => onMarkTaskDone(task.id)}
                   onInput={(data) => onInput(task.id, data)}
                   onResize={(cols, rows) => onResize(task.id, cols, rows)}
                   onRegisterTerminal={(fn) => onRegisterTerminal(task.id, fn)}

@@ -10,7 +10,7 @@ import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
 import s from "../styles";
-import { X, RotateCcw, Pencil, Sparkles } from "lucide-react";
+import { X, RotateCcw, Pencil, Sparkles, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface SessionMetrics {
   duration_secs: number;
@@ -50,6 +50,8 @@ export function RunningView({
   projectActive = true,
   onCancel,
   onResume,
+  onReconnect,
+  onMarkDone,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -68,6 +70,8 @@ export function RunningView({
   projectActive?: boolean;
   onCancel: () => void;
   onResume?: () => void;
+  onReconnect: () => void;
+  onMarkDone: () => void;
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
   onRegisterTerminal: (writeFn: ((data: string, callback?: () => void) => void) | null) => number;
@@ -83,7 +87,10 @@ export function RunningView({
   const { t } = useI18n();
   const isActive =
     task.status === "pending" || task.status === "running" || task.status === "input_required";
+  const isDetached = task.status === "detached";
+  const isInterrupted = task.status === "interrupted";
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
+  const resumeSessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
   const restoreState = getRestoreState?.() ?? {};
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
@@ -93,7 +100,9 @@ export function RunningView({
   const [editValue, setEditValue] = useState("");
   const [hoverHeader, setHoverHeader] = useState(false);
   const [generatingName, setGeneratingName] = useState(false);
+  const [bannerCompact, setBannerCompact] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const interruptedBannerRef = useRef<HTMLDivElement>(null);
 
   const generateTooltip = generatingName
     ? t("task.generatingName")
@@ -112,6 +121,20 @@ export function RunningView({
       setGeneratingName(false);
     }
   };
+
+  useEffect(() => {
+    const el = interruptedBannerRef.current;
+    if (!el) return;
+
+    const updateCompact = () => {
+      setBannerCompact(el.clientWidth < 820);
+    };
+    updateCompact();
+
+    const observer = new ResizeObserver(updateCompact);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isDetached, isInterrupted, sessionPath]);
 
   useEffect(() => {
     if (!sessionPath) {
@@ -277,12 +300,16 @@ export function RunningView({
             <span>{t("running.cancel")}</span>
           </button>
         )}
-        {!isActive && onResume && (task.claudeSessionId || task.codexSessionId) && (
-          <button style={s.resumeBtn} onClick={onResume}>
-            <RotateCcw size={12} strokeWidth={2.5} />
-            <span>{t("running.resume")}</span>
-          </button>
-        )}
+        {!isActive &&
+          !isDetached &&
+          !isInterrupted &&
+          onResume &&
+          (task.claudeSessionId || task.codexSessionId) && (
+            <button style={s.resumeBtn} onClick={onResume}>
+              <RotateCcw size={12} strokeWidth={2.5} />
+              <span>{t("running.resume")}</span>
+            </button>
+          )}
       </div>
       <div
         style={{
@@ -359,7 +386,61 @@ export function RunningView({
       </div>
 
       {/* Main content: terminal when active, session view when done/failed. */}
-      {isActive || !sessionPath ? (
+      {isDetached || isInterrupted ? (
+        <div style={s.interruptedSessionWrap}>
+          <div ref={interruptedBannerRef} style={s.interruptedBanner}>
+            <div style={s.interruptedBannerIcon}>
+              <AlertTriangle size={14} strokeWidth={2.1} />
+            </div>
+            <div style={s.interruptedBannerBody}>
+              <div style={s.interruptedBannerTitle}>
+                {t(isDetached ? "running.detachedTitle" : "running.interruptedTitle")}
+              </div>
+            </div>
+            <div style={s.interruptedBannerActions}>
+              <button
+                type="button"
+                title={!resumeSessionId ? t("running.resumeUnavailable") : undefined}
+                style={{
+                  ...s.interruptedPrimaryBtn,
+                  opacity: resumeSessionId ? 1 : 0.45,
+                  cursor: resumeSessionId ? "pointer" : "not-allowed",
+                }}
+                disabled={!resumeSessionId}
+                onClick={isDetached ? onReconnect : onResume}
+              >
+                <RotateCcw size={12} strokeWidth={2.1} />
+                <span>
+                  {isDetached
+                    ? bannerCompact
+                      ? t("running.reconnect")
+                      : t("running.reconnectTask")
+                    : bannerCompact
+                      ? t("running.resume")
+                      : t("running.resumeTask")}
+                </span>
+              </button>
+              {isInterrupted && (
+                <button type="button" style={s.interruptedSecondaryBtn} onClick={onMarkDone}>
+                  <CheckCircle2 size={12} strokeWidth={2.1} />
+                  <span>{bannerCompact ? t("status.done") : t("running.markDone")}</span>
+                </button>
+              )}
+              <button type="button" style={s.interruptedDangerBtn} onClick={onCancel}>
+                <X size={12} strokeWidth={2.1} />
+                <span>{bannerCompact ? t("running.cancel") : t("running.cancelTask")}</span>
+              </button>
+            </div>
+          </div>
+          {sessionPath ? (
+            <SessionView sessionPath={sessionPath} />
+          ) : (
+            <div style={s.interruptedNoSessionPane}>
+              {t(isDetached ? "running.detachedNoSession" : "running.interruptedNoSession")}
+            </div>
+          )}
+        </div>
+      ) : isActive || !sessionPath ? (
         <div style={s.terminalContainer}>
           <TerminalView
             key={`${task.id}-${runCount}`}
@@ -381,7 +462,7 @@ export function RunningView({
       )}
 
       {/* Status bar when task is done and no session path (terminal fallback) */}
-      {!isActive && !sessionPath && (
+      {!isActive && !isDetached && !isInterrupted && !sessionPath && (
         <div
           style={{
             padding: "10px 20px",

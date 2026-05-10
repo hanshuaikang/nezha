@@ -1,4 +1,12 @@
-import { CheckCircle2, XCircle, MinusCircle, Circle, Loader2, AlertCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  MinusCircle,
+  Circle,
+  Loader2,
+  AlertCircle,
+  AlertTriangle,
+} from "lucide-react";
 import type { TaskStatus } from "../types";
 
 export function StatusIcon({ status }: { status: TaskStatus }) {
@@ -12,6 +20,10 @@ export function StatusIcon({ status }: { status: TaskStatus }) {
       );
     case "input_required":
       return <AlertCircle size={14} style={{ color: "var(--warning)" }} />;
+    case "detached":
+      return <AlertTriangle size={14} style={{ color: "var(--warning)" }} />;
+    case "interrupted":
+      return <AlertTriangle size={14} style={{ color: "var(--warning)" }} />;
     case "done":
       return <CheckCircle2 size={14} style={{ color: "var(--success)" }} />;
     case "failed":
