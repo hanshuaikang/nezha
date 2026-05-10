@@ -126,16 +126,6 @@ xattr -rd com.apple.quarantine /Applications/nezha.app
   <img src="docs/images/light.png" alt="Light Theme" width="48%" />
 </p>
 
-## 🗺️ Roadmap
-
-| <small>Module</small> | <small>Planned Feature</small> | <small>Status</small> |
-| --- | --- | :---: |
-| <small>**Cross-Platform**</small> | <small>Linux Support</small> | <small>⏳ Planned</small> |
-| <small>**Agent Config**</small> | <small>Visual Configuration Management</small> | <small>⏳ Planned</small> |
-| | <small>Multi-Account Management</small> | <small>⏳ Planned</small> |
-| <small>**Workflow**</small> | <small>New Code Review View</small> | <small>⏳ Planned</small> |
-| | <small>Git Worktree Support</small> | <small>⏳ Planned</small> |
-
 ## 🙏 Acknowledgments
 
 The creation of Nezha was made possible by the following outstanding open-source projects. We extend our deepest gratitude to them:
