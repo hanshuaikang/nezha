@@ -306,8 +306,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.detachedNoSession":
       "This task is still running, but no session ID was saved. You can cancel it, but reconnect is unavailable.",
     "running.interruptedTitle": "This task exited unexpectedly",
-    "running.interruptedBody":
-      "Nezha detected that this task was still active when the app last closed. It will not be resumed automatically. Choose whether to resume it, cancel it, or mark it completed.",
     "running.interruptedNoSession":
       "No session ID was saved for this task, so resume is unavailable. You can still cancel it or mark it completed.",
     "running.sessionFile": "Session file: {path}",
@@ -358,6 +356,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "day.sat": "Sat",
     "toast.initProjectConfigFailed": "Failed to initialize project config: {error}",
     "toast.cancelTaskFailed": "Failed to cancel task: {error}",
+    "toast.resetTaskFailed": "Failed to reset task process: {error}",
     "toast.loadProjectFilesFailed":
       "Failed to load project file list, @ references unavailable: {error}",
     "toast.saveProjectsFailed": "Failed to save project list: {error}",
@@ -647,8 +646,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.detachedNoSession":
       "这个任务仍在后台运行，但没有保存会话 ID，无法重新连接；你可以取消任务。",
     "running.interruptedTitle": "检测到当前任务被异常退出",
-    "running.interruptedBody":
-      "Nezha 检测到这个任务在上次关闭应用时仍处于活动状态。系统不会自动恢复它，你可以选择恢复任务、取消任务，或标记已完成。",
     "running.interruptedNoSession":
       "这个任务没有保存会话 ID，因此暂时无法恢复；你仍然可以取消任务或标记已完成。",
     "running.sessionFile": "会话文件：{path}",
@@ -699,6 +696,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "day.sat": "周六",
     "toast.initProjectConfigFailed": "初始化项目配置失败：{error}",
     "toast.cancelTaskFailed": "取消任务失败：{error}",
+    "toast.resetTaskFailed": "重置任务进程失败：{error}",
     "toast.loadProjectFilesFailed": "加载项目文件列表失败，@ 引用不可用：{error}",
     "toast.saveProjectsFailed": "保存项目列表失败：{error}",
     "toast.saveTasksFailed": "保存任务失败（项目 {projectId}）：{error}",

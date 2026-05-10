@@ -11,7 +11,7 @@ use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher}
 use crate::TaskManager;
 
 const SESSION_WAIT_POLL: Duration = Duration::from_millis(50);
-const SESSION_WAIT_MAX: Duration = Duration::from_secs(5);
+const SESSION_WAIT_MAX: Duration = Duration::from_millis(500);
 const PTY_READ_BUFFER_SIZE: usize = 32 * 1024;
 const PTY_EMIT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
@@ -35,7 +35,7 @@ fn has_task_session(app: &AppHandle, task_id: &str, is_codex: bool) -> bool {
     }
 }
 
-/// 任务结束后，等待会话注册完成，最长等待 5s。
+/// 任务结束后，等待会话注册完成，最长等待 500ms。
 fn wait_for_session(app: &AppHandle, task_id: &str, is_codex: bool) {
     let deadline = Instant::now() + SESSION_WAIT_MAX;
     while Instant::now() < deadline {
@@ -593,7 +593,7 @@ pub async fn get_active_task_ids(
 }
 
 #[tauri::command]
-pub async fn detach_task_process(
+pub async fn reset_task_process(
     task_manager: State<'_, TaskManager>,
     task_id: String,
 ) -> Result<(), String> {

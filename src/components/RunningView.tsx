@@ -386,14 +386,16 @@ export function RunningView({
       </div>
 
       {/* Main content: terminal when active, session view when done/failed. */}
-      {isDetached ? (
+      {isDetached || isInterrupted ? (
         <div style={s.interruptedSessionWrap}>
           <div ref={interruptedBannerRef} style={s.interruptedBanner}>
             <div style={s.interruptedBannerIcon}>
               <AlertTriangle size={14} strokeWidth={2.1} />
             </div>
             <div style={s.interruptedBannerBody}>
-              <div style={s.interruptedBannerTitle}>{t("running.detachedTitle")}</div>
+              <div style={s.interruptedBannerTitle}>
+                {t(isDetached ? "running.detachedTitle" : "running.interruptedTitle")}
+              </div>
             </div>
             <div style={s.interruptedBannerActions}>
               <button
@@ -405,11 +407,25 @@ export function RunningView({
                   cursor: resumeSessionId ? "pointer" : "not-allowed",
                 }}
                 disabled={!resumeSessionId}
-                onClick={onReconnect}
+                onClick={isDetached ? onReconnect : onResume}
               >
                 <RotateCcw size={12} strokeWidth={2.1} />
-                <span>{bannerCompact ? t("running.reconnect") : t("running.reconnectTask")}</span>
+                <span>
+                  {isDetached
+                    ? bannerCompact
+                      ? t("running.reconnect")
+                      : t("running.reconnectTask")
+                    : bannerCompact
+                      ? t("running.resume")
+                      : t("running.resumeTask")}
+                </span>
               </button>
+              {isInterrupted && (
+                <button type="button" style={s.interruptedSecondaryBtn} onClick={onMarkDone}>
+                  <CheckCircle2 size={12} strokeWidth={2.1} />
+                  <span>{bannerCompact ? t("status.done") : t("running.markDone")}</span>
+                </button>
+              )}
               <button type="button" style={s.interruptedDangerBtn} onClick={onCancel}>
                 <X size={12} strokeWidth={2.1} />
                 <span>{bannerCompact ? t("running.cancel") : t("running.cancelTask")}</span>
@@ -419,47 +435,9 @@ export function RunningView({
           {sessionPath ? (
             <SessionView sessionPath={sessionPath} />
           ) : (
-            <div style={s.interruptedNoSessionPane}>{t("running.detachedNoSession")}</div>
-          )}
-        </div>
-      ) : isInterrupted ? (
-        <div style={s.interruptedSessionWrap}>
-          <div ref={interruptedBannerRef} style={s.interruptedBanner}>
-            <div style={s.interruptedBannerIcon}>
-              <AlertTriangle size={14} strokeWidth={2.1} />
+            <div style={s.interruptedNoSessionPane}>
+              {t(isDetached ? "running.detachedNoSession" : "running.interruptedNoSession")}
             </div>
-            <div style={s.interruptedBannerBody}>
-              <div style={s.interruptedBannerTitle}>{t("running.interruptedTitle")}</div>
-            </div>
-            <div style={s.interruptedBannerActions}>
-              <button
-                type="button"
-                title={!resumeSessionId ? t("running.resumeUnavailable") : undefined}
-                style={{
-                  ...s.interruptedPrimaryBtn,
-                  opacity: resumeSessionId ? 1 : 0.45,
-                  cursor: resumeSessionId ? "pointer" : "not-allowed",
-                }}
-                disabled={!resumeSessionId}
-                onClick={onResume}
-              >
-                <RotateCcw size={12} strokeWidth={2.1} />
-                <span>{bannerCompact ? t("running.resume") : t("running.resumeTask")}</span>
-              </button>
-              <button type="button" style={s.interruptedSecondaryBtn} onClick={onMarkDone}>
-                <CheckCircle2 size={12} strokeWidth={2.1} />
-                <span>{bannerCompact ? t("status.done") : t("running.markDone")}</span>
-              </button>
-              <button type="button" style={s.interruptedDangerBtn} onClick={onCancel}>
-                <X size={12} strokeWidth={2.1} />
-                <span>{bannerCompact ? t("running.cancel") : t("running.cancelTask")}</span>
-              </button>
-            </div>
-          </div>
-          {sessionPath ? (
-            <SessionView sessionPath={sessionPath} />
-          ) : (
-            <div style={s.interruptedNoSessionPane}>{t("running.interruptedNoSession")}</div>
           )}
         </div>
       ) : isActive || !sessionPath ? (

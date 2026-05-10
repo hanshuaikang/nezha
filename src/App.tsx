@@ -482,9 +482,9 @@ function App() {
     }
 
     try {
-      await invoke("detach_task_process", { taskId });
+      await invoke("reset_task_process", { taskId });
     } catch (e: unknown) {
-      showToast(t("toast.cancelTaskFailed", { error: String(e) }));
+      showToast(t("toast.resetTaskFailed", { error: String(e) }));
       return;
     }
     handleResumeTask(taskId);
