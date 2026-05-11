@@ -51,6 +51,8 @@ export function ProjectPage({
   onResumeTask,
   onMergeWorktree,
   onDiscardWorktree,
+  onReconnectTask,
+  onMarkTaskDone,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -107,6 +109,8 @@ export function ProjectPage({
   onResumeTask: (id: string) => void;
   onMergeWorktree: (id: string) => Promise<void>;
   onDiscardWorktree: (id: string) => Promise<void>;
+  onReconnectTask: (id: string) => void;
+  onMarkTaskDone: (id: string) => void;
   onInput: (taskId: string, data: string) => void;
   onResize: (taskId: string, cols: number, rows: number) => void;
   onRegisterTerminal: (
@@ -399,6 +403,8 @@ export function ProjectPage({
                   onResume={() => onResumeTask(task.id)}
                   onMergeWorktree={() => onMergeWorktree(task.id)}
                   onDiscardWorktree={() => onDiscardWorktree(task.id)}
+                  onReconnect={() => onReconnectTask(task.id)}
+                  onMarkDone={() => onMarkTaskDone(task.id)}
                   onInput={(data) => onInput(task.id, data)}
                   onResize={(cols, rows) => onResize(task.id, cols, rows)}
                   onRegisterTerminal={(fn) => onRegisterTerminal(task.id, fn)}

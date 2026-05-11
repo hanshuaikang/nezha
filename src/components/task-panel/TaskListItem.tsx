@@ -17,6 +17,10 @@ function statusLabelKey(status: Task["status"]): string {
       return "status.running";
     case "input_required":
       return "status.inputRequired";
+    case "detached":
+      return "status.detached";
+    case "interrupted":
+      return "status.interrupted";
     case "done":
       return "status.done";
     case "failed":

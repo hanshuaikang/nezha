@@ -8,7 +8,13 @@ type ProjectStatus = "attention" | "running" | null;
 
 function getProjectStatus(tasks: Task[], projectId: string): ProjectStatus {
   const projectTasks = tasks.filter((t) => t.projectId === projectId);
-  if (projectTasks.some((t) => t.status === "input_required")) return "attention";
+  if (
+    projectTasks.some(
+      (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
+    )
+  ) {
+    return "attention";
+  }
   if (projectTasks.some((t) => t.status === "running" || t.status === "pending")) return "running";
   return null;
 }
