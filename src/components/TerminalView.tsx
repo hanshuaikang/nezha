@@ -14,7 +14,7 @@ import {
   applyTerminalFontSize,
   applyTerminalFontFamily,
 } from "./terminalShared";
-import { attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -125,7 +125,8 @@ export function TerminalView({
     });
 
     const disposeSmartCopy = attachSmartCopy(term);
-    const disposeOnData = term.onData((data) => onInputRef.current(data));
+    const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
+    const disposeOnData = { dispose: () => linuxIME.dispose() };
 
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 0) {
