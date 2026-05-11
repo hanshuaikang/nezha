@@ -12,6 +12,7 @@ import type {
   ThemeMode,
   TerminalFontSize,
   TaskDisplayWindow,
+  SessionListItem,
 } from "./types";
 import {
   isActiveTaskStatus,
@@ -508,6 +509,31 @@ function App() {
     tm.removeTaskBuffers([taskId]);
   }
 
+  function handleAttachSession(project: Project, session: SessionListItem, resume: boolean) {
+    const taskId = crypto.randomUUID();
+    const task: Task = {
+      id: taskId,
+      projectId: project.id,
+      name: session.title ?? undefined,
+      prompt: "",
+      agent: "claude",
+      permissionMode: "ask",
+      status: "done",
+      createdAt: session.modified_at * 1000,
+      claudeSessionId: session.id,
+      claudeSessionPath: session.path,
+    };
+    setTasks((prev) => {
+      const next = [task, ...prev];
+      persistProjectTasks(project.id, next, showToast, formatSaveTasksError);
+      return next;
+    });
+    updateProjectView(project.id, { selectedTaskId: taskId, isNewTask: false });
+    if (resume) {
+      handleResumeTask(taskId);
+    }
+  }
+
   function deleteTasks(taskIds: string[]) {
     if (taskIds.length === 0) return;
 
@@ -808,6 +834,7 @@ function App() {
               onResumeTask={handleResumeTask}
               onReconnectTask={handleReconnectTask}
               onMarkTaskDone={handleMarkTaskDone}
+              onAttachSession={(session, resume) => handleAttachSession(project, session, resume)}
               onInput={tm.handleInput}
               onResize={tm.handleResize}
               onRegisterTerminal={tm.handleRegisterTerminal}

@@ -156,3 +156,12 @@ export interface UsageSnapshot {
   codex: UsageSource<CodexUsageData>;
   fetchedAt: number;
 }
+
+// ── Session listing ──────────────────────────────────────────────────────────
+
+export interface SessionListItem {
+  id: string;
+  path: string;
+  title: string | null;
+  modified_at: number;
+}

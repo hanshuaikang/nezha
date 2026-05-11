@@ -112,6 +112,7 @@ pub fn run() {
             analytics::read_session_metrics,
             analytics::get_weekly_analytics,
             session::read_session_messages,
+            session::list_project_sessions,
             config::init_project_config,
             config::read_project_config,
             config::write_project_config,

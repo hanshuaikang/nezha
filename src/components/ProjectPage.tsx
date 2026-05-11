@@ -9,8 +9,9 @@ import type {
   TerminalFontSize,
   TaskDisplayWindow,
   FontFamily,
+  SessionListItem,
 } from "../types";
-import { TaskPanel } from "./TaskPanel";
+import { TaskPanel, type TaskPanelHandle } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
 import { FileExplorer } from "./FileExplorer";
@@ -51,6 +52,7 @@ export function ProjectPage({
   onResumeTask,
   onReconnectTask,
   onMarkTaskDone,
+  onAttachSession,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -105,6 +107,7 @@ export function ProjectPage({
   onResumeTask: (id: string) => void;
   onReconnectTask: (id: string) => void;
   onMarkTaskDone: (id: string) => void;
+  onAttachSession: (session: SessionListItem, resume: boolean) => void;
   onInput: (taskId: string, data: string) => void;
   onResize: (taskId: string, cols: number, rows: number) => void;
   onRegisterTerminal: (
@@ -158,6 +161,7 @@ export function ProjectPage({
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
+  const taskPanelRef = useRef<TaskPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
   const prevHadDiffRef = useRef(false);
   const newTaskDraftRef = useRef<NewTaskDraft | null>(null);
@@ -247,6 +251,7 @@ export function ProjectPage({
         onOpen={onOpen}
       />
       <TaskPanel
+        ref={taskPanelRef}
         project={project}
         tasks={projectTasks}
         selectedId={selectedTaskId}
@@ -257,6 +262,7 @@ export function ProjectPage({
         onDeleteAllTasks={onDeleteAllTasks}
         onToggleTaskStar={onToggleTaskStar}
         onRunTodo={onRunTodoTask}
+        onAttachSession={onAttachSession}
         onBack={onBack}
         isDark={isDark}
         themeMode={themeMode}

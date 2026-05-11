@@ -1,51 +1,29 @@
-import { useState } from "react";
+import { useState, useRef, useImperativeHandle, forwardRef } from "react";
 import {
   Search,
   ChevronLeft,
   Plus,
   Trash2,
+  LinkIcon,
   PanelLeftClose,
   PanelLeftOpen,
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily, SessionListItem } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
 import { TaskList } from "./task-panel/TaskList";
+import { SessionPickerDialog } from "./SessionPickerDialog";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
-export function TaskPanel({
-  project,
-  tasks,
-  selectedId,
-  isNewTask,
-  onNewTask,
-  onSelectTask,
-  onDeleteTask,
-  onDeleteAllTasks,
-  onToggleTaskStar,
-  onRunTodo,
-  onBack,
-  isDark,
-  themeMode,
-  systemPrefersDark,
-  onThemeModeChange,
-  onToggleTheme,
-  terminalFontSize,
-  onTerminalFontSizeChange,
-  taskDisplayWindow,
-  onTaskDisplayWindowChange,
-  uiFontFamily,
-  onUiFontFamilyChange,
-  monoFontFamily,
-  onMonoFontFamilyChange,
-  active = true,
-  collapsed = false,
-  onToggleCollapsed,
-}: {
+export interface TaskPanelHandle {
+  focusSearch: () => void;
+}
+
+interface TaskPanelProps {
   project: Project;
   tasks: Task[];
   selectedId: string | null;
@@ -56,6 +34,7 @@ export function TaskPanel({
   onDeleteAllTasks: () => void;
   onToggleTaskStar: (id: string) => void;
   onRunTodo: (task: Task) => void;
+  onAttachSession: (session: SessionListItem, resume: boolean) => void;
   onBack: () => void;
   isDark: boolean;
   themeMode: ThemeMode;
@@ -73,12 +52,52 @@ export function TaskPanel({
   active?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
-}) {
+}
+
+export const TaskPanel = forwardRef<TaskPanelHandle, TaskPanelProps>(function TaskPanel(
+  {
+    project,
+    tasks,
+    selectedId,
+    isNewTask,
+    onNewTask,
+    onSelectTask,
+    onDeleteTask,
+    onDeleteAllTasks,
+    onToggleTaskStar,
+    onRunTodo,
+    onAttachSession,
+    onBack,
+    isDark,
+    themeMode,
+    systemPrefersDark,
+    onThemeModeChange,
+    onToggleTheme,
+    terminalFontSize,
+    onTerminalFontSizeChange,
+    taskDisplayWindow,
+    onTaskDisplayWindowChange,
+    uiFontFamily,
+    onUiFontFamilyChange,
+    monoFontFamily,
+    onMonoFontFamilyChange,
+    active = true,
+    collapsed = false,
+    onToggleCollapsed,
+  },
+  ref,
+) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const hasAttention = tasks.some(
     (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
   );
+
+  useImperativeHandle(ref, () => ({
+    focusSearch: () => searchInputRef.current?.focus(),
+  }));
 
   if (collapsed) {
     return (
@@ -146,11 +165,29 @@ export function TaskPanel({
       <div style={s.panelSearchWrap}>
         <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         <input
+          ref={searchInputRef}
           style={s.panelSearchInput}
           placeholder={t("task.searchTasks")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <button
+          type="button"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            flex: 0,
+            padding: "7px 8px",
+            margin: 0,
+            color: "var(--text-muted)",
+          }}
+          onClick={() => setShowSessionPicker(true)}
+          title={t("session.attachSession")}
+        >
+          <LinkIcon size={14} strokeWidth={2.2} />
+        </button>
       </div>
 
       {/* Branch bar */}
@@ -217,6 +254,16 @@ export function TaskPanel({
           onMonoFontFamilyChange={onMonoFontFamilyChange}
         />
       </div>
+      {showSessionPicker && (
+        <SessionPickerDialog
+          projectPath={project.path}
+          onSelect={(session, resume) => {
+            setShowSessionPicker(false);
+            onAttachSession(session, resume);
+          }}
+          onClose={() => setShowSessionPicker(false)}
+        />
+      )}
     </div>
   );
-}
+});
