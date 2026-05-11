@@ -68,6 +68,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    keybindings: {},
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);

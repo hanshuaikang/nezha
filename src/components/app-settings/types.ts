@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { SendShortcut } from "../../shortcuts";
+import type { SendShortcut, Keybindings } from "../../shortcuts";
 
 export type NavKey = "general" | "theme" | "fonts" | "shortcuts" | "about" | "claude" | "codex";
 
@@ -7,6 +7,7 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  keybindings: Keybindings;
 }
 
 export interface AgentVersions {

@@ -10,6 +10,7 @@ import type {
   TaskDisplayWindow,
   FontFamily,
 } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 import { TaskPanel } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
@@ -25,6 +26,9 @@ import { TodoTaskView } from "./TodoTaskView";
 import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTerminalPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useProjectPanels } from "../hooks/useProjectPanels";
+import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
+import type { Keybindings } from "../shortcuts";
+import { APP_SETTINGS_CHANGED_EVENT } from "./app-settings/types";
 import s from "../styles";
 
 export function ProjectPage({
@@ -156,9 +160,23 @@ export function ProjectPage({
   const [showShellTerminal, setShowShellTerminal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
+  const [keybindings, setKeybindings] = useState<Keybindings>({});
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    invoke<{ keybindings: Keybindings }>("load_app_settings")
+      .then((s) => setKeybindings(s.keybindings ?? {}))
+      .catch(() => {});
+    function onSettingsChanged() {
+      invoke<{ keybindings: Keybindings }>("load_app_settings")
+        .then((s) => setKeybindings(s.keybindings ?? {}))
+        .catch(() => {});
+    }
+    window.addEventListener(APP_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+    return () => window.removeEventListener(APP_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+  }, []);
   const prevHadDiffRef = useRef(false);
   const newTaskDraftRef = useRef<NewTaskDraft | null>(null);
   const handleCacheNewTaskDraft = useCallback((draft: NewTaskDraft | null) => {
@@ -225,6 +243,52 @@ export function ProjectPage({
     clearFileAndDiff();
     onNewTask();
   }, [onNewTask, clearFileAndDiff]);
+
+  useGlobalShortcuts(
+    useMemo(
+      () => ({
+        "new-task": handleNewTask,
+        "delete-task": () => {
+          if (selectedTaskId) onDeleteTask(selectedTaskId);
+        },
+        "prev-task": () => {
+          if (projectTasks.length === 0) return;
+          const idx = selectedTaskId
+            ? projectTasks.findIndex((t) => t.id === selectedTaskId)
+            : -1;
+          const prev = idx > 0 ? projectTasks[idx - 1] : projectTasks[projectTasks.length - 1];
+          if (prev) handleSelectTask(prev.id);
+        },
+        "next-task": () => {
+          if (projectTasks.length === 0) return;
+          const idx = selectedTaskId
+            ? projectTasks.findIndex((t) => t.id === selectedTaskId)
+            : -1;
+          const next =
+            idx >= 0 && idx < projectTasks.length - 1
+              ? projectTasks[idx + 1]
+              : projectTasks[0];
+          if (next) handleSelectTask(next.id);
+        },
+        "toggle-sidebar": () => setTaskPanelCollapsed((v) => !v),
+        "toggle-files": () => handleTogglePanel("files"),
+        "toggle-git-changes": () => handleTogglePanel("git-changes"),
+        "toggle-git-history": () => handleTogglePanel("git-history"),
+        "toggle-terminal": () => setShowShellTerminal((v) => !v),
+        "project-settings": () => setShowSettings((v) => !v),
+      }),
+      [
+        handleNewTask,
+        selectedTaskId,
+        projectTasks,
+        handleSelectTask,
+        handleTogglePanel,
+        onDeleteTask,
+      ],
+    ),
+    visible,
+    keybindings,
+  );
 
   const currentTaskCreatedAt = selectedTask?.createdAt ?? null;
 
