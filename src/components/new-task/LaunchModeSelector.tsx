@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ChevronDown,
@@ -8,6 +8,7 @@ import {
   Check,
   Search,
   X,
+  RefreshCw,
 } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
 import * as Popover from "@radix-ui/react-popover";
@@ -45,23 +46,42 @@ export function LaunchModeSelector({
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (!projectPath) return;
-    invoke<GitBranchInfo[]>("git_list_branches", { projectPath })
-      .then((list) => {
+  const loadBranches = useCallback(
+    async ({ applyDefault }: { applyDefault: boolean }) => {
+      if (!projectPath) return;
+      try {
+        const list = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath });
         setBranches(list);
-        // 仅在父级未指定 base（首次挂载）时把当前分支当默认
-        if (!baseBranch) {
+        if (applyDefault && !baseBranch) {
           const current = list.find((b) => b.current);
           if (current) onSetBaseBranch(current.name);
         }
-      })
-      .catch(() => {
+      } catch {
         setBranches([]);
-      });
+      }
+    },
+    // baseBranch / onSetBaseBranch 只用于首次挂载默认值，避免后续刷新被它们触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectPath]);
+    [projectPath],
+  );
+
+  useEffect(() => {
+    void loadBranches({ applyDefault: true });
+  }, [loadBranches]);
+
+  async function handleRefresh(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await loadBranches({ applyDefault: false });
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   const localBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -115,6 +135,7 @@ export function LaunchModeSelector({
       </Select.Root>
 
       {launchMode === "worktree" && (
+        <>
         <Popover.Root
           open={pickerOpen}
           onOpenChange={(open) => {
@@ -200,6 +221,22 @@ export function LaunchModeSelector({
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
+        <button
+          type="button"
+          style={s.toolbarIconBtn}
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title={t("common.refresh")}
+          aria-label={t("common.refresh")}
+        >
+          <RefreshCw
+            size={13}
+            strokeWidth={2}
+            color="var(--text-muted)"
+            className={refreshing ? "spin" : undefined}
+          />
+        </button>
+        </>
       )}
     </>
   );
