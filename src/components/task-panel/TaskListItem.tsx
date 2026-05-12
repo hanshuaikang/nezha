@@ -68,7 +68,19 @@ export const TaskListItem = memo(
             {displayTitle.slice(0, 70)}
             {displayTitle.length > 70 ? "…" : ""}
           </div>
-          <div style={s.taskCardSub}>{t(statusLabelKey(task.status))}</div>
+          <div style={s.taskCardSub}>
+            {t(statusLabelKey(task.status))}
+            {task.status === "done" &&
+              task.worktreePath &&
+              task.baseBranch &&
+              task.additions !== undefined &&
+              task.deletions !== undefined && (
+                <span style={s.taskDiffStats}>
+                  <span style={s.taskDiffAdditions}>+{task.additions}</span>
+                  <span style={s.taskDiffDeletions}>−{task.deletions}</span>
+                </span>
+              )}
+          </div>
         </div>
         <img
           src={task.agent === "claude" ? claudeLogo : chatgptLogo}

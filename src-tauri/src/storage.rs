@@ -52,6 +52,10 @@ pub struct Task {
     pub base_branch: Option<String>,
     #[serde(rename = "worktreeDiscarded", skip_serializing_if = "Option::is_none")]
     pub worktree_discarded: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additions: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<i32>,
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────────────

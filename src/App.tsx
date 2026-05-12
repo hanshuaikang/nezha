@@ -29,6 +29,7 @@ import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
 import { useTerminalManager } from "./hooks/useTerminalManager";
+import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
 import s from "./styles";
 import "./App.css";
@@ -188,6 +189,19 @@ function App() {
     [t],
   );
 
+  const persistTasksForHook = useCallback(
+    (projectId: string, allTasks: Task[]) => {
+      persistProjectTasks(projectId, allTasks, showToast, formatSaveTasksError);
+    },
+    [showToast, formatSaveTasksError],
+  );
+  const { scheduleForDoneTask } = useWorktreeDiffStats({
+    projects,
+    tasks,
+    setTasks,
+    persistTasks: persistTasksForHook,
+  });
+
   const mountProject = useCallback((projectId: string) => {
     setMountedProjectIds((prev) => (prev.includes(projectId) ? prev : [...prev, projectId]));
   }, []);
@@ -299,6 +313,7 @@ function App() {
         if (!isActiveTaskStatus(status)) {
           tm.removeTaskBuffers([task_id]);
         }
+        if (status === "done") scheduleForDoneTask(task_id);
       },
     );
     const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
@@ -626,6 +641,7 @@ function App() {
     delete pendingResumeStartsRef.current[taskId];
     updateTaskStatus(taskId, "done");
     tm.removeTaskBuffers([taskId]);
+    scheduleForDoneTask(taskId);
   }
 
   function cleanupTaskWorktree(task: Task, projectPath: string) {

@@ -280,6 +280,16 @@ export const task = {
     whiteSpace: "nowrap",
   },
   taskCardSub: { fontSize: 11, color: "var(--text-muted)", marginTop: 1 },
+  taskDiffStats: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    marginLeft: 8,
+    fontSize: 11,
+    fontVariantNumeric: "tabular-nums",
+  },
+  taskDiffAdditions: { color: "var(--diff-add-fg)", fontWeight: 600 },
+  taskDiffDeletions: { color: "var(--diff-delete-fg)", fontWeight: 600 },
   agentBadge: {
     flexShrink: 0,
     width: 14,

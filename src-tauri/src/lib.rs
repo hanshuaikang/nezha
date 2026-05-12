@@ -112,6 +112,7 @@ pub fn run() {
             git::create_task_worktree,
             git::merge_task_worktree,
             git::remove_task_worktree,
+            git::worktree_diff_stats,
             analytics::read_session_metrics,
             analytics::get_weekly_analytics,
             session::read_session_messages,

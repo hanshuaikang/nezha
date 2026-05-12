@@ -73,6 +73,10 @@ export interface Task {
   baseBranch?: string;
   /** worktree 已被合并或丢弃后置 true：保留分支/路径用于审计，但禁用 resume / 合并 / 丢弃 */
   worktreeDiscarded?: boolean;
+  /** 任务完成时计算的相对 baseBranch merge-base 的累计新增行数（仅 worktree 任务） */
+  additions?: number;
+  /** 任务完成时计算的相对 baseBranch merge-base 的累计删除行数（仅 worktree 任务） */
+  deletions?: number;
 }
 
 export const PERM_LABELS: Record<PermissionMode, string> = {

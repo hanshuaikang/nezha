@@ -1283,6 +1283,87 @@ pub async fn remove_task_worktree(
     .map_err(|e| format!("Remove worktree task panicked: {}", e))?
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct WorktreeDiffStats {
+    pub additions: i32,
+    pub deletions: i32,
+}
+
+/// 计算 worktree 工作树（含未提交改动 + 未跟踪文件）相对于 `base_branch` 与 HEAD 的 merge-base 的 +/− 行数。
+/// 用 merge-base 而非 base_branch 本身，避免主仓 base 推进后把别人提交的改动算到本任务头上。
+#[tauri::command]
+pub async fn worktree_diff_stats(
+    project_path: String,
+    worktree_path: String,
+    base_branch: String,
+) -> Result<WorktreeDiffStats, String> {
+    if base_branch.trim().is_empty() {
+        return Err("Base branch is required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<WorktreeDiffStats, String> {
+        // 路径校验包含同步 canonicalize，必须留在 spawn_blocking 内，避免阻塞 Tokio 运行时。
+        validate_project_path(&project_path)?;
+        ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+
+        // 1) 已跟踪改动（含已 stage / 未 stage）：working tree vs merge-base
+        let mb_out = run_git(&worktree_path, &["merge-base", &base_branch, "HEAD"])?;
+        if !mb_out.status.success() {
+            return Err(String::from_utf8_lossy(&mb_out.stderr).trim().to_string());
+        }
+        let merge_base = String::from_utf8_lossy(&mb_out.stdout).trim().to_string();
+
+        let mut additions = 0i32;
+        let mut deletions = 0i32;
+
+        if !merge_base.is_empty() {
+            let num_out = run_git(&worktree_path, &["diff", "--numstat", &merge_base])?;
+            if !num_out.status.success() {
+                return Err(String::from_utf8_lossy(&num_out.stderr).trim().to_string());
+            }
+            accumulate_numstat(&num_out.stdout, &mut additions, &mut deletions);
+        }
+
+        // 2) 未跟踪文件：git diff 不会列出，需要逐个用 --no-index 与空文件比对
+        let untracked = list_untracked_files(&worktree_path)?;
+        if !untracked.is_empty() {
+            let empty_file = create_empty_temp_file()?;
+            let empty_path = empty_file.to_string_lossy().into_owned();
+            for rel in &untracked {
+                let abs = Path::new(&worktree_path).join(rel);
+                let abs_str = abs.to_string_lossy().into_owned();
+                // git diff --no-index 在文件不同时返回退出码 1，故不能用 status 判断成败
+                let no_index = run_git(
+                    &worktree_path,
+                    &["diff", "--no-index", "--numstat", &empty_path, &abs_str],
+                )?;
+                accumulate_numstat(&no_index.stdout, &mut additions, &mut deletions);
+            }
+            let _ = std::fs::remove_file(&empty_file);
+        }
+
+        Ok(WorktreeDiffStats {
+            additions,
+            deletions,
+        })
+    })
+    .await
+    .map_err(|e| format!("Diff stats task panicked: {}", e))?
+}
+
+/// 解析 `git diff --numstat` 输出累加 +/− 行数。
+/// numstat 对二进制文件输出 `-\t-\t<path>`，parse 失败时按 0 跳过。
+fn accumulate_numstat(stdout: &[u8], additions: &mut i32, deletions: &mut i32) {
+    for line in String::from_utf8_lossy(stdout).lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+        *additions += parts[0].parse::<i32>().unwrap_or(0);
+        *deletions += parts[1].parse::<i32>().unwrap_or(0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
