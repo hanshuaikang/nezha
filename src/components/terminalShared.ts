@@ -157,6 +157,16 @@ export function initTerminal(
 /**
  * 尝试加载 WebGL addon，失败时静默降级。
  * 必须在 term.open() 之后调用。
+ *
+ * 关于"要不要关掉 WebGL"的实测结论（recording8/9/10 对照）：
+ * - WebGL 的代价：拖大段选区时偶发 100–400 ms composite 爆点（GPU 几何上传）
+ * - DOM renderer 的代价：高频 mousemove（鼠标在终端区域移动）+ 高速文本输出时
+ *   持续中等卡顿（每次 mousemove 触发多个 row DOM 节点的 reflow/composite，
+ *   rec10 实测 1233 mousemove/2.7s 下出现 511ms 单帧）
+ * - Nezha 日常以"鼠标在终端区域活动"为主，长拖选区相对罕见，因此 WebGL 的
+ *   "偶发爆点"比 DOM 的"持续小卡顿"更可接受。
+ *
+ * 不要为了"避免偶发卡顿"再把这里关掉——见 timeline rec10。
  */
 export function loadWebglAddon(term: Terminal): void {
   try {
