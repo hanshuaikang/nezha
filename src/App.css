@@ -763,8 +763,19 @@ body {
   border-radius: 2px;
 }
 
-/* xterm 子树隔离：防止辅助 DOM（选区/link/textarea/scrollbar）变更外溢父级 layout/paint */
-.xterm {
-  contain: layout paint style;
-  isolation: isolate;
-}
+/*
+ * 不要再给 .xterm 加 `contain: paint` 或 `isolation: isolate`。
+ *
+ * 在 WKWebView (macOS / Tauri) 上这会把 .xterm 子树 promote 成独立的
+ * compositor layer，叠加 xterm 内部的 canvas/helper/decoration 子层后，
+ * 单次 composite 在主线程上可达 100–700ms，表现为：
+ *   - 终端选区跟手延迟、有时完全无法框选
+ *   - reload 后短期恢复
+ * 详见 timeline 录制对照（recording-1 / -2 的 composite 总耗 469–985ms）。
+ *
+ * 理论收益（防止 xterm 子树变化外溢父级 layout/paint）在实测中几乎不发生，
+ * 而代价（主线程合成层负担）在 WKWebView 上是确定发生的，性价比严重倒挂。
+ *
+ * 24 天前 memory: lag_investigation_2026_04.md 已记录过同类回归，
+ * 请勿"为了优化"再次加回。
+ */
