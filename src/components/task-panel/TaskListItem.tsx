@@ -1,5 +1,5 @@
 import { useState, memo } from "react";
-import { Trash2, Star, Play } from "lucide-react";
+import { Trash2, Star, Play, GitBranch } from "lucide-react";
 import type { Task } from "../../types";
 import { StatusIcon } from "../StatusIcon";
 import { useI18n } from "../../i18n";
@@ -68,7 +68,19 @@ export const TaskListItem = memo(
             {displayTitle.slice(0, 70)}
             {displayTitle.length > 70 ? "…" : ""}
           </div>
-          <div style={s.taskCardSub}>{t(statusLabelKey(task.status))}</div>
+          <div style={s.taskCardSub}>
+            {t(statusLabelKey(task.status))}
+            {task.status === "done" &&
+              task.worktreePath &&
+              task.baseBranch &&
+              task.additions !== undefined &&
+              task.deletions !== undefined && (
+                <span style={s.taskDiffStats}>
+                  <span style={s.taskDiffAdditions}>+{task.additions}</span>
+                  <span style={s.taskDiffDeletions}>−{task.deletions}</span>
+                </span>
+              )}
+          </div>
         </div>
         <img
           src={task.agent === "claude" ? claudeLogo : chatgptLogo}
@@ -85,6 +97,14 @@ export const TaskListItem = memo(
             zIndex: 1,
           }}
         />
+        {task.worktreePath && task.worktreeBranch && (
+          <span
+            title={t("task.worktreeBadge", { branch: task.worktreeBranch })}
+            style={{ ...s.worktreeBadge, opacity: hov ? 0 : 1 }}
+          >
+            <GitBranch size={11} strokeWidth={2.2} />
+          </span>
+        )}
         <button
           type="button"
           aria-label={task.starred ? t("task.unstar") : t("task.star")}

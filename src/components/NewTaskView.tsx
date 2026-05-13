@@ -16,6 +16,7 @@ import {
 } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
+import { LaunchModeSelector, type LaunchMode } from "./new-task/LaunchModeSelector";
 import { useI18n } from "../i18n";
 import { APP_PLATFORM } from "../platform";
 import {
@@ -39,6 +40,8 @@ export interface NewTaskDraft {
   permMode: PermissionMode;
   planMode: boolean;
   pastedImages: PastedImage[];
+  launchMode?: LaunchMode;
+  baseBranch?: string;
 }
 
 type CrossProjectFileMap = Map<string, FileEntry[]>;
@@ -74,6 +77,8 @@ export function NewTaskView({
     permissionMode: PermissionMode;
     images: string[];
     immediate: boolean;
+    launchMode: LaunchMode;
+    baseBranch: string;
   }) => void;
   initialDraft?: NewTaskDraft | null;
   onCacheDraft?: (draft: NewTaskDraft | null) => void;
@@ -83,6 +88,8 @@ export function NewTaskView({
   const [agent, setAgent] = useState<AgentType>(initialDraft?.agent ?? "claude");
   const [permMode, setPermMode] = useState<PermissionMode>(initialDraft?.permMode ?? "ask");
   const [planMode, setPlanMode] = useState(initialDraft?.planMode ?? false);
+  const [launchMode, setLaunchMode] = useState<LaunchMode>(initialDraft?.launchMode ?? "local");
+  const [baseBranch, setBaseBranch] = useState<string>(initialDraft?.baseBranch ?? "");
 
   const [allFiles, setAllFiles] = useState<FileEntry[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -124,10 +131,10 @@ export function NewTaskView({
   // Cache draft on unmount so reopening the new-task view restores work in progress.
   // Cleared after submit to avoid re-restoring the just-sent prompt.
   const submittedRef = useRef(false);
-  const draftDataRef = useRef({ agent, permMode, planMode, pastedImages });
+  const draftDataRef = useRef({ agent, permMode, planMode, pastedImages, launchMode, baseBranch });
   useEffect(() => {
-    draftDataRef.current = { agent, permMode, planMode, pastedImages };
-  }, [agent, permMode, planMode, pastedImages]);
+    draftDataRef.current = { agent, permMode, planMode, pastedImages, launchMode, baseBranch };
+  }, [agent, permMode, planMode, pastedImages, launchMode, baseBranch]);
   useEffect(() => {
     return () => {
       if (!onCacheDraft) return;
@@ -147,6 +154,8 @@ export function NewTaskView({
         permMode: data.permMode,
         planMode: data.planMode,
         pastedImages: data.pastedImages,
+        launchMode: data.launchMode,
+        baseBranch: data.baseBranch,
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -305,18 +314,25 @@ export function NewTaskView({
   function handleInitializeMd() {
     const filename = agent === "claude" ? "CLAUDE.md" : "AGENTS.md";
     const prompt = t("newTask.initializePrompt", { file: filename });
+    // 初始化 md 文件不涉及代码改动，强制走本地，避免无谓的 worktree 开销
     onSubmit({
       prompt,
       agent,
       permissionMode: permMode,
       images: [],
       immediate: true,
+      launchMode: "local",
+      baseBranch: "",
     });
   }
 
   function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
     if (!text && pastedImages.length === 0) return;
+    if (!immediate && launchMode === "worktree") {
+      showToast(t("newTask.worktreeMustSend"), "warning");
+      return;
+    }
     submittedRef.current = true;
     const finalPrompt = planMode && text ? `${text}\n\nPlease use plan mode.` : text;
     onSubmit({
@@ -325,6 +341,8 @@ export function NewTaskView({
       permissionMode: permMode,
       images: pastedImages.map((img) => img.dataUrl),
       immediate,
+      launchMode,
+      baseBranch,
     });
     editorHandle.clear();
     setIsEmpty(true);
@@ -469,6 +487,9 @@ export function NewTaskView({
           planMode={planMode}
           isEmpty={isEmpty}
           hasImages={pastedImages.length > 0}
+          saveAsTodoDisabledReason={
+            launchMode === "worktree" ? t("newTask.worktreeMustSend") : undefined
+          }
           sendShortcutKeys={getSendShortcutKeys(sendShortcut, APP_PLATFORM)}
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}
@@ -484,6 +505,17 @@ export function NewTaskView({
             setIsEmpty(false);
           }}
           onSubmit={handleSubmit}
+        />
+      </div>
+
+      {/* Launch mode + base branch (compose card 外、独立一栏) */}
+      <div style={s.launchModeBar}>
+        <LaunchModeSelector
+          projectPath={project.path}
+          launchMode={launchMode}
+          baseBranch={baseBranch}
+          onSetLaunchMode={setLaunchMode}
+          onSetBaseBranch={setBaseBranch}
         />
       </div>
     </div>

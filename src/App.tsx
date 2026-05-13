@@ -29,6 +29,7 @@ import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { useToast } from "./components/Toast";
 import { useTerminalManager } from "./hooks/useTerminalManager";
+import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
 import s from "./styles";
 import "./App.css";
@@ -188,6 +189,19 @@ function App() {
     [t],
   );
 
+  const persistTasksForHook = useCallback(
+    (projectId: string, allTasks: Task[]) => {
+      persistProjectTasks(projectId, allTasks, showToast, formatSaveTasksError);
+    },
+    [showToast, formatSaveTasksError],
+  );
+  const { scheduleForDoneTask } = useWorktreeDiffStats({
+    projects,
+    tasks,
+    setTasks,
+    persistTasks: persistTasksForHook,
+  });
+
   const mountProject = useCallback((projectId: string) => {
     setMountedProjectIds((prev) => (prev.includes(projectId) ? prev : [...prev, projectId]));
   }, []);
@@ -299,6 +313,7 @@ function App() {
         if (!isActiveTaskStatus(status)) {
           tm.removeTaskBuffers([task_id]);
         }
+        if (status === "done") scheduleForDoneTask(task_id);
       },
     );
     const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
@@ -370,7 +385,7 @@ function App() {
     });
   }
 
-  function handleSubmitTask(
+  async function handleSubmitTask(
     project: Project,
     {
       prompt,
@@ -378,16 +393,29 @@ function App() {
       permissionMode,
       images,
       immediate,
+      launchMode,
+      baseBranch,
     }: {
       prompt: string;
       agent: AgentType;
       permissionMode: PermissionMode;
       images: string[];
       immediate: boolean;
+      launchMode: "local" | "worktree";
+      baseBranch: string;
     },
   ) {
-    const task: Task = {
-      id: `${Date.now()}`,
+    const taskId = `${Date.now()}`;
+
+    if (launchMode === "worktree" && !baseBranch) {
+      showToast(t("toast.worktreeBaseRequired"), "warning");
+      return;
+    }
+
+    // 1) 立即把任务推到 state 让 view 切到 RunningView。worktree 字段先留空，
+    //    避免 await create_task_worktree 期间用户停留在 NewTaskView，让人误以为没反应。
+    const baseTask: Task = {
+      id: taskId,
       projectId: project.id,
       prompt,
       agent,
@@ -396,18 +424,66 @@ function App() {
       createdAt: Date.now(),
     };
     setTasks((prev) => {
-      const next = [task, ...prev];
-      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
+      const next = [baseTask, ...prev];
+      persistProjectTasks(baseTask.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
     setActiveProject(project);
     mountProject(project.id);
-    updateProjectView(project.id, { selectedTaskId: task.id, isNewTask: false });
+    updateProjectView(project.id, { selectedTaskId: taskId, isNewTask: false });
 
     if (!immediate) return;
 
-    tm.resetTaskTerminal(task.id);
-    invokeRunTask(task, project.path, images);
+    // 2) 终端 buffer 在 PTY 启动前就要建好，否则首批输出会进不来 buffer。
+    tm.resetTaskTerminal(taskId);
+
+    // 3) 如果是 worktree 模式，先创建 worktree，成功后把字段补回 task 再启动 PTY。
+    let worktreePath: string | undefined;
+    let worktreeBranch: string | undefined;
+    let resolvedBaseBranch: string | undefined;
+
+    if (launchMode === "worktree") {
+      try {
+        const created = await invoke<{
+          worktreePath: string;
+          worktreeBranch: string;
+          baseBranch: string;
+        }>("create_task_worktree", {
+          projectPath: project.path,
+          taskId,
+          baseBranch,
+        });
+        worktreePath = created.worktreePath;
+        worktreeBranch = created.worktreeBranch;
+        resolvedBaseBranch = created.baseBranch;
+
+        setTasks((prev) => {
+          const next = prev.map((tk) =>
+            tk.id === taskId
+              ? { ...tk, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch }
+              : tk,
+          );
+          persistProjectTasks(baseTask.projectId, next, showToast, formatSaveTasksError);
+          return next;
+        });
+      } catch (e) {
+        showToast(t("toast.worktreeCreateFailed", { error: String(e) }), "error");
+        // 回滚刚加的占位 task
+        setTasks((prev) => {
+          const next = prev.filter((tk) => tk.id !== taskId);
+          persistProjectTasks(baseTask.projectId, next, showToast, formatSaveTasksError);
+          return next;
+        });
+        tm.removeTaskBuffers([taskId]);
+        return;
+      }
+    }
+
+    invokeRunTask(
+      { ...baseTask, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch },
+      worktreePath ?? project.path,
+      images,
+    );
   }
 
   function handleRunTodoTask(task: Task) {
@@ -425,14 +501,73 @@ function App() {
     });
     tm.resetTaskTerminal(task.id);
     updateProjectView(task.projectId, { selectedTaskId: task.id, isNewTask: false });
-    invokeRunTask(task, project.path, []);
+    invokeRunTask(task, task.worktreePath ?? project.path, []);
+  }
+
+  function markTaskWorktreeDiscarded(taskId: string) {
+    setTasks((prev) => {
+      const task = prev.find((x) => x.id === taskId);
+      if (!task) return prev;
+      const next = prev.map((x) =>
+        x.id === taskId ? { ...x, worktreeDiscarded: true } : x,
+      );
+      persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
+      return next;
+    });
+  }
+
+  async function handleMergeWorktree(taskId: string) {
+    const task = tasks.find((x) => x.id === taskId);
+    if (!task || !task.worktreePath || !task.worktreeBranch || !task.baseBranch) return;
+    const project = projects.find((p) => p.id === task.projectId);
+    if (!project) return;
+    try {
+      await invoke("merge_task_worktree", {
+        projectPath: project.path,
+        worktreePath: task.worktreePath,
+        branch: task.worktreeBranch,
+        baseBranch: task.baseBranch,
+      });
+      // 合并成功后顺手把 worktree 与分支清掉，避免遗留残留
+      await invoke("remove_task_worktree", {
+        projectPath: project.path,
+        worktreePath: task.worktreePath,
+        branch: task.worktreeBranch,
+      }).catch(() => {});
+      markTaskWorktreeDiscarded(taskId);
+    } catch (e) {
+      showToast(t("toast.worktreeMergeFailed", { error: String(e) }), "error");
+    }
+  }
+
+  async function handleDiscardWorktree(taskId: string) {
+    const task = tasks.find((x) => x.id === taskId);
+    if (!task || !task.worktreePath || !task.worktreeBranch) return;
+    const project = projects.find((p) => p.id === task.projectId);
+    if (!project) return;
+    const ok = await confirm(t("task.discardWorktreePrompt", { branch: task.worktreeBranch }), {
+      title: t("task.discardWorktreeTitle"),
+      kind: "warning",
+    });
+    if (!ok) return;
+    try {
+      await invoke("remove_task_worktree", {
+        projectPath: project.path,
+        worktreePath: task.worktreePath,
+        branch: task.worktreeBranch,
+      });
+      markTaskWorktreeDiscarded(taskId);
+    } catch (e) {
+      showToast(t("toast.worktreeDiscardFailed", { error: String(e) }), "error");
+    }
   }
 
   function handleCancelTask(taskId: string) {
     delete pendingResumeStartsRef.current[taskId];
     const task = tasks.find((t) => t.id === taskId);
     const project = projects.find((p) => p.id === task?.projectId);
-    invoke("cancel_task", { taskId, projectPath: project?.path ?? "" }).catch((e: unknown) => {
+    const projectPath = task?.worktreePath ?? project?.path ?? "";
+    invoke("cancel_task", { taskId, projectPath }).catch((e: unknown) => {
       showToast(t("toast.cancelTaskFailed", { error: String(e) }));
     });
   }
@@ -440,7 +575,7 @@ function App() {
   function invokeResumeTask(task: Task, project: Project, sessionId: string) {
     invoke("resume_task", {
       taskId: task.id,
-      projectPath: project.path,
+      projectPath: task.worktreePath ?? project.path,
       agent: task.agent,
       sessionId,
       prompt: task.prompt,
@@ -506,6 +641,18 @@ function App() {
     delete pendingResumeStartsRef.current[taskId];
     updateTaskStatus(taskId, "done");
     tm.removeTaskBuffers([taskId]);
+    scheduleForDoneTask(taskId);
+  }
+
+  function cleanupTaskWorktree(task: Task, projectPath: string) {
+    if (!task.worktreePath || !task.worktreeBranch || task.worktreeDiscarded) return;
+    invoke("remove_task_worktree", {
+      projectPath,
+      worktreePath: task.worktreePath,
+      branch: task.worktreeBranch,
+    }).catch((e: unknown) => {
+      showToast(t("toast.worktreeDiscardFailed", { error: String(e) }), "warning");
+    });
   }
 
   function deleteTasks(taskIds: string[]) {
@@ -525,11 +672,21 @@ function App() {
         .filter((task) => isActiveTaskStatus(task.status))
         .forEach((task) => {
           const proj = projects.find((p) => p.id === task.projectId);
-          invoke("cancel_task", { taskId: task.id, projectPath: proj?.path ?? "" }).catch(
-            (e: unknown) => {
+          const projectPath = task.worktreePath ?? proj?.path ?? "";
+          invoke("cancel_task", { taskId: task.id, projectPath })
+            .catch((e: unknown) => {
               showToast(t("toast.cancelTaskFailed", { error: String(e) }));
-            },
-          );
+            })
+            .finally(() => {
+              if (proj) cleanupTaskWorktree(task, proj.path);
+            });
+        });
+
+      deletingTasks
+        .filter((task) => !isActiveTaskStatus(task.status))
+        .forEach((task) => {
+          const proj = projects.find((p) => p.id === task.projectId);
+          if (proj) cleanupTaskWorktree(task, proj.path);
         });
 
       const next = prev.filter((task) => !toDelete.has(task.id));
@@ -681,7 +838,12 @@ function App() {
     });
     setMountedProjectIds((prev) => prev.filter((id) => id !== projectId));
     clearProjectView(projectId);
-    setActiveProject((prev) => (prev?.id === projectId ? null : prev));
+    setActiveProject((prev) => {
+      if (prev?.id === projectId) {
+        return null;
+      }
+      return prev;
+    });
   }
 
   function updateTaskStatus(
@@ -806,6 +968,8 @@ function App() {
               onUpdateTodo={handleUpdateTodo}
               onCancelTask={handleCancelTask}
               onResumeTask={handleResumeTask}
+              onMergeWorktree={handleMergeWorktree}
+              onDiscardWorktree={handleDiscardWorktree}
               onReconnectTask={handleReconnectTask}
               onMarkTaskDone={handleMarkTaskDone}
               onInput={tm.handleInput}

@@ -72,6 +72,7 @@ export function AgentPermSelector({
   planMode,
   isEmpty,
   hasImages,
+  saveAsTodoDisabledReason,
   sendShortcutKeys,
   onSetAgent,
   onSetPermMode,
@@ -84,6 +85,7 @@ export function AgentPermSelector({
   planMode: boolean;
   isEmpty: boolean;
   hasImages: boolean;
+  saveAsTodoDisabledReason?: string;
   sendShortcutKeys: string[];
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
@@ -95,6 +97,10 @@ export function AgentPermSelector({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const canSend = !isEmpty || hasImages;
   const sendShortcutLabel = sendShortcutKeys.join("");
+  const saveAsTodoDisabled = hasImages || !!saveAsTodoDisabledReason;
+  const saveAsTodoTitle = hasImages
+    ? t("newTask.imagesMustSend")
+    : saveAsTodoDisabledReason;
 
   async function handleImageFiles(files: FileList | null) {
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
@@ -308,12 +314,13 @@ export function AgentPermSelector({
                     width: "100%",
                     border: "none",
                     background: "transparent",
-                    cursor: hasImages ? "not-allowed" : "pointer",
-                    opacity: hasImages ? 0.4 : 1,
+                    cursor: saveAsTodoDisabled ? "not-allowed" : "pointer",
+                    opacity: saveAsTodoDisabled ? 0.4 : 1,
                   }}
-                  title={hasImages ? t("newTask.imagesMustSend") : undefined}
+                  disabled={saveAsTodoDisabled}
+                  title={saveAsTodoTitle}
                   onClick={() => {
-                    if (hasImages) return;
+                    if (saveAsTodoDisabled) return;
                     if (!isEmpty) onSubmit(false);
                   }}
                 >

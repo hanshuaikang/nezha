@@ -417,11 +417,14 @@ pub async fn git_create_branch(
     project_path: String,
     branch_name: String,
     from_branch: String,
+    checkout: bool,
 ) -> Result<(), String> {
-    run_git_check(
-        &project_path,
-        &["checkout", "-b", &branch_name, &from_branch],
-    )
+    let args: &[&str] = if checkout {
+        &["checkout", "-b", &branch_name, &from_branch]
+    } else {
+        &["branch", &branch_name, &from_branch]
+    };
+    run_git_check(&project_path, args)
 }
 
 #[tauri::command]
@@ -1079,6 +1082,286 @@ pub async fn git_remote_counts(
         behind,
         branch,
     })
+}
+
+// ── Task worktree management ─────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub(crate) struct WorktreeCreated {
+    #[serde(rename = "worktreePath")]
+    worktree_path: String,
+    #[serde(rename = "worktreeBranch")]
+    worktree_branch: String,
+    #[serde(rename = "baseBranch")]
+    base_branch: String,
+}
+
+fn task_worktree_branch_name(task_id: &str) -> String {
+    let short = if task_id.len() > 6 {
+        &task_id[task_id.len() - 6..]
+    } else {
+        task_id
+    };
+    format!("nezha/task-{}", short)
+}
+
+/// 校验 worktree 路径必须落在 `<project>/.nezha/worktrees/` 之下，
+/// 防止 remove_task_worktree 被传入任意路径。
+fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> Result<(), String> {
+    let project = Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    let expected_root = project.join(".nezha").join("worktrees");
+    let target = Path::new(worktree_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve worktree path: {}", e))?;
+    if !target.starts_with(&expected_root) {
+        return Err("Worktree path is outside .nezha/worktrees".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_task_worktree(
+    project_path: String,
+    task_id: String,
+    base_branch: String,
+) -> Result<WorktreeCreated, String> {
+    validate_project_path(&project_path)?;
+    if task_id.trim().is_empty() {
+        return Err("Task id is required".to_string());
+    }
+    if base_branch.trim().is_empty() {
+        return Err("Base branch is required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<WorktreeCreated, String> {
+        let worktrees_dir = Path::new(&project_path).join(".nezha").join("worktrees");
+        std::fs::create_dir_all(&worktrees_dir)
+            .map_err(|e| format!("Failed to create worktrees dir: {}", e))?;
+
+        let worktree_path = worktrees_dir.join(&task_id);
+        if worktree_path.exists() {
+            return Err(format!(
+                "Worktree path already exists: {}",
+                worktree_path.display()
+            ));
+        }
+
+        let wt_path_str = path_to_string(&worktree_path)?;
+        let branch = task_worktree_branch_name(&task_id);
+
+        let output = run_git(
+            &project_path,
+            &[
+                "worktree",
+                "add",
+                &wt_path_str,
+                "-b",
+                &branch,
+                &base_branch,
+            ],
+        )?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        Ok(WorktreeCreated {
+            worktree_path: wt_path_str,
+            worktree_branch: branch,
+            base_branch,
+        })
+    })
+    .await
+    .map_err(|e| format!("Worktree task panicked: {}", e))?
+}
+
+#[tauri::command]
+pub async fn merge_task_worktree(
+    project_path: String,
+    worktree_path: String,
+    branch: String,
+    base_branch: String,
+) -> Result<String, String> {
+    validate_project_path(&project_path)?;
+    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+    if branch.trim().is_empty() || base_branch.trim().is_empty() {
+        return Err("Branch and base branch are required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        // 0) worktree 自身有未提交修改 → 拒绝合并，避免丢失工作进度
+        let wt_status = run_git(&worktree_path, &["status", "--porcelain"])?;
+        if !wt_status.status.success() {
+            return Err(String::from_utf8_lossy(&wt_status.stderr).trim().to_string());
+        }
+        if !wt_status.stdout.is_empty() {
+            return Err(
+                "Worktree has uncommitted changes; commit or stash them before merging".into(),
+            );
+        }
+
+        // 拿主仓当前 HEAD：HEAD == base 时直接 merge，否则用 fetch ff（不切走 HEAD）。
+        let head_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if !head_out.status.success() {
+            return Err(String::from_utf8_lossy(&head_out.stderr).trim().to_string());
+        }
+        let original_branch = String::from_utf8_lossy(&head_out.stdout).trim().to_string();
+
+        if original_branch == base_branch {
+            // 主仓正在 base 上，直接合并（保留 merge commit 让历史可追溯）
+            let merge_out = run_git(&project_path, &["merge", "--no-ff", &branch])?;
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&merge_out.stdout),
+                String::from_utf8_lossy(&merge_out.stderr)
+            );
+            if !merge_out.status.success() {
+                return Err(format!(
+                    "Merge failed (main repo on '{}'; please resolve manually): {}",
+                    base_branch, combined
+                ));
+            }
+            return Ok(combined.trim().to_string());
+        }
+
+        // 主仓不在 base：用 `git fetch . <src>:<dst>` 把 worktree 分支 ff 到 base ref，不动主仓 HEAD。
+        // git fetch 默认仅允许 fast-forward 更新（用 `+` 前缀才强制），刚好阻止误覆盖 base 的提交。
+        let refspec = format!("{}:{}", branch, base_branch);
+        let ff_out = run_git(&project_path, &["fetch", ".", &refspec])?;
+        if !ff_out.status.success() {
+            let err = String::from_utf8_lossy(&ff_out.stderr);
+            return Err(format!(
+                "Cannot fast-forward '{}' (worktree may have diverged from base). \
+                 Pull base into the worktree and retry, or merge manually. Detail: {}",
+                base_branch,
+                err.trim()
+            ));
+        }
+        Ok(format!(
+            "Fast-forwarded '{}' to '{}'",
+            base_branch, branch
+        ))
+    })
+    .await
+    .map_err(|e| format!("Merge task panicked: {}", e))?
+}
+
+#[tauri::command]
+pub async fn remove_task_worktree(
+    project_path: String,
+    worktree_path: String,
+    branch: String,
+) -> Result<(), String> {
+    validate_project_path(&project_path)?;
+    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        // worktree remove --force 既可移除有未提交修改的工作树，也会清理元数据。
+        let remove_out = run_git(
+            &project_path,
+            &["worktree", "remove", "--force", &worktree_path],
+        )?;
+        if !remove_out.status.success() {
+            return Err(String::from_utf8_lossy(&remove_out.stderr)
+                .trim()
+                .to_string());
+        }
+
+        if !branch.trim().is_empty() {
+            // -D 允许删除未合并分支（丢弃语义）。已合并分支也能成功。
+            let branch_out = run_git(&project_path, &["branch", "-D", &branch])?;
+            if !branch_out.status.success() {
+                return Err(String::from_utf8_lossy(&branch_out.stderr)
+                    .trim()
+                    .to_string());
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Remove worktree task panicked: {}", e))?
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct WorktreeDiffStats {
+    pub additions: i32,
+    pub deletions: i32,
+}
+
+/// 计算 worktree 工作树（含未提交改动 + 未跟踪文件）相对于 `base_branch` 与 HEAD 的 merge-base 的 +/− 行数。
+/// 用 merge-base 而非 base_branch 本身，避免主仓 base 推进后把别人提交的改动算到本任务头上。
+#[tauri::command]
+pub async fn worktree_diff_stats(
+    project_path: String,
+    worktree_path: String,
+    base_branch: String,
+) -> Result<WorktreeDiffStats, String> {
+    if base_branch.trim().is_empty() {
+        return Err("Base branch is required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<WorktreeDiffStats, String> {
+        // 路径校验包含同步 canonicalize，必须留在 spawn_blocking 内，避免阻塞 Tokio 运行时。
+        validate_project_path(&project_path)?;
+        ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+
+        // 1) 已跟踪改动（含已 stage / 未 stage）：working tree vs merge-base
+        let mb_out = run_git(&worktree_path, &["merge-base", &base_branch, "HEAD"])?;
+        if !mb_out.status.success() {
+            return Err(String::from_utf8_lossy(&mb_out.stderr).trim().to_string());
+        }
+        let merge_base = String::from_utf8_lossy(&mb_out.stdout).trim().to_string();
+
+        let mut additions = 0i32;
+        let mut deletions = 0i32;
+
+        if !merge_base.is_empty() {
+            let num_out = run_git(&worktree_path, &["diff", "--numstat", &merge_base])?;
+            if !num_out.status.success() {
+                return Err(String::from_utf8_lossy(&num_out.stderr).trim().to_string());
+            }
+            accumulate_numstat(&num_out.stdout, &mut additions, &mut deletions);
+        }
+
+        // 2) 未跟踪文件：git diff 不会列出，需要逐个用 --no-index 与空文件比对
+        let untracked = list_untracked_files(&worktree_path)?;
+        if !untracked.is_empty() {
+            let empty_file = create_empty_temp_file()?;
+            let empty_path = empty_file.to_string_lossy().into_owned();
+            for rel in &untracked {
+                let abs = Path::new(&worktree_path).join(rel);
+                let abs_str = abs.to_string_lossy().into_owned();
+                // git diff --no-index 在文件不同时返回退出码 1，故不能用 status 判断成败
+                let no_index = run_git(
+                    &worktree_path,
+                    &["diff", "--no-index", "--numstat", &empty_path, &abs_str],
+                )?;
+                accumulate_numstat(&no_index.stdout, &mut additions, &mut deletions);
+            }
+            let _ = std::fs::remove_file(&empty_file);
+        }
+
+        Ok(WorktreeDiffStats {
+            additions,
+            deletions,
+        })
+    })
+    .await
+    .map_err(|e| format!("Diff stats task panicked: {}", e))?
+}
+
+/// 解析 `git diff --numstat` 输出累加 +/− 行数。
+/// numstat 对二进制文件输出 `-\t-\t<path>`，parse 失败时按 0 跳过。
+fn accumulate_numstat(stdout: &[u8], additions: &mut i32, deletions: &mut i32) {
+    for line in String::from_utf8_lossy(stdout).lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+        *additions += parts[0].parse::<i32>().unwrap_or(0);
+        *deletions += parts[1].parse::<i32>().unwrap_or(0);
+    }
 }
 
 #[cfg(test)]

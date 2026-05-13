@@ -122,6 +122,16 @@ export const panels = {
     minWidth: 0,
     flexWrap: "nowrap" as const,
   },
+  launchModeBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    width: "100%",
+    maxWidth: 820,
+    marginTop: 8,
+    padding: "0 18px",
+    boxSizing: "border-box" as const,
+  },
   toolbarSpacer: {
     flex: 1,
     minWidth: 8,
