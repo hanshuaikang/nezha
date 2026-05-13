@@ -125,6 +125,10 @@ function shouldIgnoreTaskStatusTransition(current: TaskStatus, next: TaskStatus)
   return current === "detached" && (next === "running" || next === "input_required");
 }
 
+function isLiveTerminalTaskStatus(status: TaskStatus): boolean {
+  return status === "pending" || status === "running" || status === "input_required";
+}
+
 function getSystemPrefersDark() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -639,6 +643,23 @@ function App() {
 
   function handleMarkTaskDone(taskId: string) {
     delete pendingResumeStartsRef.current[taskId];
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    if (isLiveTerminalTaskStatus(task.status)) {
+      const project = projects.find((p) => p.id === task.projectId);
+      const projectPath = task.worktreePath ?? project?.path ?? "";
+      invoke("complete_task", { taskId, projectPath })
+        .then(() => {
+          tm.removeTaskBuffers([taskId]);
+          scheduleForDoneTask(taskId);
+        })
+        .catch((e: unknown) => {
+          showToast(t("toast.completeTaskFailed", { error: String(e) }));
+        });
+      return;
+    }
+
     updateTaskStatus(taskId, "done");
     tm.removeTaskBuffers([taskId]);
     scheduleForDoneTask(taskId);
