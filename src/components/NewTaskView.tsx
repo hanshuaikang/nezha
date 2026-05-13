@@ -329,6 +329,10 @@ export function NewTaskView({
   function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
     if (!text && pastedImages.length === 0) return;
+    if (!immediate && launchMode === "worktree") {
+      showToast(t("newTask.worktreeMustSend"), "warning");
+      return;
+    }
     submittedRef.current = true;
     const finalPrompt = planMode && text ? `${text}\n\nPlease use plan mode.` : text;
     onSubmit({
@@ -483,6 +487,9 @@ export function NewTaskView({
           planMode={planMode}
           isEmpty={isEmpty}
           hasImages={pastedImages.length > 0}
+          saveAsTodoDisabledReason={
+            launchMode === "worktree" ? t("newTask.worktreeMustSend") : undefined
+          }
           sendShortcutKeys={getSendShortcutKeys(sendShortcut, APP_PLATFORM)}
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}
