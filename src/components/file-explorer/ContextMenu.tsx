@@ -1,3 +1,4 @@
+import s from "../../styles";
 import { useI18n } from "../../i18n";
 import type { ContextMenuState } from "./types";
 
@@ -38,7 +39,7 @@ export function FileExplorerContextMenu({
   return (
     <>
       <div
-        style={{ position: "fixed", inset: 0, zIndex: 999 }}
+        style={s.fileCtxBackdrop}
         onPointerDown={onClose}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -46,19 +47,7 @@ export function FileExplorerContextMenu({
         }}
       />
       <div
-        style={{
-          position: "fixed",
-          left: ctxMenu.x,
-          top: ctxMenu.y,
-          zIndex: 1000,
-          background: "var(--bg-sidebar)",
-          border: "1px solid var(--border-dim)",
-          borderRadius: 6,
-          boxShadow: "var(--shadow-popover)",
-          minWidth: 148,
-          padding: "3px 0",
-          fontSize: 12.5,
-        }}
+        style={{ ...s.fileCtxMenu, left: ctxMenu.x, top: ctxMenu.y }}
         onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -68,16 +57,7 @@ export function FileExplorerContextMenu({
       >
         {items.map((item, idx) => {
           if (item.action === "separator") {
-            return (
-              <div
-                key={`sep-${idx}`}
-                style={{
-                  height: 1,
-                  background: "var(--border-dim)",
-                  margin: "4px 6px",
-                }}
-              />
-            );
+            return <div key={`sep-${idx}`} style={s.fileCtxSeparator} />;
           }
           const isDestructive = item.action === "delete";
           const baseColor = isDestructive
@@ -87,24 +67,7 @@ export function FileExplorerContextMenu({
             <button
               type="button"
               key={item.label}
-              style={{
-                display: "block",
-                width: "calc(100% - 8px)",
-                height: 26,
-                padding: "0 10px",
-                cursor: "pointer",
-                color: baseColor,
-                whiteSpace: "nowrap",
-                borderRadius: 3,
-                margin: "2px 4px",
-                transition: "background 0.1s",
-                background: "transparent",
-                border: "none",
-                textAlign: "left",
-                fontSize: 12.5,
-                fontFamily: "var(--font-ui)",
-                lineHeight: "26px",
-              }}
+              style={{ ...s.fileCtxMenuItem, color: baseColor }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = isDestructive
                   ? "var(--danger-action-bg, #d23f3f)"

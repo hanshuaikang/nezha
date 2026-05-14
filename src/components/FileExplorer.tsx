@@ -3,6 +3,7 @@ import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { RotateCcw } from "lucide-react";
+import s from "../styles";
 import { useToast } from "./Toast";
 import { useI18n } from "../i18n";
 import { writeClipboardText } from "./file-explorer/clipboard";
@@ -405,17 +406,7 @@ export function FileExplorer({
   }, [ctxMenu, isCancelled, projectPath, refresh, safeInvoke, showToast, t]);
 
   return (
-    <div
-      style={{
-        width,
-        flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderLeft: "1px solid var(--border-dim)",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{ ...s.fileExplorerRoot, width }}>
       {ctxMenu && (
         <FileExplorerContextMenu
           ctxMenu={ctxMenu}
@@ -428,42 +419,12 @@ export function FileExplorer({
         />
       )}
       {/* Header */}
-      <div
-        style={{
-          height: 40,
-          display: "flex",
-          alignItems: "center",
-          padding: "0 12px",
-          borderBottom: "1px solid var(--border-dim)",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: "var(--text-hint)",
-            letterSpacing: 0.7,
-            textTransform: "uppercase",
-            flex: 1,
-          }}
-        >
-          {t("file.files")}
-        </span>
+      <div style={s.fileExplorerHeader}>
+        <span style={s.fileExplorerHeaderTitle}>{t("file.files")}</span>
         <button
           onClick={() => void refresh()}
           title={t("common.refresh")}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-hint)",
-            padding: 4,
-            borderRadius: 4,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          style={s.fileExplorerRefreshBtn}
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
             (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
@@ -477,27 +438,8 @@ export function FileExplorer({
         </button>
       </div>
       {/* Project root label */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "6px 8px 3px 20px",
-          fontSize: 12.5,
-          fontWeight: 600,
-          color: "var(--text-primary)",
-        }}
-      >
-        <span
-          style={{
-            width: 5,
-            height: 14,
-            borderRadius: 2,
-            background: "var(--icon-folder-root)",
-            flexShrink: 0,
-            display: "inline-block",
-          }}
-        />
+      <div style={s.fileExplorerRootLabel}>
+        <span style={s.fileExplorerRootIcon} />
         {projectName}
       </div>
       {/* Tree */}
@@ -505,49 +447,26 @@ export function FileExplorer({
         ref={scrollRef}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         onContextMenu={handleEmptyContextMenu}
-        style={{ flex: 1, overflowY: "auto", position: "relative" }}
+        style={s.fileExplorerTreeScroll}
       >
         {loading ? (
-          <div
-            onContextMenu={handleEmptyContextMenu}
-            style={{
-              padding: "16px 12px",
-              fontSize: 12,
-              color: "var(--text-hint)",
-              textAlign: "center",
-            }}
-          >
+          <div onContextMenu={handleEmptyContextMenu} style={s.fileExplorerEmpty}>
             {t("common.loading")}
           </div>
         ) : flat.length === 0 ? (
-          <div
-            onContextMenu={handleEmptyContextMenu}
-            style={{
-              padding: "16px 12px",
-              fontSize: 12,
-              color: "var(--text-hint)",
-              textAlign: "center",
-            }}
-          >
+          <div onContextMenu={handleEmptyContextMenu} style={s.fileExplorerEmpty}>
             {t("file.emptyDirectory")}
           </div>
         ) : (
           <div
-            style={{ height: flat.length * ROW_HEIGHT + 12, position: "relative" }}
+            style={{ position: "relative", height: flat.length * ROW_HEIGHT + 12 }}
             onContextMenu={handleEmptyContextMenu}
           >
             {flat.slice(startIdx, endIdx + 1).map((row, i) => {
               if (row.kind === "input") return null;
               const top = (startIdx + i) * ROW_HEIGHT + 2;
               return (
-                <div
-                  key={row.node.path}
-                  style={{
-                    position: "absolute",
-                    top,
-                    width: "100%",
-                  }}
-                >
+                <div key={row.node.path} style={{ ...s.fileExplorerVirtualRow, top }}>
                   <TreeItem
                     node={row.node}
                     depth={row.depth}
@@ -564,9 +483,8 @@ export function FileExplorer({
               <div
                 key="__create_row__"
                 style={{
-                  position: "absolute",
+                  ...s.fileExplorerVirtualRow,
                   top: creatingPlacement.index * ROW_HEIGHT + 2,
-                  width: "100%",
                 }}
               >
                 <CreateInputRow

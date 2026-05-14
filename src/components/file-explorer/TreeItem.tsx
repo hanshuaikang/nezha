@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
+import s from "../../styles";
 import { FileIcon } from "./FileIcon";
-import { FILE_TREE_HOVER_BG, GITIGNORED_COLOR, ROW_HEIGHT, type TreeNode } from "./types";
+import { FILE_TREE_HOVER_BG, GITIGNORED_COLOR, type TreeNode } from "./types";
 
 export function TreeItem({
   node,
@@ -27,18 +28,9 @@ export function TreeItem({
       onClick={() => (node.is_dir ? onToggle(node.path) : onSelect(node))}
       onContextMenu={(e) => onContextMenu(e, node)}
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        height: ROW_HEIGHT,
+        ...s.fileTreeRow,
         paddingLeft: 8 + depth * 14,
-        paddingRight: 8,
-        cursor: "pointer",
-        borderRadius: 4,
-        margin: "0 4px",
-        boxSizing: "border-box",
         background: isHighlighted ? "var(--bg-selected)" : "transparent",
-        userSelect: "none",
       }}
       onMouseEnter={(e) => {
         if (!isHighlighted) {
@@ -51,15 +43,7 @@ export function TreeItem({
         }
       }}
     >
-      <span
-        style={{
-          width: 12,
-          flexShrink: 0,
-          display: "inline-flex",
-          alignItems: "center",
-          color: "var(--text-hint)",
-        }}
-      >
+      <span style={s.fileTreeChevron}>
         {node.is_dir && (node.expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />)}
       </span>
       <FileIcon
@@ -71,13 +55,8 @@ export function TreeItem({
       />
       <span
         style={{
-          fontSize: 12.5,
+          ...s.fileTreeRowLabel,
           color: node.is_gitignored ? GITIGNORED_COLOR : "var(--text-primary)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          flex: 1,
-          fontFamily: "var(--font-ui)",
         }}
       >
         {node.name}
