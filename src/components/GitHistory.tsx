@@ -404,7 +404,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                   </button>
                 )}
               </div>
-              <div className="branch-popover-list" style={{ maxHeight: 180 }}>
+              <div className="branch-popover-list">
                 {filteredBranches.map((b) => {
                   const active = selectedBranch === b.name;
                   return (
@@ -421,14 +421,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                   );
                 })}
                 {filteredBranches.length === 0 && (
-                  <div
-                    style={{
-                      padding: "14px 10px",
-                      textAlign: "center",
-                      fontSize: 12,
-                      color: "var(--text-hint)",
-                    }}
-                  >
+                  <div className="branch-popover-empty">
                     {t("branch.noBranchesFound")}
                   </div>
                 )}
