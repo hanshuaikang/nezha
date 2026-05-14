@@ -325,6 +325,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.interruptedNoSession":
       "No session ID was saved for this task, so resume is unavailable. You can still cancel it or mark it completed.",
     "running.sessionFile": "Session file: {path}",
+    "running.worktreeBranchInfo": "Worktree: {branch} → {base}",
+    "running.worktreeBranchTitle": "Task is on branch {branch}, will merge into {base}",
     "running.duration": "Duration",
     "running.tokens": "Tokens",
     "running.context": "Context",
@@ -686,6 +688,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.interruptedNoSession":
       "这个任务没有保存会话 ID，因此暂时无法恢复；你仍然可以取消任务或标记已完成。",
     "running.sessionFile": "会话文件：{path}",
+    "running.worktreeBranchInfo": "工作树：{branch} → {base}",
+    "running.worktreeBranchTitle": "任务位于分支 {branch}，将合并回 {base}",
     "running.duration": "时长",
     "running.tokens": "Tokens",
     "running.context": "上下文",

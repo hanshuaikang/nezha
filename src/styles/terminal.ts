@@ -8,6 +8,18 @@ export const terminal = {
     gap: 10,
     flexShrink: 0,
   },
+  runMetaBranchRow: {
+    marginTop: 4,
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    fontSize: 11,
+    color: "var(--text-muted)",
+    fontFamily: "var(--font-mono)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
   cancelBtn: {
     display: "flex",
     alignItems: "center",
