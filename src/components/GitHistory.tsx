@@ -337,7 +337,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               transition: "background 0.1s",
             }}
           >
-            <GitBranchIcon size={11} color="var(--accent)" style={{ flexShrink: 0 }} />
+            <GitBranchIcon size={11} color="var(--text-hint)" style={{ flexShrink: 0 }} />
             <span
               style={{
                 flex: 1,
@@ -563,11 +563,11 @@ function CommitRow({
             background: isSelected
               ? "var(--accent)"
               : hasBranch
-                ? "var(--accent)"
+                ? "var(--text-muted)"
                 : "var(--text-hint)",
             border: isSelected
               ? "none"
-              : `2px solid ${hasBranch ? "var(--accent)" : "var(--border-medium)"}`,
+              : `2px solid ${hasBranch ? "var(--text-muted)" : "var(--border-medium)"}`,
           }}
         />
       </div>
@@ -596,8 +596,8 @@ function CommitRow({
                 fontWeight: 600,
                 padding: "1px 6px",
                 borderRadius: 4,
-                background: "var(--accent)",
-                color: "var(--fg-on-accent)",
+                background: "var(--bg-hover)",
+                color: "var(--text-muted)",
                 flexShrink: 0,
                 whiteSpace: "nowrap",
               }}

@@ -109,7 +109,7 @@ export function AboutPanel() {
               lineHeight: 1.5,
             }}
           >
-            <Star size={14} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <Star size={14} color="var(--text-hint)" style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
               {t("appSettings.starHint")}
             </span>

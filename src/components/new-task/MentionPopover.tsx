@@ -84,7 +84,7 @@ export function MentionPopover({
             }}
             onMouseEnter={() => onSetMentionIndex(i)}
           >
-            <span style={{ color: "var(--accent)", flexShrink: 0, display: "flex" }}>
+            <span style={{ color: "var(--text-hint)", flexShrink: 0, display: "flex" }}>
               {CODE_EXTS.has(item.file.ext) ? <FileCode2 size={12} /> : <FileText size={12} />}
             </span>
             <span style={s.mentionOptionName}>{item.file.name}</span>

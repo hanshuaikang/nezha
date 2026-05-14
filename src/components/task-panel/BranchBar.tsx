@@ -91,7 +91,7 @@ function BranchDialog({
       <div style={s.branchDialogBox} onKeyDown={handleKeyDown}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <GitBranch size={16} strokeWidth={2} color="var(--accent)" />
+            <GitBranch size={16} strokeWidth={2} color="var(--text-hint)" />
             <span style={s.branchDialogTitle}>{t("branch.createBranch")}</span>
           </div>
           <button style={s.modalCloseBtn} onClick={onClose}>
