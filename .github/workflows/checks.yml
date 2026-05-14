@@ -6,7 +6,7 @@ on:
 
 jobs:
   checks:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -32,7 +32,7 @@ jobs:
           workspaces: ./src-tauri -> target
 
       - name: Install cargo-audit
-        run: rustup run stable cargo install cargo-audit --version 0.22.1 --locked
+        run: cargo install cargo-audit --version 0.22.1 --locked
 
       - name: Run cargo audit
         working-directory: src-tauri
