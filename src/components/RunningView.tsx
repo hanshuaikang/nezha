@@ -310,10 +310,16 @@ export function RunningView({
           )}
         </div>
         {isActive && (
-          <button style={s.cancelBtn} onClick={onCancel}>
-            <X size={12} strokeWidth={2.5} />
-            <span>{t("running.cancel")}</span>
-          </button>
+          <>
+            <button style={s.doneBtn} onClick={onMarkDone}>
+              <CheckCircle2 size={12} strokeWidth={2.5} />
+              <span>{t("running.markDone")}</span>
+            </button>
+            <button style={s.cancelBtn} onClick={onCancel}>
+              <X size={12} strokeWidth={2.5} />
+              <span>{t("running.cancel")}</span>
+            </button>
+          </>
         )}
         {!isActive &&
           !isDetached &&
