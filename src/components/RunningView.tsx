@@ -16,6 +16,7 @@ import {
   Pencil,
   Sparkles,
   GitMerge,
+  GitBranch,
   Trash2,
   AlertTriangle,
   CheckCircle2,
@@ -418,6 +419,23 @@ export function RunningView({
               )
           )}
         </div>
+        {task.worktreePath && task.worktreeBranch && task.baseBranch && (
+          <div
+            title={t("running.worktreeBranchTitle", {
+              branch: task.worktreeBranch,
+              base: task.baseBranch,
+            })}
+            style={s.runMetaBranchRow}
+          >
+            <GitBranch size={11} strokeWidth={2.2} />
+            <span>
+              {t("running.worktreeBranchInfo", {
+                branch: task.worktreeBranch,
+                base: task.baseBranch,
+              })}
+            </span>
+          </div>
+        )}
         {sessionPath && (
           <div
             title={sessionPath}
