@@ -338,8 +338,10 @@ function App() {
     const selected = await openDialog({ directory: true, multiple: false });
     if (!selected) return;
     const path = selected as string;
-    const name = deriveProjectName(path);
-    const project: Project = { id: `${Date.now()}`, name, path, lastOpenedAt: Date.now() };
+    const existing = projects.find((p) => p.path === path);
+    const project: Project = existing
+      ? { ...existing, lastOpenedAt: Date.now() }
+      : { id: `${Date.now()}`, name: deriveProjectName(path), path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
       const next = [project, ...prev.filter((p) => p.path !== path)];
       persistProjects(next, showToast, formatSaveProjectsError);
