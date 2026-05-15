@@ -87,6 +87,8 @@ export function FileSearchDialog({
     }
 
     setLoading(true);
+    setResults([]);
+    setActiveIndex(0);
     setError(null);
     const timer = window.setTimeout(() => {
       invoke<ProjectFileSearchResult[]>("search_project_files", {
@@ -152,7 +154,7 @@ export function FileSearchDialog({
                 event.preventDefault();
                 return;
               }
-              if (!searchActive || results.length === 0) return;
+              if (loading || !searchActive || results.length === 0) return;
               if (event.key === "ArrowDown") {
                 setActiveIndex((idx) => Math.min(results.length - 1, idx + 1));
                 event.preventDefault();
