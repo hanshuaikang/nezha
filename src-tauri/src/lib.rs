@@ -91,6 +91,7 @@ pub fn run() {
             fs::create_directory,
             fs::delete_path,
             fs::list_project_files,
+            fs::search_project_files,
             git::generate_commit_message,
             agent_assist::generate_task_name,
             git::git_status,

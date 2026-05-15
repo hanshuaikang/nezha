@@ -13,6 +13,13 @@ export interface TreeNode extends FsEntry {
   expanded: boolean;
 }
 
+export interface ProjectFileSearchResult {
+  path: string;
+  name: string;
+  dir: string;
+  extension?: string;
+}
+
 export type FlatRow =
   | { kind: "node"; node: TreeNode; depth: number }
   | { kind: "input"; parentPath: string; depth: number; createKind: CreateKind };

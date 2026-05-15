@@ -14,6 +14,7 @@ import { TaskPanel } from "./TaskPanel";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
 import { FileExplorer } from "./FileExplorer";
+import { FileSearchDialog } from "./file-explorer/SearchPanel";
 import { FileViewer } from "./FileViewer";
 import { GitChanges } from "./GitChanges";
 import { GitHistory } from "./GitHistory";
@@ -144,6 +145,7 @@ export function ProjectPage({
     rightPanelWidth,
     terminalHeight,
     setOpenDiff,
+    openRightPanel,
     handleTogglePanel,
     handleFileSelect,
     handleFileTabSelect,
@@ -161,6 +163,7 @@ export function ProjectPage({
 
   const [showShellTerminal, setShowShellTerminal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFileSearch, setShowFileSearch] = useState(false);
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
@@ -182,6 +185,14 @@ export function ProjectPage({
     selectedTask?.worktreePath && !selectedTask.worktreeDiscarded
       ? selectedTask.worktreePath
       : project.path;
+
+  const handleSearchFileSelect = useCallback(
+    (path: string, name: string) => {
+      handleFileSelect(path, name);
+      openRightPanel("files");
+    },
+    [handleFileSelect, openRightPanel],
+  );
 
   // 只挂载当前选中的任务的 xterm 实例，其他任务通过 snapshot 序列化后卸载。
   // 这样同时只有 1 个 WebGL context 存活，避免长时间运行后 GPU 内存累积。
@@ -491,8 +502,17 @@ export function ProjectPage({
         onToggle={handleTogglePanel}
         terminalActive={showShellTerminal}
         onToggleTerminal={() => setShowShellTerminal((v) => !v)}
+        onOpenSearch={() => setShowFileSearch(true)}
         onOpenSettings={() => setShowSettings(true)}
       />
+
+      {showFileSearch && (
+        <FileSearchDialog
+          projectPath={project.path}
+          onFileSelect={handleSearchFileSelect}
+          onClose={() => setShowFileSearch(false)}
+        />
+      )}
 
       {showSettings && (
         <SettingsDialog projectPath={project.path} onClose={() => setShowSettings(false)} />
