@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import {
   Search,
@@ -9,6 +9,7 @@ import {
   Loader2,
   ChevronDown,
   Check,
+  X,
 } from "lucide-react";
 import { getGitStatusColor } from "../utils";
 import { useI18n } from "../i18n";
@@ -86,9 +87,16 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
   const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const [branchSearch, setBranchSearch] = useState("");
   const branchDropRef = useRef<HTMLDivElement>(null);
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
+
+  const filteredBranches = useMemo(() => {
+    const query = branchSearch.trim().toLowerCase();
+    if (!query) return branches;
+    return branches.filter((branch) => branch.name.toLowerCase().includes(query));
+  }, [branches, branchSearch]);
 
   useEffect(() => {
     if (!branchOpen) return;
@@ -148,6 +156,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   useEffect(() => {
     setSelectedBranch("");
+    setBranchSearch("");
     loadBranches();
     setSelectedHash(null);
     setSelectedDetail(null);
@@ -374,25 +383,49 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                 boxShadow: "var(--shadow-popover)",
                 zIndex: 200,
                 overflow: "hidden",
-                maxHeight: 220,
-                overflowY: "auto",
               }}
             >
-              {branches.map((b) => {
-                const active = selectedBranch === b.name;
-                return (
-                  <BranchOption
-                    key={b.name}
-                    name={b.name}
-                    current={b.current}
-                    active={active}
-                    onClick={() => {
-                      setSelectedBranch(b.name);
-                      setBranchOpen(false);
-                    }}
-                  />
-                );
-              })}
+              <div className="branch-popover-search">
+                <Search size={13} color="var(--text-hint)" />
+                <input
+                  autoFocus
+                  className="branch-popover-search-input"
+                  placeholder={t("branch.searchBranches")}
+                  value={branchSearch}
+                  onChange={(e) => setBranchSearch(e.target.value)}
+                />
+                {branchSearch && (
+                  <button
+                    className="branch-popover-clear"
+                    onClick={() => setBranchSearch("")}
+                    title={t("common.reset")}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <div className="branch-popover-list">
+                {filteredBranches.map((b) => {
+                  const active = selectedBranch === b.name;
+                  return (
+                    <BranchOption
+                      key={b.name}
+                      name={b.name}
+                      current={b.current}
+                      active={active}
+                      onClick={() => {
+                        setSelectedBranch(b.name);
+                        setBranchOpen(false);
+                      }}
+                    />
+                  );
+                })}
+                {filteredBranches.length === 0 && (
+                  <div className="branch-popover-empty">
+                    {t("branch.noBranchesFound")}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
