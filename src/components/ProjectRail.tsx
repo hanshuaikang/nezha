@@ -1,10 +1,24 @@
-import { useState, useEffect, useRef } from "react";
-import { Plus, ChevronsRight } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Plus, ChevronsRight, Search } from "lucide-react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { useI18n } from "../i18n";
+import s from "../styles";
 
 type ProjectStatus = "attention" | "running" | null;
+
+function normalizeProjectSearchText(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase();
+}
+
+export function projectMatchesRailSearch(project: Project, query: string) {
+  const normalizedQuery = normalizeProjectSearchText(query.trim());
+  if (!normalizedQuery) return true;
+
+  return [project.name, project.path].some((value) =>
+    normalizeProjectSearchText(value).includes(normalizedQuery),
+  );
+}
 
 function getProjectStatus(tasks: Task[], projectId: string): ProjectStatus {
   const projectTasks = tasks.filter((t) => t.projectId === projectId);
@@ -101,6 +115,11 @@ function ProjectDrawer({
 }) {
   const { t } = useI18n();
   const drawerRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter((project) => projectMatchesRailSearch(project, query));
+  }, [projects, query]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -131,20 +150,60 @@ function ProjectDrawer({
     >
       <div
         style={{
-          padding: "14px 14px 8px",
-          fontSize: 11,
-          fontWeight: 700,
-          color: "var(--text-hint)",
-          letterSpacing: 0.7,
-          textTransform: "uppercase",
+          padding: "12px 12px 10px",
           borderBottom: "1px solid var(--border-dim)",
-          marginBottom: 4,
         }}
       >
-        {t("welcome.projects")}
+        <div
+          style={{
+            margin: "0 2px 8px",
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--text-hint)",
+            letterSpacing: 0.7,
+            textTransform: "uppercase",
+          }}
+        >
+          {t("welcome.projects")}
+        </div>
+        <div
+          style={{
+            ...s.panelSearchWrap,
+            margin: 0,
+          }}
+        >
+          <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              if (query) {
+                setQuery("");
+              } else {
+                onClose();
+              }
+            }}
+            placeholder={t("welcome.searchProjects")}
+            style={{ ...s.panelSearchInput, minWidth: 0 }}
+          />
+        </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "4px 8px 8px" }}>
-        {projects.map((project) => {
+        {filteredProjects.length === 0 && (
+          <div
+            style={{
+              padding: "24px 10px",
+              textAlign: "center",
+              color: "var(--text-hint)",
+              fontSize: 12,
+            }}
+          >
+            {t("welcome.noMatchingProjects")}
+          </div>
+        )}
+        {filteredProjects.map((project) => {
           const status = getProjectStatus(allTasks, project.id);
           const isActive = project.id === activeProjectId;
           return (
