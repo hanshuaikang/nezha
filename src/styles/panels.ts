@@ -526,14 +526,13 @@ export const panels = {
   fileSearchBox: {
     display: "flex",
     alignItems: "center",
-    gap: 5,
-    minHeight: 28,
-    padding: "0 5px 0 8px",
+    gap: 7,
+    minHeight: 30,
+    padding: "0 5px 0 9px",
     border: "1px solid var(--border-dim)",
     borderRadius: 6,
-    background: "var(--bg-input, var(--bg-card))",
+    background: "var(--bg-card)",
     boxSizing: "border-box" as const,
-    boxShadow: "inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent)",
   },
   fileSearchIcon: {
     flexShrink: 0,
