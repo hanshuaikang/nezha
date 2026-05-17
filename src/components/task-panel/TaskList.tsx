@@ -111,6 +111,7 @@ export function TaskList({
 
   const rows = useMemo<VirtualRow[]>(() => {
     const attentionTasks: Task[] = [];
+    const pendingMergeTasks: Task[] = [];
     const starredTasks: Task[] = [];
     const todoTasks: Task[] = [];
     const todayTasks: Task[] = [];
@@ -123,6 +124,12 @@ export function TaskList({
         task.status === "interrupted"
       ) {
         attentionTasks.push(task);
+      } else if (
+        task.status === "done" &&
+        !!task.worktreePath &&
+        !task.worktreeDiscarded
+      ) {
+        pendingMergeTasks.push(task);
       } else if (task.starred) {
         starredTasks.push(task);
       } else if (task.status === "todo") {
@@ -150,6 +157,7 @@ export function TaskList({
     };
 
     appendGroup("attention", t("task.needsAttention"), attentionTasks);
+    appendGroup("pending_merge", t("task.pendingMerge"), pendingMergeTasks);
     appendGroup("starred", t("task.starred"), starredTasks);
     appendGroup("todo", t("status.todo"), todoTasks, true);
     appendGroup("today", t("task.today"), todayTasks);
