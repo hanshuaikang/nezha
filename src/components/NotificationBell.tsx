@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Bell, X, ExternalLink, Check, CheckCheck, Info, AlertTriangle, AlertCircle } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { NotificationItem, NotificationResult } from "../types";
+import type { NotificationItem } from "../types";
+import { useNotifications } from "../hooks/useNotifications";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
@@ -138,66 +138,7 @@ function NotificationEntry({
 export function NotificationBell() {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [result, setResult] = useState<NotificationResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await invoke<NotificationResult>("get_notifications");
-      setResult(data);
-      setError(null);
-    } catch (err) {
-      const message =
-        typeof err === "string"
-          ? err
-          : err instanceof Error
-            ? err.message
-            : t("notification.loadingFailed");
-      setError(message);
-      console.error("Failed to load notifications:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
-
-  const handleMarkRead = useCallback(
-    async (id: string) => {
-      try {
-        await invoke("mark_notification_read", { id });
-        setResult((prev) => {
-          if (!prev) return prev;
-          const notifications = prev.notifications.map((n) =>
-            n.id === id ? { ...n, isRead: true } : n,
-          );
-          const unreadCount = notifications.filter((n) => !n.isRead).length;
-          const hasUnreadPopup = notifications.some((n) => !n.isRead && n.popup);
-          return { notifications, unreadCount, hasUnreadPopup };
-        });
-      } catch {
-        // Silent
-      }
-    },
-    [],
-  );
-
-  const handleMarkAllRead = useCallback(async () => {
-    try {
-      await invoke("mark_all_notifications_read");
-      setResult((prev) => {
-        if (!prev) return prev;
-        const notifications = prev.notifications.map((n) => ({ ...n, isRead: true }));
-        return { notifications, unreadCount: 0, hasUnreadPopup: false };
-      });
-    } catch {
-      // Silent
-    }
-  }, []);
+  const { result, loading, error, markRead, markAllRead } = useNotifications();
 
   const unreadCount = result?.unreadCount ?? 0;
   const isActive = unreadCount > 0 || loading || Boolean(error);
@@ -302,7 +243,7 @@ export function NotificationBell() {
               {unreadCount > 0 && (
                 <button
                   title={t("notification.markAllAsRead")}
-                  onClick={handleMarkAllRead}
+                  onClick={markAllRead}
                   style={{
                     background: "none",
                     border: "none",
@@ -368,7 +309,7 @@ export function NotificationBell() {
                 </div>
               ) : (
                 result.notifications.map((item) => (
-                  <NotificationEntry key={item.id} item={item} onMarkRead={handleMarkRead} />
+                  <NotificationEntry key={item.id} item={item} onMarkRead={markRead} />
                 ))
               )}
             </div>
