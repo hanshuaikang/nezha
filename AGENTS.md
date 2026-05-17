@@ -170,6 +170,7 @@ commit_prompt = "..."     # generate_commit_message 使用的提示词
 
 - 已开启严格模式（`tsconfig.json`）。避免使用 `any`，应扩展 `types.ts` 代替。
 - Tauri 命令使用 `invoke<ReturnType>()` 类型化——添加新命令时记得加泛型参数。
+- 终端键盘/粘贴/拖拽交互的共享前端逻辑放在 `src/components/terminalPasteDrop.ts`；`TerminalView` 和 `ShellTerminalPanel` 应复用同一套处理，避免 Codex 任务终端与内置 Shell 行为分叉。
 
 ### Rust
 

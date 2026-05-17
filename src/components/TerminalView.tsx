@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import { attachTerminalPasteAndDrop } from "./terminalPasteDrop";
 import type { TerminalFontSize, FontFamily } from "../types";
 import {
   DARK_THEME,
@@ -20,9 +21,7 @@ import "@xterm/xterm/css/xterm.css";
 interface TerminalViewProps {
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
-  onRegisterTerminal: (
-    writeFn: ((data: string, callback?: () => void) => void) | null,
-  ) => number;
+  onRegisterTerminal: (writeFn: ((data: string, callback?: () => void) => void) | null) => number;
   onReady?: (generation: number) => void;
   isDark: boolean;
   terminalFontSize: TerminalFontSize;
@@ -127,6 +126,12 @@ export function TerminalView({
     const disposeSmartCopy = attachSmartCopy(term);
     const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
     const disposeOnData = { dispose: () => linuxIME.dispose() };
+    const disposePasteAndDrop = attachTerminalPasteAndDrop({
+      container,
+      sendInput: (data) => onInputRef.current(data),
+      focusTerminal,
+      isActive: () => terminalRef.current === term,
+    });
 
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 0) {
@@ -175,6 +180,7 @@ export function TerminalView({
       fitAddonRef.current = null;
       disposeInputFix();
       disposeSmartCopy();
+      disposePasteAndDrop();
       disposeOnData.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();

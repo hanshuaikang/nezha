@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import { attachTerminalPasteAndDrop } from "./terminalPasteDrop";
 import type { TerminalFontSize, FontFamily } from "../types";
 import {
   DARK_THEME,
@@ -152,6 +153,20 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         invoke("send_input", { taskId: shellId, data }).catch(() => {});
       });
       const disposeOnData = { dispose: () => linuxIME.dispose() };
+      const sendInput = (data: string) => {
+        invoke("send_input", { taskId: shellId, data }).catch(() => {});
+      };
+      const focusTerminal = () => {
+        window.requestAnimationFrame(() => {
+          term.focus();
+        });
+      };
+      const disposePasteAndDrop = attachTerminalPasteAndDrop({
+        container,
+        sendInput,
+        focusTerminal,
+        isActive: () => isActiveRef.current && terminalRef.current === term,
+      });
 
       const resizeObserver = new ResizeObserver(() => {
         setTimeout(() => {
@@ -198,6 +213,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         }
         unlisten?.();
         disposeSmartCopy();
+        disposePasteAndDrop();
         disposeOnData.dispose();
         resizeObserver.disconnect();
         document.removeEventListener("visibilitychange", handleVisibilityChange);
