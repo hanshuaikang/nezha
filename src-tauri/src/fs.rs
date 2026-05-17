@@ -612,10 +612,15 @@ pub async fn search_project_files(
                 2
             };
 
+            let full_path = root.join(rel);
+            if !full_path.is_file() {
+                continue;
+            }
+
             matches.push((
                 score,
                 ProjectFileSearchResult {
-                    path: root.join(rel).to_string_lossy().into_owned(),
+                    path: full_path.to_string_lossy().into_owned(),
                     name,
                     dir,
                     extension,
