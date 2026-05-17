@@ -25,8 +25,12 @@ export function useProjectPanels() {
   const terminalHeightRef = useRef(terminalHeight);
   terminalHeightRef.current = terminalHeight;
 
-  const handleTogglePanel = useCallback((panel: "files" | "git-changes" | "git-history") => {
+  const handleTogglePanel = useCallback((panel: Exclude<RightPanel, null>) => {
     setRightPanel((prev) => (prev === panel ? null : panel));
+  }, []);
+
+  const openRightPanel = useCallback((panel: Exclude<RightPanel, null>) => {
+    setRightPanel(panel);
   }, []);
 
   const handleFileSelect = useCallback((path: string, name: string) => {
@@ -161,6 +165,7 @@ export function useProjectPanels() {
     rightPanelWidth,
     terminalHeight,
     setOpenDiff,
+    openRightPanel,
     handleTogglePanel,
     handleFileSelect,
     handleFileTabSelect,

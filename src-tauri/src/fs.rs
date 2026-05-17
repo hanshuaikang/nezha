@@ -12,6 +12,14 @@ pub(crate) struct FsEntry {
 }
 
 #[derive(serde::Serialize)]
+pub(crate) struct ProjectFileSearchResult {
+    path: String,
+    name: String,
+    dir: String,
+    extension: Option<String>,
+}
+
+#[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ImagePreviewData {
     data_url: String,
@@ -40,6 +48,7 @@ const IGNORED_DIRS: &[&str] = &[
 ];
 
 const MAX_IMAGE_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_FILE_SEARCH_RESULTS: usize = 200;
 
 /// Validate that `target` is an absolute path within `allowed_root` (prevents directory traversal).
 fn validate_path_within(target: &str, allowed_root: &str) -> Result<std::path::PathBuf, String> {
@@ -62,6 +71,20 @@ fn validate_path_within(target: &str, allowed_root: &str) -> Result<std::path::P
     }
 
     Ok(canonical_target)
+}
+
+fn validate_project_root(project_path: &str) -> Result<std::path::PathBuf, String> {
+    let path = Path::new(project_path);
+    if !path.is_absolute() {
+        return Err("Project path must be absolute".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    if !canonical.is_dir() {
+        return Err("Project path is not a directory".to_string());
+    }
+    Ok(canonical)
 }
 
 /// Names whose stem (the substring before the first `.`) are reserved on Windows. Only consulted
@@ -502,6 +525,125 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<String>, Str
         files.sort();
         files.dedup();
         Ok(files)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn relative_git_path_is_safe(path: &str) -> bool {
+    let path = Path::new(path);
+    path.components().all(|component| {
+        matches!(
+            component,
+            std::path::Component::Normal(_) | std::path::Component::CurDir
+        )
+    })
+}
+
+fn split_relative_file_path(path: &str) -> (String, String) {
+    match path.rsplit_once('/') {
+        Some((dir, name)) => (dir.to_string(), name.to_string()),
+        None => ("".to_string(), path.to_string()),
+    }
+}
+
+fn file_extension_lower(name: &str) -> Option<String> {
+    name.rsplit_once('.')
+        .and_then(|(_, ext)| (!ext.is_empty()).then(|| ext.to_ascii_lowercase()))
+}
+
+#[tauri::command]
+pub async fn search_project_files(
+    project_path: String,
+    query: String,
+    extensions: Vec<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ProjectFileSearchResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = validate_project_root(&project_path)?;
+        let query = query.trim().to_ascii_lowercase();
+        let extension_filters: std::collections::HashSet<String> = extensions
+            .into_iter()
+            .map(|ext| ext.trim().trim_start_matches('.').to_ascii_lowercase())
+            .filter(|ext| !ext.is_empty())
+            .collect();
+        let limit = limit.unwrap_or(80).clamp(1, MAX_FILE_SEARCH_RESULTS);
+
+        let mut cmd = Command::new("git");
+        crate::subprocess::configure_background_command(&mut cmd);
+        let output = cmd
+            .args(["-c", "core.quotePath=false", "ls-files", "-z"])
+            .current_dir(&root)
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let mut matches: Vec<(u8, ProjectFileSearchResult)> = Vec::new();
+        for rel in String::from_utf8_lossy(&output.stdout).split('\0') {
+            if rel.is_empty() || !relative_git_path_is_safe(rel) {
+                continue;
+            }
+
+            let (dir, name) = split_relative_file_path(rel);
+            let name_lower = name.to_ascii_lowercase();
+            if !query.is_empty() && !name_lower.contains(&query) {
+                continue;
+            }
+
+            let extension = file_extension_lower(&name);
+            if !extension_filters.is_empty()
+                && !extension
+                    .as_ref()
+                    .is_some_and(|ext| extension_filters.contains(ext))
+            {
+                continue;
+            }
+
+            let score = if query.is_empty() {
+                3
+            } else if name_lower == query {
+                0
+            } else if name_lower.starts_with(&query) {
+                1
+            } else {
+                2
+            };
+
+            let full_path = root.join(rel);
+            if !full_path.is_file() {
+                continue;
+            }
+
+            matches.push((
+                score,
+                ProjectFileSearchResult {
+                    path: full_path.to_string_lossy().into_owned(),
+                    name,
+                    dir,
+                    extension,
+                },
+            ));
+        }
+
+        matches.sort_by(|(score_a, a), (score_b, b)| {
+            score_a
+                .cmp(score_b)
+                .then_with(|| {
+                    a.name
+                        .to_ascii_lowercase()
+                        .cmp(&b.name.to_ascii_lowercase())
+                })
+                .then_with(|| a.dir.cmp(&b.dir))
+        });
+
+        Ok(matches
+            .into_iter()
+            .take(limit)
+            .map(|(_, result)| result)
+            .collect())
     })
     .await
     .map_err(|e| e.to_string())?

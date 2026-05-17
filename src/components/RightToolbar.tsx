@@ -2,23 +2,26 @@ import type { ReactNode } from "react";
 import { IconButton } from "./IconButton";
 import { Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
 import { useI18n } from "../i18n";
+import type { RightPanel } from "../hooks/useProjectPanels";
 
 export function RightToolbar({
   activePanel,
   onToggle,
   terminalActive,
   onToggleTerminal,
+  onOpenSearch,
   onOpenSettings,
 }: {
-  activePanel: "files" | "git-changes" | "git-history" | null;
-  onToggle: (panel: "files" | "git-changes" | "git-history") => void;
+  activePanel: RightPanel;
+  onToggle: (panel: Exclude<RightPanel, null>) => void;
   terminalActive: boolean;
   onToggleTerminal: () => void;
+  onOpenSearch: () => void;
   onOpenSettings: () => void;
 }) {
   const { t } = useI18n();
   const buttons: Array<{
-    key: "files" | "git-changes" | "git-history";
+    key: Exclude<RightPanel, null>;
     icon: ReactNode;
     title: string;
   }> = [
@@ -26,8 +29,6 @@ export function RightToolbar({
     { key: "git-changes", icon: <GitBranch size={17} />, title: t("toolbar.gitChanges") },
     { key: "git-history", icon: <History size={17} />, title: t("toolbar.gitHistory") },
   ];
-
-  const placeholders = [{ icon: <Search size={17} />, title: t("toolbar.searchComingSoon") }];
 
   const footerItems = [
     { icon: <Settings size={17} />, title: t("settings.title"), disabled: false, onClick: onOpenSettings },
@@ -68,9 +69,7 @@ export function RightToolbar({
 
       <div style={{ width: 20, height: 1, background: "var(--border-dim)", margin: "4px 0" }} />
 
-      {placeholders.map((p, i) => (
-        <IconButton key={i} icon={p.icon} title={p.title} disabled />
-      ))}
+      <IconButton icon={<Search size={17} />} title={t("toolbar.search")} onClick={onOpenSearch} />
 
       <div style={{ flex: 1 }} />
 
