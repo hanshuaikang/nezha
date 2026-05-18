@@ -1528,6 +1528,260 @@ pub(crate) fn spawn_resume_session_watcher(
     });
 }
 
+// ── Markdown export ──────────────────────────────────────────────────────────
+
+/// 导出允许处理的会话文件最大尺寸（200MB）。超过则拒绝，避免一次性 read_to_string
+/// 把进程拉爆。此限制比 summary 的 50MB 更宽松，因为导出是用户主动触发、单次操作。
+const MAX_SESSION_BYTES_FOR_EXPORT: u64 = 200 * 1024 * 1024;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportTaskMeta {
+    pub name: Option<String>,
+    pub prompt: String,
+    pub agent: String,
+    pub permission_mode: String,
+    pub status: String,
+    pub created_at: i64,
+    pub session_id: Option<String>,
+    pub worktree_branch: Option<String>,
+    pub base_branch: Option<String>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub failure_reason: Option<String>,
+}
+
+#[tauri::command]
+pub async fn export_session_markdown(
+    session_path: String,
+    project_path: String,
+    is_codex: bool,
+    output_path: String,
+    task_meta: ExportTaskMeta,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        export_session_markdown_inner(
+            &session_path,
+            &project_path,
+            is_codex,
+            &output_path,
+            &task_meta,
+        )
+    })
+    .await
+    .map_err(|e| format!("Join error: {}", e))?
+}
+
+fn export_session_markdown_inner(
+    session_path: &str,
+    project_path: &str,
+    is_codex: bool,
+    output_path: &str,
+    meta: &ExportTaskMeta,
+) -> Result<(), String> {
+    let canonical = validate_session_path(session_path, project_path, is_codex)?;
+
+    let metadata = fs::metadata(&canonical)
+        .map_err(|e| format!("Cannot read session metadata: {}", e))?;
+    if metadata.len() > MAX_SESSION_BYTES_FOR_EXPORT {
+        return Err(format!(
+            "Session file is too large to export ({} MB > {} MB limit)",
+            metadata.len() / 1024 / 1024,
+            MAX_SESSION_BYTES_FOR_EXPORT / 1024 / 1024
+        ));
+    }
+
+    let content = fs::read_to_string(&canonical)
+        .map_err(|e| format!("Cannot read session file: {}", e))?;
+    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+    let messages = if is_codex_format(&lines) {
+        parse_codex_session(&lines)
+    } else {
+        parse_claude_session(&lines)
+    };
+    let ended_at = find_last_timestamp(&lines);
+
+    let markdown = render_export_markdown(meta, &messages, ended_at.as_deref());
+    fs::write(output_path, markdown)
+        .map_err(|e| format!("Cannot write markdown file: {}", e))?;
+    Ok(())
+}
+
+/// 反向扫描会话文件最后一条带 `timestamp` 字段的事件，作为任务结束时间。
+/// Claude 与 Codex 的 JSONL 顶层都带 `timestamp` 字符串（ISO8601），故同一逻辑通吃。
+fn find_last_timestamp(lines: &[&str]) -> Option<String> {
+    for line in lines.iter().rev() {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if let Some(ts) = val.get("timestamp").and_then(|v| v.as_str()) {
+            return Some(ts.to_string());
+        }
+    }
+    None
+}
+
+fn render_export_markdown(
+    meta: &ExportTaskMeta,
+    messages: &[SessionMessage],
+    ended_at: Option<&str>,
+) -> String {
+    let mut out = String::new();
+
+    // Title
+    let title = meta
+        .name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| meta.prompt.lines().next().unwrap_or(&meta.prompt));
+    let title = truncate_chars(title, 70);
+    out.push_str("# ");
+    out.push_str(&title);
+    out.push_str("\n\n");
+
+    // Metadata
+    out.push_str("## Metadata\n\n");
+    out.push_str(&format!("- **Agent**: {}\n", meta.agent));
+    out.push_str(&format!("- **Permission**: {}\n", meta.permission_mode));
+    out.push_str(&format!("- **Status**: {}\n", meta.status));
+    out.push_str(&format!(
+        "- **Created**: {}\n",
+        format_timestamp_ms(meta.created_at)
+    ));
+    if let Some(ts) = ended_at {
+        out.push_str(&format!("- **Ended**: {}\n", ts));
+    }
+    if let Some(sid) = &meta.session_id {
+        if !sid.is_empty() {
+            out.push_str(&format!("- **Session ID**: `{}`\n", sid));
+        }
+    }
+    if let (Some(branch), Some(base)) = (&meta.worktree_branch, &meta.base_branch) {
+        out.push_str(&format!("- **Branch**: `{}` → `{}`\n", branch, base));
+    }
+    if let (Some(add), Some(del)) = (meta.additions, meta.deletions) {
+        out.push_str(&format!("- **Diff**: +{} / −{}\n", add, del));
+    }
+    if let Some(reason) = &meta.failure_reason {
+        if !reason.is_empty() {
+            out.push_str(&format!("- **Failure reason**: {}\n", reason));
+        }
+    }
+    out.push('\n');
+
+    // Prompt
+    out.push_str("## Prompt\n\n");
+    if meta.prompt.trim().is_empty() {
+        out.push_str("> _(empty)_\n");
+    } else {
+        for line in meta.prompt.lines() {
+            out.push_str("> ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out.push('\n');
+
+    // Conversation — coalesce consecutive same-role messages under one header
+    out.push_str("## Conversation\n\n");
+    let mut current_role: Option<&str> = None;
+    for msg in messages {
+        if current_role != Some(msg.role.as_str()) {
+            current_role = Some(msg.role.as_str());
+            let label = match msg.role.as_str() {
+                "user" => "### 👤 User",
+                "assistant" => "### 🤖 Assistant",
+                other => {
+                    // 未来若 parser 扩展了新角色，按字面量输出而非 panic
+                    out.push_str(&format!("### {}\n\n", other));
+                    continue;
+                }
+            };
+            out.push_str(label);
+            out.push_str("\n\n");
+        }
+        for block in &msg.content {
+            render_block(&mut out, block);
+        }
+    }
+
+    out
+}
+
+fn render_block(out: &mut String, block: &SessionContent) {
+    match block {
+        SessionContent::Text { text } => {
+            out.push_str(text);
+            if !text.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push('\n');
+        }
+        SessionContent::Thinking { thinking } => {
+            out.push_str("<details><summary>Thinking</summary>\n\n");
+            let fence = safe_code_fence(thinking);
+            out.push_str(&fence);
+            out.push('\n');
+            out.push_str(thinking);
+            if !thinking.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(&fence);
+            out.push_str("\n\n</details>\n\n");
+        }
+        SessionContent::ToolUse { name, input, .. } => {
+            out.push_str("<details><summary>🔧 ");
+            out.push_str(name);
+            out.push_str("</summary>\n\n");
+            let fence = safe_code_fence(input);
+            out.push_str(&fence);
+            out.push_str("json\n");
+            out.push_str(input);
+            if !input.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(&fence);
+            out.push_str("\n\n</details>\n\n");
+        }
+    }
+}
+
+/// 自适应代码围栏长度：若内容里含 N 个连续反引号，围栏至少用 N+1 个。
+/// 防止用户提示词、Edit 工具调用等出现 ``` 时把整段代码块截断。
+fn safe_code_fence(s: &str) -> String {
+    let mut max = 0usize;
+    let mut cur = 0usize;
+    for c in s.chars() {
+        if c == '`' {
+            cur += 1;
+            if cur > max {
+                max = cur;
+            }
+        } else {
+            cur = 0;
+        }
+    }
+    "`".repeat(max.saturating_add(1).max(3))
+}
+
+fn format_timestamp_ms(ms: i64) -> String {
+    use chrono::{TimeZone, Utc};
+    Utc.timestamp_millis_opt(ms)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .unwrap_or_else(|| ms.to_string())
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let count = s.chars().count();
+    if count <= max_chars {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
 // ── 测试 ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1707,5 +1961,77 @@ mod tests {
         });
 
         assert!(assistant_message_requests_user_input(Some(&payload)));
+    }
+
+    fn sample_meta() -> ExportTaskMeta {
+        ExportTaskMeta {
+            name: Some("Demo task".into()),
+            prompt: "do the thing".into(),
+            agent: "claude".into(),
+            permission_mode: "full_access".into(),
+            status: "done".into(),
+            created_at: 1_715_990_400_000, // 2024-05-18T00:00:00Z
+            session_id: Some("abc-123".into()),
+            worktree_branch: None,
+            base_branch: None,
+            additions: None,
+            deletions: None,
+            failure_reason: None,
+        }
+    }
+
+    #[test]
+    fn export_markdown_includes_metadata_and_prompt() {
+        let md = render_export_markdown(&sample_meta(), &[], Some("2024-05-18T01:00:00Z"));
+        assert!(md.starts_with("# Demo task\n\n"), "title missing: {}", md);
+        assert!(md.contains("- **Agent**: claude"));
+        assert!(md.contains("- **Session ID**: `abc-123`"));
+        assert!(md.contains("- **Ended**: 2024-05-18T01:00:00Z"));
+        assert!(md.contains("> do the thing"));
+    }
+
+    #[test]
+    fn export_markdown_coalesces_consecutive_assistant_messages() {
+        let messages = vec![
+            SessionMessage {
+                role: "assistant".into(),
+                content: vec![SessionContent::Text {
+                    text: "first turn".into(),
+                }],
+            },
+            SessionMessage {
+                role: "assistant".into(),
+                content: vec![SessionContent::ToolUse {
+                    id: "t1".into(),
+                    name: "Bash".into(),
+                    input: "{\"cmd\":\"ls\"}".into(),
+                }],
+            },
+        ];
+        let md = render_export_markdown(&sample_meta(), &messages, None);
+        // 只能出现一个 Assistant 标题
+        assert_eq!(md.matches("### 🤖 Assistant").count(), 1, "{}", md);
+        assert!(md.contains("first turn"));
+        assert!(md.contains("🔧 Bash"));
+    }
+
+    #[test]
+    fn export_markdown_falls_back_to_prompt_when_name_missing() {
+        let mut meta = sample_meta();
+        meta.name = None;
+        meta.prompt = "fix the login bug".into();
+        let md = render_export_markdown(&meta, &[], None);
+        assert!(
+            md.starts_with("# fix the login bug\n\n"),
+            "title fallback wrong: {}",
+            md
+        );
+    }
+
+    #[test]
+    fn safe_code_fence_grows_to_avoid_collision() {
+        assert_eq!(safe_code_fence("plain text"), "```");
+        assert_eq!(safe_code_fence("contains ``` inside"), "````");
+        assert_eq!(safe_code_fence("nested ```` quads"), "`````");
     }
 }
