@@ -1,5 +1,18 @@
 import type React from "react";
 
+const exportBtnBase = {
+  display: "flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "4px 10px",
+  background: "none",
+  border: "1px solid var(--control-active-fg)",
+  borderRadius: 5,
+  fontSize: 12,
+  color: "var(--control-active-fg)",
+  flexShrink: 0,
+} as const;
+
 export const terminal = {
   runHeader: {
     padding: "16px 20px 8px",
@@ -33,33 +46,8 @@ export const terminal = {
     cursor: "pointer",
     flexShrink: 0,
   },
-  exportBtn: {
-    display: "flex",
-    alignItems: "center",
-    gap: 5,
-    padding: "4px 10px",
-    background: "none",
-    border: "1px solid var(--border-medium)",
-    borderRadius: 5,
-    fontSize: 12,
-    color: "var(--text-muted)",
-    cursor: "pointer",
-    flexShrink: 0,
-  },
-  exportBtnBusy: {
-    display: "flex",
-    alignItems: "center",
-    gap: 5,
-    padding: "4px 10px",
-    background: "none",
-    border: "1px solid var(--border-medium)",
-    borderRadius: 5,
-    fontSize: 12,
-    color: "var(--text-muted)",
-    cursor: "not-allowed" as const,
-    opacity: 0.6,
-    flexShrink: 0,
-  },
+  exportBtn: { ...exportBtnBase, cursor: "pointer" as const },
+  exportBtnBusy: { ...exportBtnBase, cursor: "not-allowed" as const, opacity: 0.6 },
   resumeBtn: {
     display: "flex",
     alignItems: "center",

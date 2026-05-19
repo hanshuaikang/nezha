@@ -4,11 +4,11 @@ import type React from "react";
 interface ToastItem {
   id: string;
   message: string;
-  type: "error" | "warning";
+  type: "error" | "warning" | "success";
 }
 
 interface ToastContextValue {
-  showToast: (message: string, type?: "error" | "warning") => void;
+  showToast: (message: string, type?: "error" | "warning" | "success") => void;
 }
 
 const ToastContext = createContext<ToastContextValue>({ showToast: () => {} });
@@ -21,7 +21,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timerMap = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  const showToast = useCallback((message: string, type: "error" | "warning" = "error") => {
+  const showToast = useCallback((message: string, type: "error" | "warning" | "success" = "error") => {
     const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev.slice(-2), { id, message, type }]);
     const timer = setTimeout(() => {
@@ -81,7 +81,12 @@ function ToastContainer({
             gap: 10,
             padding: "10px 12px 10px 14px",
             borderRadius: 10,
-            background: t.type === "error" ? "var(--danger)" : "var(--warning)",
+            background:
+              t.type === "error"
+                ? "var(--danger)"
+                : t.type === "success"
+                  ? "var(--success)"
+                  : "var(--warning)",
             color: "var(--fg-on-accent)",
             fontSize: 12.5,
             fontWeight: 500,

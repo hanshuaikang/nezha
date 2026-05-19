@@ -165,29 +165,25 @@ export function RunningView({
       });
       if (!outputPath) return;
 
-      await invoke("export_session_markdown", {
+      await invoke<void>("export_session_markdown", {
         sessionPath,
         projectPath,
         isCodex: task.agent === "codex",
         outputPath,
         taskMeta: {
-          name: task.name ?? null,
+          name: task.name,
           prompt: task.prompt,
           agent: task.agent,
-          permissionMode: task.permissionMode,
-          status: task.status,
           createdAt: task.createdAt,
-          sessionId:
-            task.agent === "codex"
-              ? (task.codexSessionId ?? null)
-              : (task.claudeSessionId ?? null),
-          worktreeBranch: task.worktreeBranch ?? null,
-          baseBranch: task.baseBranch ?? null,
-          additions: task.additions ?? null,
-          deletions: task.deletions ?? null,
-          failureReason: task.failureReason ?? null,
+          sessionId: task.agent === "codex" ? task.codexSessionId : task.claudeSessionId,
+          worktreeBranch: task.worktreeBranch,
+          baseBranch: task.baseBranch,
+          additions: task.additions,
+          deletions: task.deletions,
+          failureReason: task.failureReason,
         },
       });
+      showToast(t("running.exportSuccess", { path: outputPath }), "success");
     } catch (err) {
       showToast(t("running.exportFailed", { error: String(err) }), "error");
     } finally {
