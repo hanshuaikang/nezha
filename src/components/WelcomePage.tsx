@@ -1,11 +1,10 @@
 import { useState, useMemo } from "react";
-import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, BarChart2 } from "lucide-react";
-import type { Project, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
-import { ENABLE_USAGE_INSIGHTS } from "../platform";
+import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, Clock } from "lucide-react";
+import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
-import { AnalyticsDashboard } from "./AnalyticsDashboard";
+import { TimelineView } from "./TimelineView";
 import { useI18n, pluralKey } from "../i18n";
 import s from "../styles";
 
@@ -67,6 +66,7 @@ function WelcomeEmpty({ hasProjects, onOpen }: { hasProjects: boolean; onOpen: (
 
 export function WelcomePage({
   projects,
+  tasks,
   onOpen,
   onProjectClick,
   onDeleteProject,
@@ -85,6 +85,7 @@ export function WelcomePage({
   onMonoFontFamilyChange,
 }: {
   projects: Project[];
+  tasks: Task[];
   onOpen: () => void;
   onProjectClick: (p: Project) => void;
   onDeleteProject: (projectId: string) => void;
@@ -106,7 +107,7 @@ export function WelcomePage({
   const [query, setQuery] = useState("");
   const [hov, setHov] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [view, setView] = useState<"projects" | "analytics">("projects");
+  const [view, setView] = useState<"projects" | "timeline">("projects");
 
   const filtered = useMemo(() => {
     if (!query.trim()) return projects;
@@ -138,14 +139,12 @@ export function WelcomePage({
               active={view === "projects"}
               onClick={() => setView("projects")}
             />
-            {ENABLE_USAGE_INSIGHTS ? (
-              <SidebarItem
-                icon={<BarChart2 size={15} />}
-                label={t("welcome.analytics")}
-                active={view === "analytics"}
-                onClick={() => setView("analytics")}
-              />
-            ) : null}
+            <SidebarItem
+              icon={<Clock size={15} />}
+              label={t("welcome.timeline")}
+              active={view === "timeline"}
+              onClick={() => setView("timeline")}
+            />
           </nav>
 
           <div style={s.sidebarFooter}>
@@ -167,8 +166,15 @@ export function WelcomePage({
           </div>
         </div>
 
-        {ENABLE_USAGE_INSIGHTS && view === "analytics" ? (
-          <AnalyticsDashboard projects={projects} />
+        {view === "timeline" ? (
+          <TimelineView
+            projects={projects}
+            tasks={tasks}
+            onTaskClick={(task) => {
+              const project = projects.find((p) => p.id === task.projectId);
+              if (project) onProjectClick(project);
+            }}
+          />
         ) : (
           <div style={s.welcomePane}>
             <div style={s.searchRow}>

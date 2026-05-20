@@ -8,6 +8,7 @@ import { layout } from "./layout";
 import { panels } from "./panels";
 import { task } from "./task";
 import { terminal } from "./terminal";
+import { timeline } from "./timeline";
 
 const s = {
   ...layout,
@@ -18,8 +19,9 @@ const s = {
   ...gitDiff,
   ...common,
   ...font,
+  ...timeline,
 } satisfies Record<string, React.CSSProperties>;
 
 export default s;
 
-export { common, dialogs, font, gitDiff, layout, panels, task, terminal };
+export { common, dialogs, font, gitDiff, layout, panels, task, terminal, timeline };
