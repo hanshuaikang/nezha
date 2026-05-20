@@ -83,8 +83,62 @@ export function TerminalView({
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
+    // 关掉 macOS 在 helper textarea 上的拼写检查 / 自动纠正 / 文本预测——
+    // 这些行为会主动触发 NSTextInputClient 的 characterIndexForPointAsync
+    // 查询。textarea 默认在屏幕外（left: -9999em），但 macOS 输入法仍可能
+    // 主动定位它。配合 src/styles/xterm.css 中 .xterm-rows 的 pointer-events: none
+    // 一起切断 IME 查询风暴的两条入口。详见 knowledge/xterm/rendering-and-selection-lag.md §7。
+    if (term.textarea) {
+      term.textarea.setAttribute("autocomplete", "off");
+      term.textarea.setAttribute("autocorrect", "off");
+      term.textarea.setAttribute("autocapitalize", "off");
+      term.textarea.setAttribute("spellcheck", "false");
+    }
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
     loadWebglAddon(term);
+
+    // 拦截 xterm 每帧 _rowFactory.createRow → row div replaceChildren 写入的 span：
+    // 含非 ASCII（emoji / box drawing）的 textContent 立刻替换为单字符 "x"。
+    //
+    // styles/xterm.css 中 .xterm-rows pointer-events: none 拦掉了 macOS
+    // characterIndexForPointAsync 的 hit-test 入口，但 WebKit 的 canonicalPosition
+    // 仍会在 RenderTree 里向前/向后游走候选 Position，进入 row span 内的 RenderText
+    // ——这一步不看 pointer-events。实测把 IME 路径从 99.7% 压到 ~20%，剩下的就是
+    // canonicalPosition × PositionIterator::decrement/increment × ICU TextBreakIterator
+    // 在每个 RenderText 上做 emoji 簇判断 (__CFStringGetExtendedPictographicSequenceComponent)。
+    //
+    // 把非 ASCII 替换成单字符 ASCII 后：PositionIterator 仍游走 1500+ 次（这是 WebKit
+    // 内部行为，改不了），但每次 ICU setText 走 ASCII fast path 几乎免费。预期把 IME
+    // 路径再压到 <5%。row div 仍保留非零 boundingClientRect.width，xterm 的
+    // _alignRowWidth scaleX 校准不会触发除零；视觉上 row 子树本来就被 canvas 覆盖，
+    // 替换不影响显示。Cmd+C 复制走 attachSmartCopy → buffer.translateToString，不读 DOM。
+    //
+    // 详见 knowledge/xterm/rendering-and-selection-lag.md §7。
+    const rowsEl = container.querySelector(".xterm-rows");
+    const processedSpans = new WeakSet<Element>();
+    const ASCII_ONLY = /^[\x20-\x7E]*$/;
+    let rowSanitizer: MutationObserver | null = null;
+    if (rowsEl) {
+      rowSanitizer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          if (m.type !== "childList") continue;
+          for (const n of m.addedNodes) {
+            if (n.nodeType !== Node.ELEMENT_NODE) continue;
+            const el = n as Element;
+            if (el.tagName !== "SPAN") continue;
+            if (processedSpans.has(el)) continue;
+            const text = el.textContent;
+            if (!text || text.length <= 1 || ASCII_ONLY.test(text)) {
+              processedSpans.add(el);
+              continue;
+            }
+            el.textContent = "x";
+            processedSpans.add(el);
+          }
+        }
+      });
+      rowSanitizer.observe(rowsEl, { childList: true, subtree: true });
+    }
 
     const size = safeFit(fitAddon, term);
     if (size) notifyResize(size.cols, size.rows);
@@ -171,6 +225,7 @@ export function TerminalView({
       } catch {
         /* ignore */
       }
+      rowSanitizer?.disconnect();
       onRegisterRef.current(null);
       fitAddonRef.current = null;
       disposeInputFix();
