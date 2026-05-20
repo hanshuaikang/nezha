@@ -135,43 +135,41 @@ export function FontPanel({
           <div style={s.fontInlinePreview}>
             <div style={s.fontPreviewHeaderRow}>
               <span style={s.fontPreviewLabel}>{t("font.preview")}</span>
-              <span style={{ ...s.fontPreviewMeta, fontFamily: pendingMonoFont }}>0O · 1lI · {}[]()</span>
+              <span style={s.fontPreviewMeta}>0O · 1lI · {}[]()</span>
             </div>
-            <pre
+            <div
               style={{
                 ...s.fontCodePreviewWindow,
                 fontFamily: pendingMonoFont,
               }}
             >
-              <code>
-                <span style={s.fontCodeLine}>
-                  <span style={s.fontCodeLineNo}>1</span>
-                  <span style={s.fontCodeText}>
-                    <span style={s.fontCodeKeyword}>const</span> task = {"{"}
-                  </span>
+              <span style={s.fontCodeLine}>
+                <span style={s.fontCodeLineNo}>1</span>
+                <span style={s.fontCodeText}>
+                  <span style={s.fontCodeKeyword}>const</span> task = {"{"}
                 </span>
-                <span style={s.fontCodeLine}>
-                  <span style={s.fontCodeLineNo}>2</span>
-                  <span style={s.fontCodeText}>
-                    {"  "}name: <span style={s.fontCodeString}>"Nezha"</span>,
-                    status: <span style={s.fontCodeString}>"running"</span>,
-                  </span>
+              </span>
+              <span style={s.fontCodeLine}>
+                <span style={s.fontCodeLineNo}>2</span>
+                <span style={s.fontCodeText}>
+                  {"  "}name: <span style={s.fontCodeString}>"Nezha"</span>,
+                  status: <span style={s.fontCodeString}>"running"</span>,
                 </span>
-                <span style={s.fontCodeLine}>
-                  <span style={s.fontCodeLineNo}>3</span>
-                  <span style={s.fontCodeText}>
-                    {"  "}tokens: <span style={s.fontCodeNumber}>24860</span>,
-                    tools: [<span style={s.fontCodeString}>"read"</span>, <span style={s.fontCodeString}>"edit"</span>],
-                  </span>
+              </span>
+              <span style={s.fontCodeLine}>
+                <span style={s.fontCodeLineNo}>3</span>
+                <span style={s.fontCodeText}>
+                  {"  "}tokens: <span style={s.fontCodeNumber}>24860</span>,
+                  tools: [<span style={s.fontCodeString}>"read"</span>, <span style={s.fontCodeString}>"edit"</span>],
                 </span>
-                <span style={s.fontCodeLine}>
-                  <span style={s.fontCodeLineNo}>4</span>
-                  <span style={s.fontCodeText}>
-                    {"}"} <span style={s.fontCodeComment}>// 0O 1lI == =&gt; =&lt; =&gt;</span>
-                  </span>
+              </span>
+              <span style={s.fontCodeLine}>
+                <span style={s.fontCodeLineNo}>4</span>
+                <span style={s.fontCodeText}>
+                  {"}"} <span style={s.fontCodeComment}>// 0O 1lI == =&gt; =&lt; =&gt;</span>
                 </span>
-              </code>
-            </pre>
+              </span>
+            </div>
           </div>
         )}
       />
