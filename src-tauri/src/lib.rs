@@ -118,7 +118,6 @@ pub fn run() {
             git::remove_task_worktree,
             git::worktree_diff_stats,
             analytics::read_session_metrics,
-            analytics::get_weekly_analytics,
             session::read_session_messages,
             config::init_project_config,
             config::read_project_config,

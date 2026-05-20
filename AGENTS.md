@@ -38,7 +38,8 @@ Rust 后端位于 `src-tauri/`，修改后需重启 `tauri dev`。
 **组件树（简化版）：**
 ```
 App
-├── WelcomePage              — 项目选择页
+├── WelcomePage              — 项目选择页（含 Timeline 视图入口）
+│   └── TimelineView         — 跨项目任务时间线（今天 / 昨天 / 更早，按项目二级分组）
 └── ProjectPage
     ├── ProjectRail          — 左侧导航栏（项目切换器）
     ├── TaskPanel            — 任务列表侧边栏
@@ -54,7 +55,6 @@ App
     ├── RunningView          — 运行中任务头部（恢复、取消）
     │   └── TerminalView     — xterm.js 封装组件
     ├── SessionView          — 会话消息查看器（JSONL 回放）
-    ├── AnalyticsDashboard   — 每周 token / 工具调用用量图表
     ├── ShellTerminalPanel   — 嵌入式交互 Shell 终端
     ├── SettingsDialog       — 项目级设置（config.toml 编辑器 + 智能体配置）
     ├── RightToolbar         — 右侧面板与 Shell 的开关入口
@@ -81,7 +81,7 @@ App
 | `storage.rs` | 基于文件的持久化（`load_projects`、`save_projects`、`load_project_tasks`、`save_project_tasks`） |
 | `fs.rs` | 文件系统命令（`read_dir_entries`、`read_file_content`、`read_image_preview`、`write_file_content`、`list_project_files`） |
 | `git.rs` | 完整 Git 集成：状态、分支、日志、差异、暂存/取消暂存、提交、推送、拉取、`generate_commit_message` |
-| `analytics.rs` | 解析会话 JSONL 获取 token / 工具调用指标（`read_session_metrics`、`get_weekly_analytics`） |
+| `analytics.rs` | 解析会话 JSONL 获取 token / 工具调用指标（`read_session_metrics`，供 RunningView 轮询） |
 | `config.rs` | 项目级 `.nezha/config.toml` 管理（`init_project_config`、`read_project_config`、`write_project_config`、`read_agent_config_file`、`write_agent_config_file`） |
 | `app_settings.rs` | 应用级智能体路径与版本管理（`load_app_settings`、`save_app_settings`、`detect_agent_paths`、`detect_agent_versions`） |
 

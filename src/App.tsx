@@ -1030,6 +1030,7 @@ function App() {
         >
           <WelcomePage
             projects={sortedProjects}
+            tasks={tasks}
             onOpen={handleOpen}
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
