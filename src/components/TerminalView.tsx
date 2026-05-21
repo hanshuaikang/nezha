@@ -15,6 +15,7 @@ import {
   applyTerminalFontFamily,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { IS_MAC_WEBKIT } from "../platform";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -88,7 +89,10 @@ export function TerminalView({
     // 查询。textarea 默认在屏幕外（left: -9999em），但 macOS 输入法仍可能
     // 主动定位它。配合 src/styles/xterm.css 中 .xterm-rows 的 pointer-events: none
     // 一起切断 IME 查询风暴的两条入口。详见 knowledge/xterm/rendering-and-selection-lag.md §7。
-    if (term.textarea) {
+    if (IS_MAC_WEBKIT) {
+      container.classList.add("xterm-macos-ime-guard");
+    }
+    if (IS_MAC_WEBKIT && term.textarea) {
       term.textarea.setAttribute("autocomplete", "off");
       term.textarea.setAttribute("autocorrect", "off");
       term.textarea.setAttribute("autocapitalize", "off");
@@ -118,7 +122,7 @@ export function TerminalView({
     const processedSpans = new WeakSet<Element>();
     const ASCII_ONLY = /^[\x20-\x7E]*$/;
     let rowSanitizer: MutationObserver | null = null;
-    if (rowsEl) {
+    if (IS_MAC_WEBKIT && rowsEl) {
       rowSanitizer = new MutationObserver((mutations) => {
         for (const m of mutations) {
           if (m.type !== "childList") continue;
@@ -226,6 +230,7 @@ export function TerminalView({
         /* ignore */
       }
       rowSanitizer?.disconnect();
+      container.classList.remove("xterm-macos-ime-guard");
       onRegisterRef.current(null);
       fitAddonRef.current = null;
       disposeInputFix();

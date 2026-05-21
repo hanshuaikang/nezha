@@ -28,7 +28,7 @@
  * 不要因为"row 也许哪天需要响应点击"删掉这条规则——xterm 设计上
  * row div 是辅助显示层，所有交互都在 .xterm-screen 上做 hit-test。
  */
-.xterm-rows,
-.xterm-rows * {
+.xterm-macos-ime-guard .xterm-rows,
+.xterm-macos-ime-guard .xterm-rows * {
   pointer-events: none;
 }
