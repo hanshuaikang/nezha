@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
+import { publishTerminalSelectionActive } from "../terminalSelection";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ interface TerminalSelectionGuardOptions {
 }
 
 const macWebKitInertCounts = new WeakMap<HTMLElement, number>();
+let macWebKitSelectionGuardCount = 0;
 
 function setMacWebKitTextareaAttrs(term: Terminal): void {
   if (!term.textarea) return;
@@ -133,6 +135,14 @@ export function attachMacWebKitTerminalGuard({
   const inertedNodes = new Set<HTMLElement>();
   let pointerSelecting = false;
   let terminalHasSelection = term.hasSelection();
+  let guardSelectionActive = false;
+
+  const setGuardSelectionActive = (active: boolean) => {
+    if (guardSelectionActive === active) return;
+    guardSelectionActive = active;
+    macWebKitSelectionGuardCount += active ? 1 : -1;
+    publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
+  };
 
   const restoreSiblings = () => {
     for (const node of inertedNodes) {
@@ -142,7 +152,9 @@ export function attachMacWebKitTerminalGuard({
   };
 
   const syncSiblings = () => {
-    if (pointerSelecting || terminalHasSelection) {
+    const active = pointerSelecting || terminalHasSelection;
+    setGuardSelectionActive(active);
+    if (active) {
       inertTerminalBranchSiblings(container, inertedNodes);
     } else {
       restoreSiblings();
@@ -211,6 +223,7 @@ export function attachMacWebKitTerminalGuard({
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
     writer?.setSelectionPaused(false);
+    setGuardSelectionActive(false);
     restoreSiblings();
   };
 }
