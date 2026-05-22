@@ -9,12 +9,20 @@ import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
+import {
+  getImageFilesFromClipboard,
+  getImageFilesFromDrag,
+  hasDraggedImage,
+  useRuntimeImageAttachments,
+} from "./running-view/useRuntimeImageAttachments";
 import s from "../styles";
 import {
   X,
   RotateCcw,
   Pencil,
   Sparkles,
+  Image as ImageIcon,
+  Loader2,
   GitMerge,
   GitBranch,
   Trash2,
@@ -55,6 +63,7 @@ function InlineWindow({ label, window }: { label: string; window: UsageWindow })
 
 export function RunningView({
   task,
+  projectPath,
   runCount = 0,
   visible = true,
   projectActive = true,
@@ -77,6 +86,7 @@ export function RunningView({
   monoFontFamily,
 }: {
   task: Task;
+  projectPath: string;
   runCount?: number;
   visible?: boolean;
   projectActive?: boolean;
@@ -116,8 +126,18 @@ export function RunningView({
   const [generatingName, setGeneratingName] = useState(false);
   const [worktreeBusy, setWorktreeBusy] = useState<"merge" | "discard" | null>(null);
   const [bannerCompact, setBannerCompact] = useState(false);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const interruptedBannerRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
+  const { attachingImages, attachImageFiles } = useRuntimeImageAttachments({
+    taskId: task.id,
+    projectPath,
+    isActive,
+    onInput,
+  });
 
   const generateTooltip = generatingName
     ? t("task.generatingName")
@@ -200,6 +220,38 @@ export function RunningView({
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 1 : 0,
+      }}
+      onPasteCapture={(e) => {
+        if (!terminalContainerRef.current?.contains(e.target as Node)) return;
+        const images = getImageFilesFromClipboard(e);
+        if (images.length === 0) return;
+        e.preventDefault();
+        void attachImageFiles(images);
+      }}
+      onDragEnter={(e) => {
+        if (!isActive || !hasDraggedImage(e)) return;
+        e.preventDefault();
+        dragDepthRef.current += 1;
+        setIsDraggingImage(true);
+      }}
+      onDragOver={(e) => {
+        if (!isActive || !hasDraggedImage(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(e) => {
+        if (!isActive || !hasDraggedImage(e)) return;
+        e.preventDefault();
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setIsDraggingImage(false);
+      }}
+      onDrop={(e) => {
+        const images = getImageFilesFromDrag(e);
+        if (images.length === 0) return;
+        e.preventDefault();
+        dragDepthRef.current = 0;
+        setIsDraggingImage(false);
+        void attachImageFiles(images);
       }}
     >
       {/* Header */}
@@ -311,6 +363,35 @@ export function RunningView({
         </div>
         {isActive && (
           <>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                void attachImageFiles(Array.from(e.currentTarget.files ?? []));
+                e.currentTarget.value = "";
+              }}
+            />
+            <button
+              type="button"
+              title={t("running.attachImages")}
+              style={{
+                ...s.attachImageBtn,
+                opacity: attachingImages ? 0.65 : 1,
+                cursor: attachingImages ? "wait" : "pointer",
+              }}
+              disabled={attachingImages}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              {attachingImages ? (
+                <Loader2 size={12} strokeWidth={2.3} className="spin" />
+              ) : (
+                <ImageIcon size={12} strokeWidth={2.4} />
+              )}
+              <span>{t("running.attachImages")}</span>
+            </button>
             <button style={s.doneBtn} onClick={onMarkDone}>
               <CheckCircle2 size={12} strokeWidth={2.5} />
               <span>{t("running.markDone")}</span>
@@ -537,7 +618,13 @@ export function RunningView({
           )}
         </div>
       ) : isActive || !sessionPath ? (
-        <div style={s.terminalContainer}>
+        <div ref={terminalContainerRef} style={{ ...s.terminalContainer, position: "relative" }}>
+          {isDraggingImage && (
+            <div style={s.terminalDropOverlay}>
+              <ImageIcon size={18} strokeWidth={2.1} />
+              <span>{t("running.dropImagesToSend")}</span>
+            </div>
+          )}
           <TerminalView
             key={`${task.id}-${runCount}`}
             onInput={onInput}

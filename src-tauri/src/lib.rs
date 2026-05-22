@@ -78,6 +78,7 @@ pub fn run() {
             pty::complete_task,
             pty::get_active_task_ids,
             pty::reset_task_process,
+            pty::attach_task_images,
             pty::send_input,
             pty::resize_pty,
             pty::open_shell,

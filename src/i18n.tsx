@@ -326,6 +326,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.reconnectTask": "Reconnect task",
     "running.cancelTask": "Cancel task",
     "running.markDone": "Mark completed",
+    "running.attachImages": "Images",
+    "running.dropImagesToSend": "Drop to send images",
     "running.resumeUnavailable": "This task has no session ID, so it cannot be resumed.",
     "running.detachedTitle": "Terminal connection lost",
     "running.detachedNoSession":
@@ -388,6 +390,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "toast.worktreeDiscarded": "Worktree discarded",
     "toast.worktreeDiscardFailed": "Failed to discard worktree: {error}",
     "toast.resetTaskFailed": "Failed to reset task process: {error}",
+    "toast.attachImagesFailed": "Failed to send images: {error}",
     "toast.loadProjectFilesFailed":
       "Failed to load project file list, @ references unavailable: {error}",
     "toast.saveProjectsFailed": "Failed to save project list: {error}",
@@ -696,6 +699,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.reconnectTask": "重新连接",
     "running.cancelTask": "取消任务",
     "running.markDone": "标记已完成",
+    "running.attachImages": "图片",
+    "running.dropImagesToSend": "松开发送图片",
     "running.resumeUnavailable": "这个任务没有保存会话 ID，无法恢复。",
     "running.detachedTitle": "终端连接已断开",
     "running.detachedNoSession":
@@ -758,6 +763,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "toast.worktreeDiscarded": "工作树已丢弃",
     "toast.worktreeDiscardFailed": "丢弃工作树失败：{error}",
     "toast.resetTaskFailed": "重置任务进程失败：{error}",
+    "toast.attachImagesFailed": "发送图片失败：{error}",
     "toast.loadProjectFilesFailed": "加载项目文件列表失败，@ 引用不可用：{error}",
     "toast.saveProjectsFailed": "保存项目列表失败：{error}",
     "toast.saveTasksFailed": "保存任务失败（项目 {projectId}）：{error}",

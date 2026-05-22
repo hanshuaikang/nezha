@@ -18,6 +18,7 @@ const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
 /// 有界 channel 容量：满时 reader 线程阻塞，反压传播至 OS 内核 PTY 缓冲区，
 /// 最终使写入进程（Claude/Codex）的 write() 系统调用阻塞，从源头限流。
 const PTY_EMIT_CHANNEL_CAPACITY: usize = 32;
+const MAX_ATTACHED_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 fn task_attachments_dir(project_path: &str, task_id: &str) -> std::path::PathBuf {
     Path::new(project_path)
@@ -103,15 +104,64 @@ fn finalize_task_exit(
     let _ = fs::remove_dir_all(task_attachments_dir(project_path, task_id));
 }
 
-fn save_task_images(
+fn validate_project_path(project_path: &str) -> Result<std::path::PathBuf, String> {
+    let path = Path::new(project_path);
+    if !path.is_absolute() {
+        return Err("Project path must be absolute".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    if !canonical.is_dir() {
+        return Err("Project path is not a directory".to_string());
+    }
+    Ok(canonical)
+}
+
+fn validate_task_id(task_id: &str) -> Result<(), String> {
+    if task_id.is_empty()
+        || task_id == "."
+        || task_id == ".."
+        || task_id.contains('/')
+        || task_id.contains('\\')
+        || task_id.contains('\0')
+    {
+        return Err("Invalid task id".to_string());
+    }
+    Ok(())
+}
+
+fn image_extension_from_data_url(header: &str) -> Result<&'static str, String> {
+    let header = header.to_ascii_lowercase();
+    let Some(mime_type) = header
+        .strip_prefix("data:")
+        .and_then(|value| value.strip_suffix(";base64"))
+    else {
+        return Err("invalid image data URL".to_string());
+    };
+
+    match mime_type {
+        "image/png" => Ok("png"),
+        "image/jpeg" | "image/jpg" => Ok("jpg"),
+        "image/gif" => Ok("gif"),
+        "image/webp" => Ok("webp"),
+        _ => Err("Unsupported image format".to_string()),
+    }
+}
+
+fn save_task_images_with_prefix(
     project_path: &str,
     task_id: &str,
     images: &[String],
+    filename_prefix: Option<&str>,
 ) -> Result<Vec<String>, String> {
     if images.is_empty() {
         return Ok(vec![]);
     }
-    let attachments_dir = task_attachments_dir(project_path, task_id);
+    validate_task_id(task_id)?;
+    let project_path = validate_project_path(project_path)?;
+    let project_path = project_path.to_string_lossy().into_owned();
+    let attachments_dir = task_attachments_dir(&project_path, task_id);
     fs::create_dir_all(&attachments_dir).map_err(|e| e.to_string())?;
     let mut paths = Vec::new();
     for (i, data_url) in images.iter().enumerate() {
@@ -119,25 +169,31 @@ fn save_task_images(
         let comma = data_url.find(',').ok_or("invalid image data URL")?;
         let header = &data_url[..comma];
         let b64 = &data_url[comma + 1..];
-        let ext = if header.contains("jpeg") || header.contains("jpg") {
-            "jpg"
-        } else if header.contains("gif") {
-            "gif"
-        } else if header.contains("webp") {
-            "webp"
-        } else {
-            "png"
-        };
+        let ext = image_extension_from_data_url(header)?;
         use base64::Engine;
         let data = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| e.to_string())?;
-        let filename = format!("{}.{}", i, ext);
+        if data.len() > MAX_ATTACHED_IMAGE_BYTES {
+            return Err("Image file is too large".to_string());
+        }
+        let filename = match filename_prefix {
+            Some(prefix) => format!("{}-{}.{}", prefix, i, ext),
+            None => format!("{}.{}", i, ext),
+        };
         let file_path = attachments_dir.join(&filename);
         fs::write(&file_path, &data).map_err(|e| e.to_string())?;
         paths.push(file_path.to_string_lossy().into_owned());
     }
     Ok(paths)
+}
+
+fn save_task_images(
+    project_path: &str,
+    task_id: &str,
+    images: &[String],
+) -> Result<Vec<String>, String> {
+    save_task_images_with_prefix(project_path, task_id, images, None)
 }
 
 fn release_claimed_session_paths(task_manager: &TaskManager, task_id: &str) {
@@ -661,6 +717,39 @@ pub async fn reset_task_process(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn attach_task_images(
+    task_manager: State<'_, TaskManager>,
+    task_id: String,
+    project_path: String,
+    images: Vec<String>,
+) -> Result<Vec<String>, String> {
+    if images.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let task_is_running = task_manager.child_handles.lock().contains_key(&task_id);
+    if !task_is_running {
+        return Err("Task is not running".to_string());
+    }
+
+    let prefix = format!("runtime-{}", uuid::Uuid::new_v4());
+    let saved_paths = tokio::task::spawn_blocking(move || {
+        save_task_images_with_prefix(&project_path, &task_id, &images, Some(&prefix))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    if !task_manager.child_handles.lock().contains_key(&task_id) {
+        for path in &saved_paths {
+            let _ = fs::remove_file(path);
+        }
+        return Err("Task is not running".to_string());
+    }
+
+    Ok(saved_paths)
 }
 
 #[tauri::command]
