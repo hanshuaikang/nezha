@@ -11,6 +11,7 @@ import {
   loadWebglAddon,
   safeFit,
   createSmartWriter,
+  attachMacWebKitTerminalGuard,
   applyTerminalFontSize,
   applyTerminalFontFamily,
 } from "./terminalShared";
@@ -96,6 +97,7 @@ export function TerminalView({
     };
 
     const writer = createSmartWriter(term);
+    const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
     const terminalGeneration = onRegisterRef.current(writer.write);
 
@@ -131,13 +133,6 @@ export function TerminalView({
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 0) {
         focusTerminal();
-        writer.setSelectionPaused(true);
-      }
-    };
-    // pointerup 挂在 document 上，拖出终端区域外松手也能正确恢复
-    const handlePointerUp = (e: PointerEvent) => {
-      if (e.button === 0) {
-        writer.setSelectionPaused(false);
       }
     };
     const handleVisibilityChange = () => {
@@ -145,13 +140,11 @@ export function TerminalView({
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term);
         if (s) notifyResize(s.cols, s.rows);
-        term.refresh(0, term.rows - 1);
         term.focus();
       });
     };
 
     container.addEventListener("pointerdown", handlePointerDown as EventListener);
-    document.addEventListener("pointerup", handlePointerUp as EventListener);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -173,13 +166,13 @@ export function TerminalView({
       }
       onRegisterRef.current(null);
       fitAddonRef.current = null;
+      disposeMacWebKitGuard();
       disposeInputFix();
       disposeSmartCopy();
       disposeOnData.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       container.removeEventListener("pointerdown", handlePointerDown as EventListener);
-      document.removeEventListener("pointerup", handlePointerUp as EventListener);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
       term.dispose();
@@ -192,7 +185,6 @@ export function TerminalView({
       if (!fitAddonRef.current || !terminalRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current);
       if (s) notifyResize(s.cols, s.rows);
-      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       terminalRef.current.focus();
     });
   }, [isActive, notifyResize]);

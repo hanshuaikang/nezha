@@ -1,17 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
-import { APP_PLATFORM } from "../platform";
+import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "../platform";
 
 type TerminalWithInput = Pick<Terminal, "input" | "textarea">;
-
-function isMacWebKit(): boolean {
-  if (APP_PLATFORM !== "macos" || typeof navigator === "undefined") return false;
-  return navigator.userAgent.includes("AppleWebKit");
-}
-
-function isLinuxWebKit(): boolean {
-  if (APP_PLATFORM !== "other" || typeof navigator === "undefined") return false;
-  return navigator.userAgent.includes("AppleWebKit");
-}
 
 function getPrintableSymbolInput(data: string | null): string | null {
   if (data === null || data.length === 0) return null;
@@ -25,7 +15,7 @@ function isSymbolInputType(inputType: string): boolean {
 }
 
 export function attachMacWebKitShiftInputFix(term: TerminalWithInput): () => void {
-  if (!isMacWebKit() || !term.textarea) return () => {};
+  if (!IS_MAC_WEBKIT || !term.textarea) return () => {};
 
   const textarea = term.textarea;
   let keydownHandledByXterm: string | null = null;
@@ -70,7 +60,7 @@ export function attachLinuxIMEFix(
   term: Terminal,
   onDataCallback: (data: string) => void,
 ): { dispose: () => void } {
-  if (!isLinuxWebKit() || !term.textarea) {
+  if (!IS_OTHER_WEBKIT || !term.textarea) {
     const disposable = term.onData(onDataCallback);
     return { dispose: () => disposable.dispose() };
   }

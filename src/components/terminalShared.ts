@@ -2,6 +2,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { IS_MAC_WEBKIT } from "../platform";
+import { publishTerminalSelectionActive } from "../terminalSelection";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +62,170 @@ export interface SmartWriter {
   write: (data: string, callback?: () => void) => void;
   drainPending: () => void;
   setSelectionPaused: (paused: boolean) => void;
+}
+
+interface TerminalSelectionGuardOptions {
+  term: Terminal;
+  container: HTMLElement;
+  writer?: Pick<SmartWriter, "setSelectionPaused">;
+}
+
+const macWebKitInertCounts = new WeakMap<HTMLElement, number>();
+let macWebKitSelectionGuardCount = 0;
+
+function setMacWebKitTextareaAttrs(term: Terminal): void {
+  if (!term.textarea) return;
+  term.textarea.setAttribute("autocomplete", "off");
+  term.textarea.setAttribute("autocorrect", "off");
+  term.textarea.setAttribute("autocapitalize", "off");
+  term.textarea.setAttribute("spellcheck", "false");
+}
+
+function acquireInert(node: HTMLElement, ownedNodes: Set<HTMLElement>): void {
+  if (ownedNodes.has(node)) return;
+  const currentCount = macWebKitInertCounts.get(node);
+  if (currentCount !== undefined) {
+    macWebKitInertCounts.set(node, currentCount + 1);
+    ownedNodes.add(node);
+    return;
+  }
+  if (node.inert) return;
+  node.inert = true;
+  macWebKitInertCounts.set(node, 1);
+  ownedNodes.add(node);
+}
+
+function releaseInert(node: HTMLElement): void {
+  const currentCount = macWebKitInertCounts.get(node);
+  if (currentCount === undefined) return;
+  if (currentCount > 1) {
+    macWebKitInertCounts.set(node, currentCount - 1);
+    return;
+  }
+  macWebKitInertCounts.delete(node);
+  node.inert = false;
+}
+
+function inertTerminalBranchSiblings(container: HTMLElement, ownedNodes: Set<HTMLElement>): void {
+  let current: HTMLElement | null = container;
+  while (current && current !== document.body) {
+    const parent: HTMLElement | null = current.parentElement;
+    if (!parent) break;
+    for (const child of Array.from(parent.children)) {
+      if (child === current || !(child instanceof HTMLElement)) continue;
+      acquireInert(child, ownedNodes);
+    }
+    current = parent;
+  }
+}
+
+// WKWebView can service macOS NSTextInputClient hit-test queries against large
+// app DOM subtrees while an xterm selection exists. Keep those sibling branches
+// out of hit-testing during terminal selection without inerting the terminal path.
+export function attachMacWebKitTerminalGuard({
+  term,
+  container,
+  writer,
+}: TerminalSelectionGuardOptions): () => void {
+  if (!IS_MAC_WEBKIT) return () => {};
+
+  container.classList.add("xterm-macos-ime-guard");
+  setMacWebKitTextareaAttrs(term);
+
+  const inertedNodes = new Set<HTMLElement>();
+  let pointerSelecting = false;
+  let terminalHasSelection = term.hasSelection();
+  let guardSelectionActive = false;
+
+  const setGuardSelectionActive = (active: boolean) => {
+    if (guardSelectionActive === active) return;
+    guardSelectionActive = active;
+    macWebKitSelectionGuardCount += active ? 1 : -1;
+    publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
+  };
+
+  const restoreSiblings = () => {
+    for (const node of inertedNodes) {
+      releaseInert(node);
+    }
+    inertedNodes.clear();
+  };
+
+  const syncSiblings = () => {
+    const active = pointerSelecting || terminalHasSelection;
+    setGuardSelectionActive(active);
+    if (active) {
+      inertTerminalBranchSiblings(container, inertedNodes);
+    } else {
+      restoreSiblings();
+    }
+  };
+
+  const handlePointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    term.focus();
+    pointerSelecting = true;
+    writer?.setSelectionPaused(true);
+    syncSiblings();
+  };
+
+  const handlePointerUp = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    pointerSelecting = false;
+    writer?.setSelectionPaused(false);
+    terminalHasSelection = term.hasSelection();
+    syncSiblings();
+  };
+
+  const handlePointerCancel = () => {
+    pointerSelecting = false;
+    writer?.setSelectionPaused(false);
+    terminalHasSelection = term.hasSelection();
+    syncSiblings();
+  };
+
+  const handleDocumentPointerDown = (e: PointerEvent) => {
+    const target = e.target;
+    if (!terminalHasSelection || (target instanceof Node && container.contains(target))) return;
+    pointerSelecting = false;
+    terminalHasSelection = false;
+    writer?.setSelectionPaused(false);
+    term.clearSelection();
+    restoreSiblings();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !terminalHasSelection) return;
+    pointerSelecting = false;
+    terminalHasSelection = false;
+    writer?.setSelectionPaused(false);
+    term.clearSelection();
+    restoreSiblings();
+  };
+
+  const selectionDisposable = term.onSelectionChange(() => {
+    terminalHasSelection = term.hasSelection();
+    syncSiblings();
+  });
+
+  container.addEventListener("pointerdown", handlePointerDown);
+  document.addEventListener("pointerup", handlePointerUp);
+  document.addEventListener("pointercancel", handlePointerCancel);
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+  document.addEventListener("keydown", handleKeyDown, true);
+
+  return () => {
+    container.classList.remove("xterm-macos-ime-guard");
+    selectionDisposable.dispose();
+    container.removeEventListener("pointerdown", handlePointerDown);
+    document.removeEventListener("pointerup", handlePointerUp);
+    document.removeEventListener("pointercancel", handlePointerCancel);
+    document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+    document.removeEventListener("keydown", handleKeyDown, true);
+    writer?.setSelectionPaused(false);
+    setGuardSelectionActive(false);
+    restoreSiblings();
+  };
 }
 
 /**
@@ -172,10 +338,12 @@ export function loadWebglAddon(term: Terminal): void {
   try {
     const webglAddon = new WebglAddon();
     webglAddon.onContextLoss(() => {
+      console.warn("[terminal] WebGL context lost; falling back to xterm DOM renderer");
       webglAddon.dispose();
     });
     term.loadAddon(webglAddon);
-  } catch {
+  } catch (err) {
+    console.warn("[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
     /* 不支持 WebGL 时降级，不影响功能 */
   }
 }

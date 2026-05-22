@@ -1,0 +1,34 @@
+/*
+ * xterm 的 .xterm-rows 子树对 macOS NSTextInputClient 不可见。
+ *
+ * 背景：xterm v6 在 WebGL renderer 正常启用后会同步移除 DomRenderer 的
+ * .xterm-rows；因此这条规则通常不会 match。它保留为 DOM renderer fallback：
+ * WebGL 不可用或 context loss 后，.xterm-rows 会重新出现。
+ *
+ * 但 nezha 不依赖这条路径——
+ *   - xterm 自己的拖选基于 mouseService.getCoords(event, screenElement)，
+ *     只用 boundingRect 坐标，不读 row DOM textContent；
+ *   - 复制走 attachSmartCopy → terminal.buffer.translateToString，
+ *     直接从 xterm core buffer 取字符，不读 DOM。
+ *
+ * macOS NSTextInputClient 的 characterIndexForPointAsync（IME 候选词位置预测 /
+ * selection 状态轮询）会让 WebKit 走 LocalFrame::rangeForPoint →
+ * canonicalPosition → PositionIterator。2026-05-22 sample 证明当前风暴主要
+ * 游走到 Nezha 自己的含 <img> / emoji 子树；真正的主防线在
+ * terminalShared.ts::attachMacWebKitTerminalGuard 的 inert 逻辑。
+ *
+ * 这条 CSS 只负责 WebGL fallback 时缩小 .xterm-rows 的 hit-test 面。
+ * 详见 knowledge/xterm/rendering-and-selection-lag.md §7。
+ *
+ * pointer-events: none 让 WebKit hit-test 跳过这棵子树，
+ * NSTextInput 的 characterIndexForPoint 命中外层 .xterm-screen / canvas，
+ * 不再触发 RenderText 全树遍历。xterm 自己的 mousedown 挂在 .xterm 根容器
+ * 上，事件正常冒泡，selection / scroll / focus 全部不受影响。
+ *
+ * 不要因为"row 也许哪天需要响应点击"删掉这条规则——xterm 设计上
+ * row div 是辅助显示层，所有交互都在 .xterm-screen 上做 hit-test。
+ */
+.xterm-macos-ime-guard .xterm-rows,
+.xterm-macos-ime-guard .xterm-rows * {
+  pointer-events: none;
+}

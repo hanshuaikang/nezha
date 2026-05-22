@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import type { UsageSnapshot } from "../types";
+import { useTerminalSelectionActive } from "./useTerminalSelectionActive";
 
 // Module-level cache — shared across all hook instances in the same process
 let cachedSnapshot: UsageSnapshot | null = null;
@@ -31,6 +32,8 @@ export function useUsageSnapshot(active: boolean) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const terminalSelectionActive = useTerminalSelectionActive();
+  const effectiveActive = active && !terminalSelectionActive;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -40,7 +43,7 @@ export function useUsageSnapshot(active: boolean) {
   }, []);
 
   useEffect(() => {
-    if (!active || !ENABLE_USAGE_INSIGHTS) return;
+    if (!effectiveActive || !ENABLE_USAGE_INSIGHTS) return;
 
     const load = async () => {
       const now = Date.now();
@@ -68,7 +71,7 @@ export function useUsageSnapshot(active: boolean) {
     load();
     const interval = setInterval(load, 60_000);
     return () => clearInterval(interval);
-  }, [active]);
+  }, [effectiveActive]);
 
   return { snapshot, loading, error };
 }
