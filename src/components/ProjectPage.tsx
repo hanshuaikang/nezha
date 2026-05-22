@@ -97,6 +97,7 @@ export function ProjectPage({
     agent: AgentType;
     permissionMode: PermissionMode;
     images: string[];
+    texts: string[];
     immediate: boolean;
     launchMode: "local" | "worktree";
     baseBranch: string;

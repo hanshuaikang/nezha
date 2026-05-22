@@ -190,6 +190,7 @@ export function PromptEditor({
   sendShortcut,
   onSubmit,
   onContentChange,
+  onPasteLargeText,
 }: {
   editorRef: React.RefObject<HTMLDivElement | null>;
   isComposingRef: React.MutableRefObject<boolean>;
@@ -204,6 +205,7 @@ export function PromptEditor({
   sendShortcut: SendShortcut;
   onSubmit: (immediate: boolean) => void;
   onContentChange?: (content: PromptEditorContent) => void;
+  onPasteLargeText?: (text: string) => void;
 }) {
   const { t } = useI18n();
   const captureContent = useCallback(() => {
@@ -350,6 +352,12 @@ export function PromptEditor({
     e.preventDefault();
     const text = e.clipboardData.getData("text/plain");
     if (!text) return;
+
+    // Large text (>=1000 chars) → treat as attachment
+    if (text.length >= 1000 && onPasteLargeText) {
+      onPasteLargeText(text);
+      return;
+    }
 
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;

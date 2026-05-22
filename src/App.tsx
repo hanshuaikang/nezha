@@ -373,7 +373,7 @@ function App() {
     setActiveProject(null);
   }
 
-  function invokeRunTask(task: Task, projectPath: string, images: string[]) {
+  function invokeRunTask(task: Task, projectPath: string, images: string[], texts: string[] = []) {
     invoke("run_task", {
       taskId: task.id,
       projectPath,
@@ -381,6 +381,7 @@ function App() {
       agent: task.agent,
       permissionMode: task.permissionMode,
       images,
+      texts,
       cols: tm.terminalSizeRef.current.cols,
       rows: tm.terminalSizeRef.current.rows,
       onOutput: tm.createOutputChannel(task.id),
@@ -398,6 +399,7 @@ function App() {
       agent,
       permissionMode,
       images,
+      texts,
       immediate,
       launchMode,
       baseBranch,
@@ -406,6 +408,7 @@ function App() {
       agent: AgentType;
       permissionMode: PermissionMode;
       images: string[];
+      texts: string[];
       immediate: boolean;
       launchMode: "local" | "worktree";
       baseBranch: string;
@@ -489,6 +492,7 @@ function App() {
       { ...baseTask, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch },
       worktreePath ?? project.path,
       images,
+      texts,
     );
   }
 
