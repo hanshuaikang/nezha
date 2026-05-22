@@ -1,9 +1,9 @@
 /*
  * xterm 的 .xterm-rows 子树对 macOS NSTextInputClient 不可见。
  *
- * 背景：xterm v6 即使在 WebGL 模式下，_rowFactory.createRow() 仍然往每个
- * row div 内 replaceChildren(...spans) 写入完整字符 textContent，目的是
- * 让浏览器原生 selection / copy 能工作。
+ * 背景：xterm v6 在 WebGL renderer 正常启用后会同步移除 DomRenderer 的
+ * .xterm-rows；因此这条规则通常不会 match。它保留为 DOM renderer fallback：
+ * WebGL 不可用或 context loss 后，.xterm-rows 会重新出现。
  *
  * 但 nezha 不依赖这条路径——
  *   - xterm 自己的拖选基于 mouseService.getCoords(event, screenElement)，
@@ -11,14 +11,14 @@
  *   - 复制走 attachSmartCopy → terminal.buffer.translateToString，
  *     直接从 xterm core buffer 取字符，不读 DOM。
  *
- * 长会话累积大量 row span 后，macOS NSTextInputClient 的
- * characterIndexForPointAsync（IME 候选词位置预测 / selection 状态轮询）
- * 会让 WebKit 走 LocalFrame::rangeForPoint → canonicalPosition →
- * PositionIterator::increment × 1500+ 次，每个 span 创建 ICU
- * TextBreakIterator 做 emoji grapheme 簇判断 → 主线程 100%，前端卡死。
+ * macOS NSTextInputClient 的 characterIndexForPointAsync（IME 候选词位置预测 /
+ * selection 状态轮询）会让 WebKit 走 LocalFrame::rangeForPoint →
+ * canonicalPosition → PositionIterator。2026-05-22 sample 证明当前风暴主要
+ * 游走到 Nezha 自己的含 <img> / emoji 子树；真正的主防线在
+ * terminalShared.ts::attachMacWebKitTerminalGuard 的 inert 逻辑。
  *
- * 实测（pid 335 sample，5s/3416 主线程样本）：99.7% 卡在该调用栈；
- * reload 后 0 次调用立刻恢复。详见 knowledge/xterm/rendering-and-selection-lag.md §7。
+ * 这条 CSS 只负责 WebGL fallback 时缩小 .xterm-rows 的 hit-test 面。
+ * 详见 knowledge/xterm/rendering-and-selection-lag.md §7。
  *
  * pointer-events: none 让 WebKit hit-test 跳过这棵子树，
  * NSTextInput 的 characterIndexForPoint 命中外层 .xterm-screen / canvas，

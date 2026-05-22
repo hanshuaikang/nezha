@@ -14,7 +14,7 @@
 | `.xterm { contain / isolation / will-change / 3D transform }` | **禁用** | 不要重新加任何一条 | `src/App.css` 上 `.xterm` 选择器位置已替换为防回归注释段 |
 | `WebglAddon` | **启用** | 不要关 / 不要改 noop | `src/components/terminalShared.ts::loadWebglAddon` |
 | `createSmartWriter` watermark 128KB/16KB | 保留 | 数值可调，不能取消 | `src/components/terminalShared.ts::createSmartWriter` |
-| `selectionPaused` 的 pointerup 监听挂 `document` | 保留 | 不要挪到 container（拖出窗外漏 pointerup） | `src/components/TerminalView.tsx` useEffect |
+| macOS WebKit terminal guard | 保留 | 不要删 inert / xterm selection 监听 / document 级 pointerup | `src/components/terminalShared.ts::attachMacWebKitTerminalGuard` |
 | `tauri::ipc::Channel` 直投 agent 输出 | 保留 | 不要换回 `emit/listen` | `src-tauri/src/pty.rs::OutputSink::Channel` |
 
 ---
@@ -92,7 +92,7 @@ Nezha 的工作流以"鼠标在终端区域活动"为主（hover、点击、移�
 
 ## 7. macOS NSTextInputClient 风暴（与 §4 完全无关的另一条路径）
 
-> 这是 2026-05-19 实测发现的**独立卡顿来源**，sample 工具锁定。和 §1–§4 的 composite 长帧不是同一回事，**先看现象判断走哪条路径**：
+> 这是 2026-05-19 实测发现、2026-05-22 重新核对过的**独立卡顿来源**，sample 工具锁定。和 §1–§4 的 composite 长帧不是同一回事，**先看现象判断走哪条路径**：
 
 | 现象 | 路径 |
 |---|---|
@@ -116,71 +116,22 @@ Nezha 的工作流以"鼠标在终端区域活动"为主（hover、点击、移�
 
 ### 7.2 触发链
 
-1. xterm v6 即使在 WebGL renderer 下，`_rowFactory.createRow()` 仍然往每个 row div `replaceChildren(...spans)` 写入完整字符内容（让浏览器原生 selection/copy 工作）
-2. 长会话 + Claude Code 输出含大量 emoji / box drawing / Unicode → 每个 row span 都需要走 ICU pictographic 簇判断
-3. 用户在 xterm 内拖选 → macOS 进入"有 selection 的文本输入状态" → NSTextInputClient（IME 候选词浮窗追踪 / 拼写检查 / AX）**持续轮询** `characterIndexForPointAsync`
-4. 单次查询 → `canonicalPosition` 在整棵 xterm-rows 子树游走 1500+ RenderText → 50–200ms
-5. 主线程被卡 → 后续事件堆积 → 系统继续轮询 → 正反馈到 100%
+1. WebGL renderer 启用后，xterm v6 会同步 dispose DOM renderer，当前 `.xterm-rows` 不存在；旧文档里“WebGL 仍写 row span”的模型是错的。
+2. 用户在 xterm 内拖选或保留 selection 后，macOS NSTextInputClient（IME 候选词浮窗追踪 / 拼写检查 / AX）会持续轮询 `characterIndexForPointAsync`。2026-05-22 的 Timeline 录制显示，即使没有 pointerdown、只有 mousemove，也可能进入持续轮询。
+3. WebKit 处理单次查询时走 `LocalFrame::rangeForPoint` → `canonicalPosition` → `PositionIterator::increment`。sample 栈里出现 `HTMLImageElement::canContainRangeEndPoint`，说明游走目标不是 `.xterm-rows`，而是 Nezha 自己的含 `<img>`/emoji 的 DOM 子树（task list、project rail、session markdown 等）。
+4. 单次查询可能花 50–200ms；macOS 进入持续轮询后，主线程 CPU 正反馈到 100%。Safari Timeline 通常只看到短事件和 CPU 飙升，看不到 WebKit C++ 层长任务。
 
-### 7.3 修复（分两档落地）
+### 7.3 当前防线
 
-修复 V1 单独不够——实测仍有 ~20% IME 路径占主线程（拖选时偶发卡顿）。完整修复包含 V1 + V2 两层：
+当前防线在 `src/components/terminalShared.ts::attachMacWebKitTerminalGuard`，agent 终端和 shell 终端都必须使用：
 
-**V1：CSS 阻断 hit-test 入口**
+1. 给终端容器加 `.xterm-macos-ime-guard`。`src/styles/xterm.css` 的 `.xterm-rows { pointer-events: none }` 现在主要是 WebGL context loss / DOM renderer fallback，不是当前主路径。
+2. 关掉 helper textarea 的 `autocomplete` / `autocorrect` / `autocapitalize` / `spellcheck`，减少 macOS 主动文本定位查询。
+3. 通过 xterm 自己的 `onSelectionChange` / `hasSelection()` 判断终端是否有 selection。不要用 `window.getSelection()`，WebGL renderer 下 xterm selection 不等价于浏览器原生 selection。
+4. selection 或拖选期间，把“终端到 `body` 祖先链上的所有兄弟子树”设置为 `inert`。不要只遍历 `document.body.children`：React 应用通常只有一个 `#root`，直接子节点方案会跳过整个应用，实际 inert 不到 task list / project rail。
+5. `pointerup` / `pointercancel` 挂 `document`，避免拖出终端后漏恢复；点击终端外或按 Escape 时清除 selection 并恢复 inert。
 
-`src/App.css`：
-```css
-.xterm-rows,
-.xterm-rows * { pointer-events: none; }
-```
-
-`src/components/TerminalView.tsx`（关掉 helper textarea 上的 macOS 自动行为）：
-```ts
-term.textarea.setAttribute("autocomplete", "off");
-term.textarea.setAttribute("autocorrect", "off");
-term.textarea.setAttribute("autocapitalize", "off");
-term.textarea.setAttribute("spellcheck", "false");
-```
-
-实测把 `CharacterIndexForPointAsync` 主线程占比从 **99.7% → 20.6%**。`pointer-events: none` 拦住了 WebKit hit-test 命中 row 子树，但 `canonicalPosition` 仍会从外层 hit-test 结果向前/向后游走候选 Position，进入 row span 的 RenderText——这一步不看 pointer-events。所以 V1 单独不够。
-
-**V2：MutationObserver 替换 row span 文本为 ASCII**
-
-`src/components/TerminalView.tsx` 的 `useEffect` 内：
-```ts
-const rowsEl = container.querySelector(".xterm-rows");
-const processedSpans = new WeakSet<Element>();
-const ASCII_ONLY = /^[\x20-\x7E]*$/;
-const rowSanitizer = new MutationObserver((mutations) => {
-  for (const m of mutations) {
-    if (m.type !== "childList") continue;
-    for (const n of m.addedNodes) {
-      if (n.nodeType !== Node.ELEMENT_NODE) continue;
-      const el = n as Element;
-      if (el.tagName !== "SPAN" || processedSpans.has(el)) continue;
-      const text = el.textContent;
-      if (!text || text.length <= 1 || ASCII_ONLY.test(text)) {
-        processedSpans.add(el);
-        continue;
-      }
-      el.textContent = "x";
-      processedSpans.add(el);
-    }
-  }
-});
-rowSanitizer.observe(rowsEl, { childList: true, subtree: true });
-```
-
-xterm v6 每帧 `_rowFactory.createRow()` → `rowDiv.replaceChildren(...newSpans)`，触发 MutationRecord。我们 hook 到 addedNodes 里的 span，把含非 ASCII 字符（emoji / box drawing）的 textContent 替换成单字符 `"x"`。
-
-PositionIterator 仍游走 1500+ 次（这是 WebKit 内部行为，CSS / JS 都改不了），但每次 ICU TextBreakIterator setText 走 ASCII fast path——不再进入 `__CFStringGetExtendedPictographicSequenceComponent` 的 emoji 簇判断。
-
-为什么 V2 不会破坏 xterm：
-- xterm 的拖选用 `mouseService.getCoords(event, screenElement)`——读 event clientX/Y + screenElement boundingRect，不读 row span 内容
-- xterm 的列宽对齐用 `_rowColumns.set(span, [...])` 存的期望列范围，**与 span.textContent 内容无关**；`_alignRowWidth(rowDiv)` 用 row div 的 boundingRect 算 scaleX，row div 内 span 只要还有内容（"x"）就不会触发除零
-- xterm 的字符渲染是 WebGL canvas 上做的，**row span 视觉上被 canvas 覆盖**，textContent 改成什么都看不见
-- Nezha 的复制走 `attachSmartCopy` → `terminal.buffer.translateToString` → 直接读 xterm core buffer，**完全不读 DOM**
-- WeakSet 去重避免我们自己写入 textContent 触发的二次 mutation 死循环——`span.textContent = "x"` 会触发新一次 childList mutation（addedNodes 是 text node，不是 SPAN），回调里 `tagName !== "SPAN"` 直接跳过
+旧的 MutationObserver row sanitizer 已删除：WebGL 正常启用时 `.xterm-rows` 已被同步移除，observer 找不到目标，是死代码。
 
 ### 7.4 诊断小抄（覆盖原 §5）
 
@@ -220,10 +171,9 @@ head -100 /tmp/nezha.sample
 
 | 缺口 | 影响 | 触发条件 |
 |---|---|---|
-| `selectionPaused = true` 后 pointerup 丢失（pointercancel / 系统手势 / 拖出窗外） | SmartWriter `pendingChunks` 无上限增长直到下次成功 pointerdown→pointerup | 鼠标手势打断选区拖动 |
 | `webglAddon.onContextLoss` 只 dispose 不 re-attach | context loss 后变成 DOM renderer，§3 的负向交易开始生效 | GPU 内存压力 / 系统休眠 |
 | `SessionView` 同步 `marked(async:false)` + 全文件加载 JSONL | JS 堆短期飙升，加重高分配率（但与本文卡顿不直接相关） | 打开很长的 session |
-| §7 修复 V1+V2 实测前主线程峰值已从 99% 持续不降变为偶发短卡，但**未经长跑长会话+多终端实例的稳定性验证**。MutationObserver 跟 xterm DOM 写入对抗，xterm v6 升级如改 row 创建路径需要回归测试 | 修复需要长期 monitoring | xterm v6 主版本升级后 |
+| §7 inert 防线需要真实长跑 sample 复验。代码已覆盖无 pointerdown 的已有 selection 场景，但 macOS 何时进入持续轮询仍由系统决定 | 修复需要长期 monitoring | 长会话、多终端实例、4K DPR 切换后 |
 
 ---
 

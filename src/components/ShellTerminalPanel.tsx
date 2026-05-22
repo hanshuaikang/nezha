@@ -13,6 +13,7 @@ import {
   loadWebglAddon,
   safeFit,
   createSmartWriter,
+  attachMacWebKitTerminalGuard,
   applyTerminalFontSize,
   applyTerminalFontFamily,
 } from "./terminalShared";
@@ -112,6 +113,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       term.open(container);
       const disposeInputFix = attachMacWebKitShiftInputFix(term);
       loadWebglAddon(term);
+      const writer = createSmartWriter(term);
+      const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
       const fit = () => {
         if (cleaned) return;
@@ -146,7 +149,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         }
       }, 50);
 
-      const writer = createSmartWriter(term);
       const disposeSmartCopy = attachSmartCopy(term);
       const linuxIME = attachLinuxIMEFix(term, (data) => {
         invoke("send_input", { taskId: shellId, data }).catch(() => {});
@@ -166,12 +168,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
         window.requestAnimationFrame(() => {
           fit();
-          const t = terminalRef.current;
-          if (t) {
-            t.refresh(0, t.rows - 1);
+        const t = terminalRef.current;
+        if (t) {
             t.focus();
-          }
-        });
+        }
+      });
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -203,6 +204,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         terminalRef.current = null;
         fitAddonRef.current = null;
+        disposeMacWebKitGuard();
         disposeInputFix();
         term.dispose();
         invoke("kill_shell", { shellId }).catch(() => {});
@@ -221,7 +223,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
           }
         }
-        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
         terminalRef.current.focus();
       });
     }, [isActive, shellId]);

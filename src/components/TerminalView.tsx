@@ -11,11 +11,11 @@ import {
   loadWebglAddon,
   safeFit,
   createSmartWriter,
+  attachMacWebKitTerminalGuard,
   applyTerminalFontSize,
   applyTerminalFontFamily,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
-import { IS_MAC_WEBKIT } from "../platform";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -84,20 +84,6 @@ export function TerminalView({
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
-    // 关掉 macOS 在 helper textarea 上的拼写检查 / 自动纠正 / 文本预测——
-    // 这些行为会主动触发 NSTextInputClient 的 characterIndexForPointAsync
-    // 查询。textarea 默认在屏幕外（left: -9999em），但 macOS 输入法仍可能
-    // 主动定位它。配合 src/styles/xterm.css 中 .xterm-rows 的 pointer-events: none
-    // 一起切断 IME 查询风暴的两条入口。详见 knowledge/xterm/rendering-and-selection-lag.md §7。
-    if (IS_MAC_WEBKIT) {
-      container.classList.add("xterm-macos-ime-guard");
-    }
-    if (IS_MAC_WEBKIT && term.textarea) {
-      term.textarea.setAttribute("autocomplete", "off");
-      term.textarea.setAttribute("autocorrect", "off");
-      term.textarea.setAttribute("autocapitalize", "off");
-      term.textarea.setAttribute("spellcheck", "false");
-    }
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
     loadWebglAddon(term);
 
@@ -111,6 +97,7 @@ export function TerminalView({
     };
 
     const writer = createSmartWriter(term);
+    const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
     const terminalGeneration = onRegisterRef.current(writer.write);
 
@@ -146,13 +133,6 @@ export function TerminalView({
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 0) {
         focusTerminal();
-        writer.setSelectionPaused(true);
-      }
-    };
-    // pointerup 挂在 document 上，拖出终端区域外松手也能正确恢复
-    const handlePointerUp = (e: PointerEvent) => {
-      if (e.button === 0) {
-        writer.setSelectionPaused(false);
       }
     };
     const handleVisibilityChange = () => {
@@ -160,13 +140,11 @@ export function TerminalView({
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term);
         if (s) notifyResize(s.cols, s.rows);
-        term.refresh(0, term.rows - 1);
         term.focus();
       });
     };
 
     container.addEventListener("pointerdown", handlePointerDown as EventListener);
-    document.addEventListener("pointerup", handlePointerUp as EventListener);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -186,16 +164,15 @@ export function TerminalView({
       } catch {
         /* ignore */
       }
-      container.classList.remove("xterm-macos-ime-guard");
       onRegisterRef.current(null);
       fitAddonRef.current = null;
+      disposeMacWebKitGuard();
       disposeInputFix();
       disposeSmartCopy();
       disposeOnData.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       container.removeEventListener("pointerdown", handlePointerDown as EventListener);
-      document.removeEventListener("pointerup", handlePointerUp as EventListener);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
       term.dispose();
@@ -208,7 +185,6 @@ export function TerminalView({
       if (!fitAddonRef.current || !terminalRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current);
       if (s) notifyResize(s.cols, s.rows);
-      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       terminalRef.current.focus();
     });
   }, [isActive, notifyResize]);
