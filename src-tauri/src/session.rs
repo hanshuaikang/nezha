@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
@@ -1528,6 +1528,263 @@ pub(crate) fn spawn_resume_session_watcher(
     });
 }
 
+// ── Markdown export ──────────────────────────────────────────────────────────
+
+/// 导出允许处理的会话文件最大尺寸（200MB）。超过则拒绝，避免一次性 read_to_string
+/// 把进程拉爆。此限制比 summary 的 50MB 更宽松，因为导出是用户主动触发、单次操作。
+const MAX_SESSION_BYTES_FOR_EXPORT: u64 = 200 * 1024 * 1024;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportTaskMeta {
+    pub name: Option<String>,
+    pub prompt: String,
+    pub agent: String,
+    pub created_at: i64,
+    pub session_id: Option<String>,
+    pub worktree_branch: Option<String>,
+    pub base_branch: Option<String>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub failure_reason: Option<String>,
+}
+
+#[tauri::command]
+pub async fn export_session_markdown(
+    session_path: String,
+    project_path: String,
+    is_codex: bool,
+    output_path: String,
+    task_meta: ExportTaskMeta,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        export_session_markdown_inner(
+            &session_path,
+            &project_path,
+            is_codex,
+            &output_path,
+            &task_meta,
+        )
+    })
+    .await
+    .map_err(|e| format!("Join error: {}", e))?
+}
+
+fn export_session_markdown_inner(
+    session_path: &str,
+    project_path: &str,
+    is_codex: bool,
+    output_path: &str,
+    meta: &ExportTaskMeta,
+) -> Result<(), String> {
+    let canonical = validate_session_path(session_path, project_path, is_codex)?;
+    let canonical_out = validate_export_output_path(output_path)?;
+
+    let metadata = fs::metadata(&canonical)
+        .map_err(|e| format!("Cannot read session metadata: {}", e))?;
+    if metadata.len() > MAX_SESSION_BYTES_FOR_EXPORT {
+        return Err(format!(
+            "Session file is too large to export ({} MB > {} MB limit)",
+            metadata.len() / 1024 / 1024,
+            MAX_SESSION_BYTES_FOR_EXPORT / 1024 / 1024
+        ));
+    }
+
+    // 按行读取 JSONL：避免 `read_to_string` + `lines().collect()` 的临时双份持有
+    // （整段 String + 切片 Vec<&str>）。真正的流式解析需要重写 parse_*_session
+    // （它们消费 &[&str]），收益不抵复杂度。
+    let session_file = File::open(&canonical)
+        .map_err(|e| format!("Cannot open session file: {}", e))?;
+    let mut lines: Vec<String> = Vec::new();
+    for line in BufReader::new(session_file).lines() {
+        let line = line.map_err(|e| format!("Cannot read session file: {}", e))?;
+        if !line.trim().is_empty() {
+            lines.push(line);
+        }
+    }
+    let line_refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let messages = if is_codex_format(&line_refs) {
+        parse_codex_session(&line_refs)
+    } else {
+        parse_claude_session(&line_refs)
+    };
+
+    // 直接写到 BufWriter，避免先构建一整段 Markdown String 再 write。
+    let out_file = File::create(&canonical_out)
+        .map_err(|e| format!("Cannot create markdown file: {}", e))?;
+    let mut writer = BufWriter::new(out_file);
+    write_export_markdown(&mut writer, meta, &messages)
+        .map_err(|e| format!("Cannot write markdown file: {}", e))?;
+    writer
+        .flush()
+        .map_err(|e| format!("Cannot flush markdown file: {}", e))?;
+    Ok(())
+}
+
+/// 校验前端通过 IPC 传入的导出目标路径。
+///
+/// 即便 UI 走的是 Tauri save dialog，恶意前端也可以绕过 dialog 直接 invoke 该命令，
+/// 因此必须在后端做防御性校验（参考 AGENTS.md「接受路径参数的 Tauri 命令必须验证
+/// 路径合法性」）。规则：
+/// - 必须为绝对路径
+/// - 必须以 `.md` 结尾（与 save dialog 的 filter 对齐）
+/// - 父目录必须存在并可 canonicalize（防止 symlink 链路绕过）
+fn validate_export_output_path(output_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(output_path);
+    if !path.is_absolute() {
+        return Err("Output path must be absolute".into());
+    }
+    let has_md_ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("md"))
+        .unwrap_or(false);
+    if !has_md_ext {
+        return Err("Output path must end with .md".into());
+    }
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| "Output path has no parent directory".to_string())?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve output directory: {}", e))?;
+    if !canonical_parent.is_dir() {
+        return Err("Output directory does not exist".into());
+    }
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| "Output path has no file name".to_string())?;
+    Ok(canonical_parent.join(file_name))
+}
+
+fn write_export_markdown<W: Write>(
+    out: &mut W,
+    meta: &ExportTaskMeta,
+    messages: &[SessionMessage],
+) -> std::io::Result<()> {
+    // Title — name 或 prompt 可能含换行/制表符，需先 sanitize 压成单行，避免把后续结构撑歪。
+    let title_raw = meta
+        .name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or(&meta.prompt);
+    writeln!(out, "# {}\n", sanitize_md_inline(title_raw))?;
+
+    // Metadata
+    writeln!(out, "## Metadata\n")?;
+    writeln!(out, "- **Agent**: {}", sanitize_md_inline(&meta.agent))?;
+    writeln!(out, "- **Created**: {}", format_timestamp_ms(meta.created_at))?;
+    if let Some(sid) = &meta.session_id {
+        if !sid.is_empty() {
+            writeln!(out, "- **Session ID**: `{}`", sanitize_md_code_span(sid))?;
+        }
+    }
+    if let (Some(branch), Some(base)) = (&meta.worktree_branch, &meta.base_branch) {
+        writeln!(
+            out,
+            "- **Branch**: `{}` → `{}`",
+            sanitize_md_code_span(branch),
+            sanitize_md_code_span(base)
+        )?;
+    }
+    if let (Some(add), Some(del)) = (meta.additions, meta.deletions) {
+        writeln!(out, "- **Diff**: +{} / −{}", add, del)?;
+    }
+    if let Some(reason) = &meta.failure_reason {
+        if !reason.is_empty() {
+            writeln!(
+                out,
+                "- **Failure reason**: {}",
+                sanitize_md_inline(reason)
+            )?;
+        }
+    }
+    writeln!(out)?;
+
+    // Prompt
+    writeln!(out, "## Prompt\n")?;
+    if meta.prompt.trim().is_empty() {
+        writeln!(out, "> _(empty)_")?;
+    } else {
+        for line in meta.prompt.lines() {
+            writeln!(out, "> {}", line)?;
+        }
+    }
+    writeln!(out)?;
+
+    // Conversation — 仅导出 user / assistant 的纯文本，丢弃 tool_use 与 thinking。
+    // 若一条消息过滤后没有文本块，则连同其 role 标题一起跳过，避免出现空小节。
+    writeln!(out, "## Conversation\n")?;
+    let mut current_role: Option<&str> = None;
+    for msg in messages {
+        let texts: Vec<&str> = msg
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                SessionContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        if texts.is_empty() {
+            continue;
+        }
+        if current_role != Some(msg.role.as_str()) {
+            current_role = Some(msg.role.as_str());
+            match msg.role.as_str() {
+                "user" => writeln!(out, "### User\n")?,
+                "assistant" => writeln!(out, "### Assistant\n")?,
+                other => {
+                    // 未来若 parser 扩展了新角色，按字面量输出而非 panic。
+                    writeln!(out, "### {}\n", sanitize_md_inline(other))?;
+                    continue;
+                }
+            }
+        }
+        for text in texts {
+            out.write_all(text.as_bytes())?;
+            if !text.ends_with('\n') {
+                out.write_all(b"\n")?;
+            }
+            out.write_all(b"\n")?;
+        }
+    }
+    Ok(())
+}
+
+/// 把多行/含控制字符的元数据值压成单行：所有空白和控制字符折叠成一个空格、首尾裁剪。
+/// 用于 Markdown 标题、列表项等「必须单行」的位置。
+fn sanitize_md_inline(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_space = false;
+    for c in s.trim().chars() {
+        if c.is_whitespace() || c.is_control() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(c);
+            prev_space = false;
+        }
+    }
+    out
+}
+
+/// 行内代码 span `…` 的转义：先压成单行（code span 不允许换行），再把反引号替换成单引号，
+/// 否则 `…` 内部的反引号会提前关闭 span，把后续 Markdown 撕碎。
+fn sanitize_md_code_span(s: &str) -> String {
+    sanitize_md_inline(s).replace('`', "'")
+}
+
+fn format_timestamp_ms(ms: i64) -> String {
+    use chrono::{TimeZone, Utc};
+    Utc.timestamp_millis_opt(ms)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .unwrap_or_else(|| ms.to_string())
+}
+
 // ── 测试 ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1707,5 +1964,140 @@ mod tests {
         });
 
         assert!(assistant_message_requests_user_input(Some(&payload)));
+    }
+
+    fn sample_meta() -> ExportTaskMeta {
+        ExportTaskMeta {
+            name: Some("Demo task".into()),
+            prompt: "do the thing".into(),
+            agent: "claude".into(),
+            created_at: 1_715_990_400_000, // 2024-05-18T00:00:00Z
+            session_id: Some("abc-123".into()),
+            worktree_branch: None,
+            base_branch: None,
+            additions: None,
+            deletions: None,
+            failure_reason: None,
+        }
+    }
+
+    /// 测试 helper：把 streaming 输出收到 Vec<u8> 再转 String，方便对内容做断言。
+    fn render_to_string(meta: &ExportTaskMeta, msgs: &[SessionMessage]) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        write_export_markdown(&mut buf, meta, msgs).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn export_markdown_includes_metadata_and_prompt() {
+        let md = render_to_string(&sample_meta(), &[]);
+        assert!(md.starts_with("# Demo task\n\n"), "title missing: {}", md);
+        assert!(md.contains("- **Agent**: claude"));
+        assert!(md.contains("- **Session ID**: `abc-123`"));
+        assert!(md.contains("> do the thing"));
+    }
+
+    #[test]
+    fn export_markdown_drops_tool_use_and_thinking_blocks() {
+        let messages = vec![
+            SessionMessage {
+                role: "assistant".into(),
+                content: vec![
+                    SessionContent::Thinking {
+                        thinking: "let me reason".into(),
+                    },
+                    SessionContent::Text {
+                        text: "first turn".into(),
+                    },
+                ],
+            },
+            SessionMessage {
+                role: "assistant".into(),
+                content: vec![SessionContent::ToolUse {
+                    id: "t1".into(),
+                    name: "Bash".into(),
+                    input: "{\"cmd\":\"ls\"}".into(),
+                }],
+            },
+            SessionMessage {
+                role: "assistant".into(),
+                content: vec![SessionContent::Text {
+                    text: "second turn".into(),
+                }],
+            },
+        ];
+        let md = render_to_string(&sample_meta(), &messages);
+        // 连续 assistant 文本应合并到同一个标题下；tool-only 消息被整体丢弃
+        assert_eq!(md.matches("### Assistant").count(), 1, "{}", md);
+        assert!(!md.contains("👤"));
+        assert!(!md.contains("🤖"));
+        assert!(md.contains("first turn"));
+        assert!(md.contains("second turn"));
+        assert!(!md.contains("🔧"));
+        assert!(!md.contains("Bash"));
+        assert!(!md.contains("Thinking"));
+        assert!(!md.contains("let me reason"));
+    }
+
+    #[test]
+    fn export_markdown_falls_back_to_prompt_when_name_missing() {
+        let mut meta = sample_meta();
+        meta.name = None;
+        meta.prompt = "fix the login bug".into();
+        let md = render_to_string(&meta, &[]);
+        assert!(
+            md.starts_with("# fix the login bug\n\n"),
+            "title fallback wrong: {}",
+            md
+        );
+    }
+
+    #[test]
+    fn export_markdown_sanitizes_metadata_with_newlines_and_backticks() {
+        let mut meta = sample_meta();
+        meta.name = Some("multi\nline\ttitle".into());
+        meta.session_id = Some("abc`evil`123".into());
+        meta.worktree_branch = Some("feat/`branch".into());
+        meta.base_branch = Some("main".into());
+        meta.failure_reason = Some("first line\nsecond line".into());
+        let md = render_to_string(&meta, &[]);
+
+        // 标题压缩为单行，不能让换行/Tab 把 # 标题之外的结构撑歪
+        assert!(
+            md.starts_with("# multi line title\n\n"),
+            "title not collapsed: {}",
+            md
+        );
+        // session_id / branch 在行内代码 span 里，反引号必须被替换掉
+        assert!(md.contains("- **Session ID**: `abc'evil'123`"), "{}", md);
+        assert!(md.contains("- **Branch**: `feat/'branch` → `main`"), "{}", md);
+        // failure reason 的换行被折叠成单空格，不破坏列表项
+        assert!(md.contains("- **Failure reason**: first line second line"), "{}", md);
+    }
+
+    #[test]
+    fn validate_export_output_path_rejects_relative_and_non_md() {
+        assert!(validate_export_output_path("relative/path.md").is_err());
+        assert!(validate_export_output_path("/tmp/notamd.txt").is_err());
+    }
+
+    #[test]
+    fn validate_export_output_path_rejects_missing_parent() {
+        // 极不可能存在的父目录
+        assert!(validate_export_output_path(
+            "/nonexistent-9c3a/__nezha_export_test__/out.md"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn validate_export_output_path_accepts_md_under_existing_dir() {
+        let dir = std::env::temp_dir();
+        let candidate = dir.join("nezha-validate-output.md");
+        // 文件本身不必存在；只要父目录存在即可。
+        let canonical = validate_export_output_path(candidate.to_str().unwrap())
+            .expect("temp dir export path should validate");
+        assert!(canonical.is_absolute());
+        assert_eq!(canonical.extension().and_then(|e| e.to_str()), Some("md"));
     }
 }

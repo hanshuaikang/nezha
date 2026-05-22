@@ -119,6 +119,7 @@ pub fn run() {
             git::worktree_diff_stats,
             analytics::read_session_metrics,
             session::read_session_messages,
+            session::export_session_markdown,
             config::init_project_config,
             config::read_project_config,
             config::write_project_config,
