@@ -105,7 +105,11 @@ pub struct ProjectConfig {
     pub prompt_templates: PromptTemplateConfig,
     pub git: GitConfig,
     #[serde(skip)]
+    permissions_configured: bool,
+    #[serde(skip)]
     permissions_default_mode_configured: bool,
+    #[serde(skip)]
+    prompt_templates_configured: bool,
 }
 
 impl Default for ProjectConfig {
@@ -123,7 +127,9 @@ impl Default for ProjectConfig {
             git: GitConfig {
                 commit_prompt: "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting".to_string(),
             },
+            permissions_configured: true,
             permissions_default_mode_configured: true,
+            prompt_templates_configured: true,
         }
     }
 }
@@ -132,8 +138,7 @@ impl Default for ProjectConfig {
 struct ProjectConfigToml {
     agent: AgentConfig,
     permissions: Option<PermissionConfigToml>,
-    #[serde(default)]
-    prompt_templates: PromptTemplateConfig,
+    prompt_templates: Option<PromptTemplateConfig>,
     git: GitConfig,
 }
 
@@ -163,11 +168,13 @@ impl<'de> serde::Deserialize<'de> for ProjectConfig {
         D: serde::Deserializer<'de>,
     {
         let raw = ProjectConfigToml::deserialize(deserializer)?;
+        let permissions_configured = raw.permissions.is_some();
         let permissions_default_mode_configured = raw
             .permissions
             .as_ref()
             .and_then(|permissions| permissions.default_mode.as_ref())
             .is_some();
+        let prompt_templates_configured = raw.prompt_templates.is_some();
         let legacy_default_mode = if permission_rank(&raw.agent.default_permission_mode).is_some() {
             raw.agent.default_permission_mode.clone()
         } else {
@@ -184,9 +191,11 @@ impl<'de> serde::Deserialize<'de> for ProjectConfig {
         Ok(ProjectConfig {
             agent: raw.agent,
             permissions,
-            prompt_templates: raw.prompt_templates,
+            prompt_templates: raw.prompt_templates.unwrap_or_default(),
             git: raw.git,
+            permissions_configured,
             permissions_default_mode_configured,
+            prompt_templates_configured,
         })
     }
 }
@@ -287,12 +296,38 @@ pub(crate) fn validate_permission_mode(project_path: &str, requested: &str) -> R
     Ok(())
 }
 
+fn merge_project_config_for_save(
+    existing: Option<ProjectConfig>,
+    mut incoming: ProjectConfig,
+) -> ProjectConfig {
+    if let Some(existing) = existing {
+        if !incoming.permissions_configured {
+            incoming.permissions = existing.permissions;
+            incoming.permissions_configured = true;
+            incoming.permissions_default_mode_configured = true;
+        }
+        if !incoming.prompt_templates_configured {
+            incoming.prompt_templates = existing.prompt_templates;
+            incoming.prompt_templates_configured = true;
+        }
+    }
+
+    incoming
+}
+
 /// Writes updated config to `.nezha/config.toml`, creating the directory if needed.
 #[tauri::command]
 pub fn write_project_config(project_path: String, config: ProjectConfig) -> Result<(), String> {
     let nezha_dir = Path::new(&project_path).join(".nezha");
     fs::create_dir_all(&nezha_dir).map_err(|e| e.to_string())?;
     let config_path = nezha_dir.join("config.toml");
+    let existing = if config_path.exists() {
+        let raw = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+        Some(toml::from_str(&raw).unwrap_or_default())
+    } else {
+        None
+    };
+    let config = merge_project_config_for_save(existing, config);
     let raw = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
     atomic_write(&config_path, &raw)
 }
@@ -379,5 +414,56 @@ commit_prompt = "commit"
         config.permissions.default_mode = "auto_edit".to_string();
 
         assert_eq!(effective_default_permission_mode(&config), "auto_edit");
+    }
+
+    #[test]
+    fn merge_project_config_for_save_preserves_sections_missing_from_incoming_payload() {
+        let existing_raw = r#"
+[agent]
+default = "claude"
+default_permission_mode = "ask"
+prompt_prefix = "old"
+claude_version = ""
+codex_version = ""
+
+[permissions]
+default_mode = "auto_edit"
+max_mode = "full_access"
+confirm_full_access = false
+
+[[prompt_templates.templates]]
+id = "review"
+name = "Review"
+content = "Review {projectName}"
+
+[git]
+commit_prompt = "old commit"
+"#;
+        let incoming_raw = r#"
+[agent]
+default = "codex"
+default_permission_mode = "ask"
+prompt_prefix = "new"
+claude_version = "1"
+codex_version = "2"
+
+[git]
+commit_prompt = "new commit"
+"#;
+
+        let existing: ProjectConfig =
+            toml::from_str(existing_raw).expect("existing config should deserialize");
+        let incoming: ProjectConfig =
+            toml::from_str(incoming_raw).expect("incoming config should deserialize");
+
+        let merged = merge_project_config_for_save(Some(existing), incoming);
+
+        assert_eq!(merged.agent.default, "codex");
+        assert_eq!(merged.git.commit_prompt, "new commit");
+        assert_eq!(merged.permissions.default_mode, "auto_edit");
+        assert_eq!(merged.permissions.max_mode, "full_access");
+        assert!(!merged.permissions.confirm_full_access);
+        assert_eq!(merged.prompt_templates.templates.len(), 1);
+        assert_eq!(merged.prompt_templates.templates[0].id, "review");
     }
 }
