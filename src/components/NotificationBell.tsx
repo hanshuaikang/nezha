@@ -1,10 +1,26 @@
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { Bell, X, ExternalLink, Check, CheckCheck, Info, AlertTriangle, AlertCircle } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { NotificationItem } from "../types";
 import { useNotifications } from "../hooks/useNotifications";
 import { useI18n } from "../i18n";
 import s from "../styles";
+
+const notificationBodyStyle: CSSProperties = {
+  fontSize: 11.5,
+  color: "var(--text-muted)",
+  lineHeight: 1.5,
+  overflow: "hidden",
+  display: "-webkit-box",
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: "vertical",
+};
+
+const notificationBodyZhStyle: CSSProperties = {
+  ...notificationBodyStyle,
+  marginTop: 4,
+};
 
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
@@ -85,19 +101,8 @@ function NotificationEntry({
             />
           )}
         </div>
-        <div
-          style={{
-            fontSize: 11.5,
-            color: "var(--text-muted)",
-            lineHeight: 1.5,
-            overflow: "hidden",
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-          }}
-        >
-          {item.body}
-        </div>
+        <div style={notificationBodyStyle}>{item.body}</div>
+        {item.bodyZh && <div style={notificationBodyZhStyle}>{item.bodyZh}</div>}
         <div
           style={{
             fontSize: 10.5,

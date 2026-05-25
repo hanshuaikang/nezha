@@ -122,20 +122,18 @@ export function isActiveTaskStatus(status: TaskStatus): boolean {
 
 export interface NotificationItem {
   id: string;
-  notifType: "update" | "announcement" | "warning" | string;
   level: "info" | "warning" | "error" | string;
   title: string;
   body: string;
+  bodyZh: string | null;
   url: string | null;
   createdAt: string;
-  popup: boolean;
   isRead: boolean;
 }
 
 export interface NotificationResult {
   notifications: NotificationItem[];
   unreadCount: number;
-  hasUnreadPopup: boolean;
 }
 
 export interface UsageWindow {

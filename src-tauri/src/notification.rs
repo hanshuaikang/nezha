@@ -24,23 +24,19 @@ static NOTIFICATION_STORE_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RemoteNotification {
     id: String,
-    #[serde(rename = "type")]
-    notif_type: String,
     level: String,
     title: String,
     body: String,
+    body_zh: Option<String>,
     url: Option<String>,
     created_at: String,
     expires_at: Option<String>,
-    popup: bool,
     min_app_version: Option<String>,
     max_app_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RemoteResponse {
-    #[allow(dead_code)]
-    version: u32,
     notifications: Vec<RemoteNotification>,
 }
 
@@ -68,15 +64,14 @@ impl Default for NotificationStore {
 #[derive(Debug, Clone, Serialize)]
 pub struct NotificationItem {
     pub id: String,
-    #[serde(rename = "notifType")]
-    pub notif_type: String,
     pub level: String,
     pub title: String,
     pub body: String,
+    #[serde(rename = "bodyZh")]
+    pub body_zh: Option<String>,
     pub url: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
-    pub popup: bool,
     #[serde(rename = "isRead")]
     pub is_read: bool,
 }
@@ -86,8 +81,6 @@ pub struct NotificationResult {
     pub notifications: Vec<NotificationItem>,
     #[serde(rename = "unreadCount")]
     pub unread_count: usize,
-    #[serde(rename = "hasUnreadPopup")]
-    pub has_unread_popup: bool,
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
@@ -326,24 +319,21 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
         .filter(|n| is_valid(n, APP_VERSION))
         .map(|n| NotificationItem {
             id: sanitize_text(&n.id, 100),
-            notif_type: sanitize_text(&n.notif_type, 50),
             level: sanitize_text(&n.level, 20),
             title: sanitize_text(&n.title, 200),
             body: sanitize_text(&n.body, 2000),
+            body_zh: n.body_zh.as_ref().map(|b| sanitize_text(b, 2000)),
             url: sanitize_url(&n.url),
             created_at: sanitize_text(&n.created_at, 20),
-            popup: n.popup,
             is_read: read_set.contains(n.id.as_str()),
         })
         .collect();
 
     let unread_count = items.iter().filter(|n| !n.is_read).count();
-    let has_unread_popup = items.iter().any(|n| !n.is_read && n.popup);
 
     Ok(NotificationResult {
         notifications: items,
         unread_count,
-        has_unread_popup,
     })
 }
 
@@ -387,14 +377,13 @@ mod tests {
     fn notification(id: &str) -> RemoteNotification {
         RemoteNotification {
             id: id.to_string(),
-            notif_type: "info".to_string(),
             level: "info".to_string(),
             title: format!("title-{id}"),
             body: format!("body-{id}"),
+            body_zh: None,
             url: None,
             created_at: "2026-01-01".to_string(),
             expires_at: None,
-            popup: false,
             min_app_version: None,
             max_app_version: None,
         }
