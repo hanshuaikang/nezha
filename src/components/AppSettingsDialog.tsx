@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type } from "lucide-react";
-import type { ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -64,7 +64,7 @@ function NavItemIcon({ item, size }: { item: AppSettingsNavItem; size: number })
 
 export function AppSettingsDialog({
   onClose,
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -78,7 +78,7 @@ export function AppSettingsDialog({
   onMonoFontFamilyChange,
 }: {
   onClose: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -184,7 +184,7 @@ export function AppSettingsDialog({
               agentKey={activeNav as AgentKey}
               filePath={activeItem.filePath!}
               lang={activeItem.lang!}
-              isDark={isDark}
+              themeVariant={themeVariant}
             />
           )}
         </div>

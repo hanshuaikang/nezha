@@ -32,14 +32,12 @@ export function FileExplorer({
   projectPath,
   projectName,
   onFileSelect,
-  isDark: _isDark,
   active = true,
   width = 240,
 }: {
   projectPath: string;
   projectName: string;
   onFileSelect: (path: string, name: string) => void;
-  isDark: boolean;
   active?: boolean;
   width?: number;
 }) {

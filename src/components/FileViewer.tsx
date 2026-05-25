@@ -7,6 +7,7 @@ import { X, AlertCircle, Eye, PencilLine, MoreHorizontal } from "lucide-react";
 import { getFileColor } from "../utils";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
+import { solarizedLight } from "@uiw/codemirror-theme-solarized";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
@@ -32,6 +33,7 @@ import { r } from "@codemirror/legacy-modes/mode/r";
 import type { Extension } from "@codemirror/state";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
 import type { OpenFileTab } from "../hooks/useProjectPanels";
+import type { ThemeVariant } from "../types";
 import { useI18n } from "../i18n";
 
 function isMarkdownFile(fileName: string): boolean {
@@ -196,15 +198,21 @@ function FilePreviewPane({
   filePath,
   fileName,
   projectPath,
-  isDark,
+  themeVariant,
   previewMode,
 }: {
   filePath: string;
   fileName: string;
   projectPath: string;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   previewMode: boolean;
 }) {
+  const editorTheme =
+    themeVariant === "dark"
+      ? githubDark
+      : themeVariant === "eyecare"
+        ? solarizedLight
+        : githubLight;
   const { t } = useI18n();
   const [content, setContent] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<ImagePreviewData | null>(null);
@@ -376,7 +384,7 @@ function FilePreviewPane({
               <ReactCodeMirror
                 value={content}
                 onChange={handleChange}
-                theme={isDark ? githubDark : githubLight}
+                theme={editorTheme}
                 extensions={extensions}
                 height="100%"
                 style={{ height: "100%" }}
@@ -436,7 +444,7 @@ export function FileViewer({
   onCloseOtherTabs,
   onCloseTabsToRight,
   onCloseAllTabs,
-  isDark,
+  themeVariant,
   onRunMakeTarget: _onRunMakeTarget,
 }: {
   tabs: OpenFileTab[];
@@ -447,7 +455,7 @@ export function FileViewer({
   onCloseOtherTabs: (path: string) => void;
   onCloseTabsToRight: (path: string) => void;
   onCloseAllTabs: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   onRunMakeTarget?: (target: string) => void;
 }) {
   const { t } = useI18n();
@@ -717,7 +725,7 @@ export function FileViewer({
                 filePath={tab.path}
                 fileName={tab.name}
                 projectPath={projectPath}
-                isDark={isDark}
+                themeVariant={themeVariant}
                 previewMode={!!previewModes[tab.path]}
               />
             </div>
