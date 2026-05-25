@@ -98,14 +98,14 @@ pub struct GitConfig {
     pub commit_prompt: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, Debug, Clone)]
 pub struct ProjectConfig {
     pub agent: AgentConfig,
-    #[serde(default)]
     pub permissions: PermissionConfig,
-    #[serde(default)]
     pub prompt_templates: PromptTemplateConfig,
     pub git: GitConfig,
+    #[serde(skip)]
+    permissions_default_mode_configured: bool,
 }
 
 impl Default for ProjectConfig {
@@ -123,7 +123,71 @@ impl Default for ProjectConfig {
             git: GitConfig {
                 commit_prompt: "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting".to_string(),
             },
+            permissions_default_mode_configured: true,
         }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ProjectConfigToml {
+    agent: AgentConfig,
+    permissions: Option<PermissionConfigToml>,
+    #[serde(default)]
+    prompt_templates: PromptTemplateConfig,
+    git: GitConfig,
+}
+
+#[derive(serde::Deserialize)]
+struct PermissionConfigToml {
+    #[serde(alias = "default_permission_mode")]
+    default_mode: Option<String>,
+    max_mode: Option<String>,
+    confirm_full_access: Option<bool>,
+}
+
+impl PermissionConfigToml {
+    fn into_config(self, default_mode: String) -> PermissionConfig {
+        PermissionConfig {
+            default_mode: self.default_mode.unwrap_or(default_mode),
+            max_mode: self.max_mode.unwrap_or_else(default_max_permission_mode),
+            confirm_full_access: self
+                .confirm_full_access
+                .unwrap_or_else(default_confirm_full_access),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ProjectConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = ProjectConfigToml::deserialize(deserializer)?;
+        let permissions_default_mode_configured = raw
+            .permissions
+            .as_ref()
+            .and_then(|permissions| permissions.default_mode.as_ref())
+            .is_some();
+        let legacy_default_mode = if permission_rank(&raw.agent.default_permission_mode).is_some() {
+            raw.agent.default_permission_mode.clone()
+        } else {
+            default_permission_mode()
+        };
+        let permissions = raw.permissions.map_or_else(
+            || PermissionConfig {
+                default_mode: legacy_default_mode.clone(),
+                ..PermissionConfig::default()
+            },
+            |permissions| permissions.into_config(legacy_default_mode),
+        );
+
+        Ok(ProjectConfig {
+            agent: raw.agent,
+            permissions,
+            prompt_templates: raw.prompt_templates,
+            git: raw.git,
+            permissions_default_mode_configured,
+        })
     }
 }
 
@@ -191,7 +255,9 @@ fn permission_rank(mode: &str) -> Option<u8> {
 }
 
 pub(crate) fn effective_default_permission_mode(config: &ProjectConfig) -> String {
-    if permission_rank(&config.permissions.default_mode).is_some() {
+    if config.permissions_default_mode_configured
+        && permission_rank(&config.permissions.default_mode).is_some()
+    {
         return config.permissions.default_mode.clone();
     }
     if permission_rank(&config.agent.default_permission_mode).is_some() {
@@ -291,10 +357,11 @@ commit_prompt = "commit"
 
         let config: ProjectConfig = toml::from_str(raw).expect("config should deserialize");
 
-        assert_eq!(config.permissions.default_mode, "ask");
+        assert_eq!(config.permissions.default_mode, "auto_edit");
         assert_eq!(config.permissions.max_mode, "auto_edit");
         assert!(config.permissions.confirm_full_access);
         assert!(config.prompt_templates.templates.is_empty());
+        assert_eq!(effective_default_permission_mode(&config), "auto_edit");
     }
 
     #[test]
