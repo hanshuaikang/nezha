@@ -85,9 +85,9 @@ export function NewTaskView({
         setProjectConfig(cfg);
 
         const defaultAgent = cfg.agent?.default;
-        if (typeof defaultAgent === "string" && isAgentType(defaultAgent)) {
-          setAgent(defaultAgent);
-        }
+        const nextAgent =
+          typeof defaultAgent === "string" && isAgentType(defaultAgent) ? defaultAgent : "claude";
+        setAgent(nextAgent);
 
         const configuredMax = cfg.permissions?.max_mode;
         const nextMaxPermissionMode =
