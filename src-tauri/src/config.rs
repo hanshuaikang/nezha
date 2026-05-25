@@ -275,6 +275,16 @@ pub(crate) fn effective_default_permission_mode(config: &ProjectConfig) -> Strin
     "ask".to_string()
 }
 
+pub(crate) fn effective_max_permission_mode(config: &ProjectConfig) -> String {
+    if config.permissions_configured {
+        return config.permissions.max_mode.clone();
+    }
+    if permission_rank(&config.agent.default_permission_mode).is_some() {
+        return config.agent.default_permission_mode.clone();
+    }
+    default_max_permission_mode()
+}
+
 pub(crate) fn validate_permission_against_max(
     requested: &str,
     max_mode: &str,
@@ -296,7 +306,7 @@ pub(crate) fn validate_permission_against_max(
 
 pub(crate) fn validate_permission_mode(project_path: &str, requested: &str) -> Result<(), String> {
     let config = read_project_config(project_path.to_string())?;
-    validate_permission_against_max(requested, &config.permissions.max_mode)
+    validate_permission_against_max(requested, &effective_max_permission_mode(&config))
 }
 
 fn merge_project_config_for_save(
@@ -400,6 +410,42 @@ commit_prompt = "commit"
         assert!(config.permissions.confirm_full_access);
         assert!(config.prompt_templates.templates.is_empty());
         assert_eq!(effective_default_permission_mode(&config), "auto_edit");
+    }
+
+    #[test]
+    fn old_config_with_full_access_default_allows_full_access_policy() {
+        let raw = r#"
+[agent]
+default = "claude"
+default_permission_mode = "full_access"
+prompt_prefix = ""
+claude_version = ""
+codex_version = ""
+
+[git]
+commit_prompt = "commit"
+"#;
+
+        let config: ProjectConfig = toml::from_str(raw).expect("config should deserialize");
+
+        assert_eq!(effective_default_permission_mode(&config), "full_access");
+        assert_eq!(effective_max_permission_mode(&config), "full_access");
+        assert!(validate_permission_against_max(
+            "full_access",
+            &effective_max_permission_mode(&config)
+        )
+        .is_ok());
+
+        let project_dir =
+            std::env::temp_dir().join(format!("nezha-config-test-{}", uuid::Uuid::new_v4()));
+        let config_dir = project_dir.join(".nezha");
+        fs::create_dir_all(&config_dir).expect("test config dir should be created");
+        fs::write(config_dir.join("config.toml"), raw).expect("test config should be written");
+
+        let project_path = project_dir.to_string_lossy().into_owned();
+        assert!(validate_permission_mode(&project_path, "full_access").is_ok());
+
+        let _ = fs::remove_dir_all(project_dir);
     }
 
     #[test]
