@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
 import {
+  isAgentType,
   isPermissionAllowed,
+  isPermissionMode,
   permissionModeLabel,
   type AgentType,
   type PermissionMode,
@@ -136,9 +138,20 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     invoke<ProjectConfig>("read_project_config", { projectPath })
       .then((c) => {
         setConfig(c);
-        setAgentDefault(c.agent.default);
-        setDefaultPermissionMode(c.permissions?.default_mode ?? c.agent.default_permission_mode ?? "ask");
-        setMaxPermissionMode(c.permissions?.max_mode ?? "auto_edit");
+        setAgentDefault(isAgentType(c.agent.default) ? c.agent.default : "claude");
+
+        const configuredDefaultMode = c.permissions?.default_mode ?? c.agent.default_permission_mode;
+        setDefaultPermissionMode(
+          configuredDefaultMode && isPermissionMode(configuredDefaultMode)
+            ? configuredDefaultMode
+            : "ask",
+        );
+
+        const configuredMaxMode = c.permissions?.max_mode;
+        setMaxPermissionMode(
+          configuredMaxMode && isPermissionMode(configuredMaxMode) ? configuredMaxMode : "auto_edit",
+        );
+
         setConfirmFullAccess(c.permissions?.confirm_full_access ?? true);
         setPromptTemplates(c.prompt_templates?.templates ?? []);
         setPromptPrefix(c.agent.prompt_prefix ?? "");
@@ -219,12 +232,49 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     setTemplateContent((content) => `${content}${variable}`);
   }
 
+  function hasTemplateDraft() {
+    return editingTemplateId !== null || templateName.trim() !== "" || templateContent.trim() !== "";
+  }
+
+  function promptTemplatesWithDraft(): PromptTemplate[] | null {
+    if (!hasTemplateDraft()) {
+      return promptTemplates;
+    }
+
+    const name = templateName.trim();
+    const content = templateContent.trim();
+    if (!name || !content) {
+      setError("Complete or cancel the prompt template draft before saving project settings.");
+      return null;
+    }
+
+    if (editingTemplateId) {
+      return promptTemplates.map((template) =>
+        template.id === editingTemplateId ? { ...template, name, content } : template,
+      );
+    }
+
+    return [
+      ...promptTemplates,
+      {
+        id: `tmpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        content,
+      },
+    ];
+  }
+
   async function handleSave() {
     setSaving(true);
     setError(null);
     if (!isPermissionAllowed(defaultPermissionMode, maxPermissionMode)) {
       setSaving(false);
       setError("Default permission cannot exceed the project maximum permission.");
+      return;
+    }
+    const templatesToSave = promptTemplatesWithDraft();
+    if (!templatesToSave) {
+      setSaving(false);
       return;
     }
     try {
@@ -243,7 +293,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             max_mode: maxPermissionMode,
             confirm_full_access: confirmFullAccess,
           },
-          prompt_templates: { templates: promptTemplates },
+          prompt_templates: { templates: templatesToSave },
           git: { commit_prompt: commitPrompt },
         },
       });
