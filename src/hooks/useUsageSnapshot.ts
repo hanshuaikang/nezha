@@ -2,7 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import type { UsageSnapshot } from "../types";
-import { useTerminalSelectionActive } from "./useTerminalSelectionActive";
+import {
+  TERMINAL_SELECTION_ACTIVE_EVENT,
+  getTerminalSelectionActive,
+} from "../terminalSelection";
 
 // Module-level cache — shared across all hook instances in the same process
 let cachedSnapshot: UsageSnapshot | null = null;
@@ -32,8 +35,6 @@ export function useUsageSnapshot(active: boolean) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  const terminalSelectionActive = useTerminalSelectionActive();
-  const effectiveActive = active && !terminalSelectionActive;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -43,7 +44,9 @@ export function useUsageSnapshot(active: boolean) {
   }, []);
 
   useEffect(() => {
-    if (!effectiveActive || !ENABLE_USAGE_INSIGHTS) return;
+    if (!active || !ENABLE_USAGE_INSIGHTS) return;
+
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const load = async () => {
       const now = Date.now();
@@ -68,10 +71,33 @@ export function useUsageSnapshot(active: boolean) {
       }
     };
 
-    load();
-    const interval = setInterval(load, 60_000);
-    return () => clearInterval(interval);
-  }, [effectiveActive]);
+    // 终端选区期间暂停 usage 轮询；订阅 window 事件而非 React state，
+    // 让 selection-active 翻转不触发本 hook 的消费者重渲染。
+    const start = () => {
+      load();
+      if (interval === null) interval = setInterval(load, 60_000);
+    };
+    const stop = () => {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    if (!getTerminalSelectionActive()) start();
+
+    const onSelectionChange = (event: Event) => {
+      const isActive = (event as CustomEvent<boolean>).detail === true;
+      if (isActive) stop();
+      else start();
+    };
+    window.addEventListener(TERMINAL_SELECTION_ACTIVE_EVENT, onSelectionChange);
+
+    return () => {
+      stop();
+      window.removeEventListener(TERMINAL_SELECTION_ACTIVE_EVENT, onSelectionChange);
+    };
+  }, [active]);
 
   return { snapshot, loading, error };
 }

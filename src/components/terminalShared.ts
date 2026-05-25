@@ -4,6 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
 import { publishTerminalSelectionActive } from "../terminalSelection";
+import { smartCopy } from "./terminalCopyHelper";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +71,6 @@ interface TerminalSelectionGuardOptions {
   writer?: Pick<SmartWriter, "setSelectionPaused">;
 }
 
-const macWebKitInertCounts = new WeakMap<HTMLElement, number>();
 let macWebKitSelectionGuardCount = 0;
 
 function setMacWebKitTextareaAttrs(term: Terminal): void {
@@ -81,47 +81,18 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
   term.textarea.setAttribute("spellcheck", "false");
 }
 
-function acquireInert(node: HTMLElement, ownedNodes: Set<HTMLElement>): void {
-  if (ownedNodes.has(node)) return;
-  const currentCount = macWebKitInertCounts.get(node);
-  if (currentCount !== undefined) {
-    macWebKitInertCounts.set(node, currentCount + 1);
-    ownedNodes.add(node);
-    return;
-  }
-  if (node.inert) return;
-  node.inert = true;
-  macWebKitInertCounts.set(node, 1);
-  ownedNodes.add(node);
-}
-
-function releaseInert(node: HTMLElement): void {
-  const currentCount = macWebKitInertCounts.get(node);
-  if (currentCount === undefined) return;
-  if (currentCount > 1) {
-    macWebKitInertCounts.set(node, currentCount - 1);
-    return;
-  }
-  macWebKitInertCounts.delete(node);
-  node.inert = false;
-}
-
-function inertTerminalBranchSiblings(container: HTMLElement, ownedNodes: Set<HTMLElement>): void {
-  let current: HTMLElement | null = container;
-  while (current && current !== document.body) {
-    const parent: HTMLElement | null = current.parentElement;
-    if (!parent) break;
-    for (const child of Array.from(parent.children)) {
-      if (child === current || !(child instanceof HTMLElement)) continue;
-      acquireInert(child, ownedNodes);
-    }
-    current = parent;
-  }
-}
-
-// WKWebView can service macOS NSTextInputClient hit-test queries against large
-// app DOM subtrees while an xterm selection exists. Keep those sibling branches
-// out of hit-testing during terminal selection without inerting the terminal path.
+// 真因：macOS 系统设置「显示文内预测文本」会让 NSTextInputContext 对当前 focused
+// text input 持续查询 characterIndexForPoint，触发 WebKit LocalFrame::rangeForPoint
+// → PositionIterator::decrement → ICU emoji 簇判断，遍历整个 document 的 RenderText。
+// 用户可在 系统设置 → 输入法 → 所有输入法 关闭该开关彻底消除。
+//
+// 这里的兜底策略：拖选 / 有选区期间把 textarea blur 掉——NSTextInputContext
+// 没有 focused text input 就不查询了，hit-test 风暴断在源头。textarea blur 期间
+// xterm 的 attachCustomKeyEventHandler 收不到 Cmd+C，在 document 捕获阶段加兜底。
+//
+// 历史：曾经的 inert 防御（inertTerminalBranchSiblings）在 2026-05-25 sample 实证
+// 无效——inert 只阻止用户交互，不改变 RenderText 在 layout tree 的存在，
+// NSTextInput hit-test 照样遍历。已删除。
 export function attachMacWebKitTerminalGuard({
   term,
   container,
@@ -129,10 +100,8 @@ export function attachMacWebKitTerminalGuard({
 }: TerminalSelectionGuardOptions): () => void {
   if (!IS_MAC_WEBKIT) return () => {};
 
-  container.classList.add("xterm-macos-ime-guard");
   setMacWebKitTextareaAttrs(term);
 
-  const inertedNodes = new Set<HTMLElement>();
   let pointerSelecting = false;
   let terminalHasSelection = term.hasSelection();
   let guardSelectionActive = false;
@@ -144,20 +113,22 @@ export function attachMacWebKitTerminalGuard({
     publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
   };
 
-  const restoreSiblings = () => {
-    for (const node of inertedNodes) {
-      releaseInert(node);
+  const blurTextareaIfFocused = () => {
+    if (term.textarea && document.activeElement === term.textarea) {
+      term.textarea.blur();
     }
-    inertedNodes.clear();
+  };
+  const refocusTextarea = () => {
+    if (term.textarea) {
+      term.textarea.focus({ preventScroll: true });
+    }
   };
 
-  const syncSiblings = () => {
+  const syncSelectionGuard = () => {
     const active = pointerSelecting || terminalHasSelection;
     setGuardSelectionActive(active);
     if (active) {
-      inertTerminalBranchSiblings(container, inertedNodes);
-    } else {
-      restoreSiblings();
+      blurTextareaIfFocused();
     }
   };
 
@@ -166,7 +137,7 @@ export function attachMacWebKitTerminalGuard({
     term.focus();
     pointerSelecting = true;
     writer?.setSelectionPaused(true);
-    syncSiblings();
+    syncSelectionGuard();
   };
 
   const handlePointerUp = (e: PointerEvent) => {
@@ -174,14 +145,14 @@ export function attachMacWebKitTerminalGuard({
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
     terminalHasSelection = term.hasSelection();
-    syncSiblings();
+    syncSelectionGuard();
   };
 
   const handlePointerCancel = () => {
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
     terminalHasSelection = term.hasSelection();
-    syncSiblings();
+    syncSelectionGuard();
   };
 
   const handleDocumentPointerDown = (e: PointerEvent) => {
@@ -191,7 +162,7 @@ export function attachMacWebKitTerminalGuard({
     terminalHasSelection = false;
     writer?.setSelectionPaused(false);
     term.clearSelection();
-    restoreSiblings();
+    syncSelectionGuard();
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -200,12 +171,28 @@ export function attachMacWebKitTerminalGuard({
     terminalHasSelection = false;
     writer?.setSelectionPaused(false);
     term.clearSelection();
-    restoreSiblings();
+    syncSelectionGuard();
+    // ESC 清掉选区后用户预期继续输入，把 textarea 焦点还回来。
+    // 注意 handleDocumentPointerDown 路径不要 refocus —— 那种情况用户点了别处，
+    // 焦点本来就该去那里，强抢回来反而是 UX bug。
+    refocusTextarea();
+  };
+
+  // textarea 被 blur 期间，xterm 的 attachCustomKeyEventHandler 收不到 Cmd+C。
+  // 这里在 document 捕获阶段兜底：有选区且 textarea 不聚焦时直接调 smartCopy。
+  // textarea 聚焦的场景仍走 attachSmartCopy 原路径，互不冲突。
+  const handleDocumentCopy = (e: KeyboardEvent) => {
+    if (e.type !== "keydown") return;
+    if (e.key !== "c" || !(e.metaKey || e.ctrlKey)) return;
+    if (!term.hasSelection()) return;
+    if (document.activeElement === term.textarea) return;
+    e.preventDefault();
+    smartCopy(term).catch(() => {});
   };
 
   const selectionDisposable = term.onSelectionChange(() => {
     terminalHasSelection = term.hasSelection();
-    syncSiblings();
+    syncSelectionGuard();
   });
 
   container.addEventListener("pointerdown", handlePointerDown);
@@ -213,18 +200,18 @@ export function attachMacWebKitTerminalGuard({
   document.addEventListener("pointercancel", handlePointerCancel);
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
   document.addEventListener("keydown", handleKeyDown, true);
+  document.addEventListener("keydown", handleDocumentCopy, true);
 
   return () => {
-    container.classList.remove("xterm-macos-ime-guard");
     selectionDisposable.dispose();
     container.removeEventListener("pointerdown", handlePointerDown);
     document.removeEventListener("pointerup", handlePointerUp);
     document.removeEventListener("pointercancel", handlePointerCancel);
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
+    document.removeEventListener("keydown", handleDocumentCopy, true);
     writer?.setSelectionPaused(false);
     setGuardSelectionActive(false);
-    restoreSiblings();
   };
 }
 
