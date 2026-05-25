@@ -405,6 +405,8 @@ pub async fn run_task(
     cols: Option<u16>,
     rows: Option<u16>,
 ) -> Result<(), String> {
+    crate::config::validate_permission_mode(&project_path, &permission_mode)?;
+
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: rows.unwrap_or(50),
@@ -574,6 +576,8 @@ pub async fn resume_task(
     cols: Option<u16>,
     rows: Option<u16>,
 ) -> Result<(), String> {
+    crate::config::validate_permission_mode(&project_path, &permission_mode)?;
+
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: rows.unwrap_or(50),

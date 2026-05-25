@@ -275,25 +275,28 @@ pub(crate) fn effective_default_permission_mode(config: &ProjectConfig) -> Strin
     "ask".to_string()
 }
 
-pub(crate) fn validate_permission_mode(project_path: &str, requested: &str) -> Result<(), String> {
+pub(crate) fn validate_permission_against_max(
+    requested: &str,
+    max_mode: &str,
+) -> Result<(), String> {
     let requested_rank = permission_rank(requested)
         .ok_or_else(|| format!("Unknown permission mode: {}", requested))?;
-    let config = read_project_config(project_path.to_string())?;
-    let max_rank = permission_rank(&config.permissions.max_mode).ok_or_else(|| {
-        format!(
-            "Unknown max permission mode in project config: {}",
-            config.permissions.max_mode
-        )
-    })?;
+    let max_rank = permission_rank(max_mode)
+        .ok_or_else(|| format!("Unknown max permission mode: {}", max_mode))?;
 
     if requested_rank > max_rank {
         return Err(format!(
-            "Requested permission mode '{}' exceeds project maximum '{}'",
-            requested, config.permissions.max_mode
+            "Permission mode '{}' exceeds project maximum '{}'",
+            requested, max_mode
         ));
     }
 
     Ok(())
+}
+
+pub(crate) fn validate_permission_mode(project_path: &str, requested: &str) -> Result<(), String> {
+    let config = read_project_config(project_path.to_string())?;
+    validate_permission_against_max(requested, &config.permissions.max_mode)
 }
 
 fn merge_project_config_for_save(
@@ -405,6 +408,18 @@ commit_prompt = "commit"
         assert_eq!(permission_rank("auto_edit"), Some(1));
         assert_eq!(permission_rank("full_access"), Some(2));
         assert_eq!(permission_rank("unknown"), None);
+    }
+
+    #[test]
+    fn validate_permission_against_max_allows_equal_or_lower() {
+        assert!(validate_permission_against_max("ask", "auto_edit").is_ok());
+        assert!(validate_permission_against_max("auto_edit", "auto_edit").is_ok());
+    }
+
+    #[test]
+    fn validate_permission_against_max_rejects_higher() {
+        let err = validate_permission_against_max("full_access", "auto_edit").unwrap_err();
+        assert!(err.contains("exceeds project maximum"));
     }
 
     #[test]
