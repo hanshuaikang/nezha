@@ -19,6 +19,17 @@ claude_version = ""
 # Detected version of Codex (auto-populated, can be left empty)
 codex_version = ""
 
+[permissions]
+# Default permission mode for new tasks: "ask", "auto_edit", or "full_access"
+default_mode = "ask"
+# Highest permission mode allowed for tasks in this project
+max_mode = "auto_edit"
+# Ask for confirmation before launching full access tasks
+confirm_full_access = true
+
+[prompt_templates]
+templates = []
+
 [git]
 # Prompt used when generating commit messages via the AI agent
 commit_prompt = "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting"
@@ -42,6 +53,47 @@ fn default_permission_mode() -> String {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct PermissionConfig {
+    #[serde(default = "default_permission_mode", alias = "default_permission_mode")]
+    pub default_mode: String,
+    #[serde(default = "default_max_permission_mode")]
+    pub max_mode: String,
+    #[serde(default = "default_confirm_full_access")]
+    pub confirm_full_access: bool,
+}
+
+fn default_max_permission_mode() -> String {
+    "auto_edit".to_string()
+}
+
+fn default_confirm_full_access() -> bool {
+    true
+}
+
+impl Default for PermissionConfig {
+    fn default() -> Self {
+        PermissionConfig {
+            default_mode: "ask".to_string(),
+            max_mode: "auto_edit".to_string(),
+            confirm_full_access: true,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct PromptTemplate {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
+pub struct PromptTemplateConfig {
+    #[serde(default)]
+    pub templates: Vec<PromptTemplate>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GitConfig {
     pub commit_prompt: String,
 }
@@ -49,6 +101,10 @@ pub struct GitConfig {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ProjectConfig {
     pub agent: AgentConfig,
+    #[serde(default)]
+    pub permissions: PermissionConfig,
+    #[serde(default)]
+    pub prompt_templates: PromptTemplateConfig,
     pub git: GitConfig,
 }
 
@@ -62,6 +118,8 @@ impl Default for ProjectConfig {
                 claude_version: String::new(),
                 codex_version: String::new(),
             },
+            permissions: PermissionConfig::default(),
+            prompt_templates: PromptTemplateConfig::default(),
             git: GitConfig {
                 commit_prompt: "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting".to_string(),
             },
@@ -123,6 +181,46 @@ pub fn read_project_config(project_path: String) -> Result<ProjectConfig, String
     Ok(config)
 }
 
+fn permission_rank(mode: &str) -> Option<u8> {
+    match mode {
+        "ask" => Some(0),
+        "auto_edit" => Some(1),
+        "full_access" => Some(2),
+        _ => None,
+    }
+}
+
+pub(crate) fn effective_default_permission_mode(config: &ProjectConfig) -> String {
+    if permission_rank(&config.permissions.default_mode).is_some() {
+        return config.permissions.default_mode.clone();
+    }
+    if permission_rank(&config.agent.default_permission_mode).is_some() {
+        return config.agent.default_permission_mode.clone();
+    }
+    "ask".to_string()
+}
+
+pub(crate) fn validate_permission_mode(project_path: &str, requested: &str) -> Result<(), String> {
+    let requested_rank = permission_rank(requested)
+        .ok_or_else(|| format!("Unknown permission mode: {}", requested))?;
+    let config = read_project_config(project_path.to_string())?;
+    let max_rank = permission_rank(&config.permissions.max_mode).ok_or_else(|| {
+        format!(
+            "Unknown max permission mode in project config: {}",
+            config.permissions.max_mode
+        )
+    })?;
+
+    if requested_rank > max_rank {
+        return Err(format!(
+            "Requested permission mode '{}' exceeds project maximum '{}'",
+            requested, config.permissions.max_mode
+        ));
+    }
+
+    Ok(())
+}
+
 /// Writes updated config to `.nezha/config.toml`, creating the directory if needed.
 #[tauri::command]
 pub fn write_project_config(project_path: String, config: ProjectConfig) -> Result<(), String> {
@@ -171,4 +269,48 @@ pub fn write_agent_config_file(agent: String, content: String) -> Result<(), Str
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     atomic_write(&path, &content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_config_without_new_sections_deserializes() {
+        let raw = r#"
+[agent]
+default = "claude"
+default_permission_mode = "auto_edit"
+prompt_prefix = ""
+claude_version = ""
+codex_version = ""
+
+[git]
+commit_prompt = "commit"
+"#;
+
+        let config: ProjectConfig = toml::from_str(raw).expect("config should deserialize");
+
+        assert_eq!(config.permissions.default_mode, "ask");
+        assert_eq!(config.permissions.max_mode, "auto_edit");
+        assert!(config.permissions.confirm_full_access);
+        assert!(config.prompt_templates.templates.is_empty());
+    }
+
+    #[test]
+    fn permission_rank_orders_modes() {
+        assert_eq!(permission_rank("ask"), Some(0));
+        assert_eq!(permission_rank("auto_edit"), Some(1));
+        assert_eq!(permission_rank("full_access"), Some(2));
+        assert_eq!(permission_rank("unknown"), None);
+    }
+
+    #[test]
+    fn effective_default_permission_prefers_permissions_section() {
+        let mut config = ProjectConfig::default();
+        config.agent.default_permission_mode = "full_access".to_string();
+        config.permissions.default_mode = "auto_edit".to_string();
+
+        assert_eq!(effective_default_permission_mode(&config), "auto_edit");
+    }
 }

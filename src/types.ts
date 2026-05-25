@@ -49,6 +49,57 @@ export function permissionModeLabel(mode: PermissionMode, agent?: AgentType): st
   return PERM_LABELS[mode];
 }
 
+export interface PermissionConfig {
+  default_mode: PermissionMode;
+  max_mode: PermissionMode;
+  confirm_full_access: boolean;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  content: string;
+}
+
+export interface PromptTemplateConfig {
+  templates: PromptTemplate[];
+}
+
+export interface ProjectConfig {
+  agent: {
+    default: AgentType;
+    default_permission_mode?: PermissionMode;
+    prompt_prefix: string;
+    claude_version: string;
+    codex_version: string;
+  };
+  permissions: PermissionConfig;
+  prompt_templates: PromptTemplateConfig;
+  git: { commit_prompt: string };
+}
+
+const PERMISSION_RANK: Record<PermissionMode, number> = {
+  ask: 0,
+  auto_edit: 1,
+  full_access: 2,
+};
+
+export function permissionModeRank(mode: PermissionMode): number {
+  return PERMISSION_RANK[mode];
+}
+
+export function isPermissionMode(value: string): value is PermissionMode {
+  return value === "ask" || value === "auto_edit" || value === "full_access";
+}
+
+export function isAgentType(value: string): value is AgentType {
+  return value === "claude" || value === "codex";
+}
+
+export function isPermissionAllowed(requested: PermissionMode, maxMode: PermissionMode): boolean {
+  return permissionModeRank(requested) <= permissionModeRank(maxMode);
+}
+
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: "Todo",
   pending: "Pending",
