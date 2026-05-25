@@ -183,6 +183,7 @@ impl<'de> serde::Deserialize<'de> for ProjectConfig {
         let permissions = raw.permissions.map_or_else(
             || PermissionConfig {
                 default_mode: legacy_default_mode.clone(),
+                max_mode: max_permission_mode_at_least(&legacy_default_mode),
                 ..PermissionConfig::default()
             },
             |permissions| permissions.into_config(legacy_default_mode),
@@ -260,6 +261,19 @@ fn permission_rank(mode: &str) -> Option<u8> {
         "auto_edit" => Some(1),
         "full_access" => Some(2),
         _ => None,
+    }
+}
+
+fn max_permission_mode_at_least(mode: &str) -> String {
+    let default_max = default_max_permission_mode();
+    let Some(mode_rank) = permission_rank(mode) else {
+        return default_max;
+    };
+    let default_max_rank = permission_rank(&default_max).unwrap_or(0);
+    if mode_rank > default_max_rank {
+        mode.to_string()
+    } else {
+        default_max
     }
 }
 
@@ -429,10 +443,21 @@ commit_prompt = "commit"
         let config: ProjectConfig = toml::from_str(raw).expect("config should deserialize");
 
         assert_eq!(effective_default_permission_mode(&config), "full_access");
+        assert_eq!(config.permissions.max_mode, "full_access");
         assert_eq!(effective_max_permission_mode(&config), "full_access");
         assert!(validate_permission_against_max(
             "full_access",
             &effective_max_permission_mode(&config)
+        )
+        .is_ok());
+
+        let serialized = toml::to_string_pretty(&config).expect("config should serialize");
+        let round_tripped: ProjectConfig =
+            toml::from_str(&serialized).expect("serialized config should deserialize");
+        assert_eq!(round_tripped.permissions.max_mode, "full_access");
+        assert!(validate_permission_against_max(
+            "full_access",
+            &round_tripped.permissions.max_mode
         )
         .is_ok());
 
