@@ -28,6 +28,7 @@ dist-ssr
 bump-version.sh
 .env*
 knowledge
+.worktrees/
 
 # TypeScript / Vite build artifacts
 *.tsbuildinfo
