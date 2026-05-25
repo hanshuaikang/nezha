@@ -3,7 +3,15 @@ import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Project, Task, TaskStatus, AgentType, PermissionMode, ThemeMode } from "./types";
+import type {
+  Project,
+  ProjectConfig,
+  Task,
+  TaskStatus,
+  AgentType,
+  PermissionMode,
+  ThemeMode,
+} from "./types";
 import { isActiveTaskStatus } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
@@ -263,9 +271,29 @@ function App() {
     invokeRunTask(task, project.path, images);
   }
 
-  function handleRunTodoTask(task: Task) {
+  async function handleRunTodoTask(task: Task) {
     const project = projects.find((p) => p.id === task.projectId);
     if (!project) return;
+
+    if (task.permissionMode === "full_access") {
+      const config = await invoke<ProjectConfig>("read_project_config", {
+        projectPath: project.path,
+      }).catch((e: unknown) => {
+        showToast(`Failed to read project config: ${String(e)}`, "warning");
+        return null;
+      });
+      const shouldConfirm = config?.permissions?.confirm_full_access ?? true;
+      if (shouldConfirm) {
+        const confirmed = await confirm(
+          "Full Access allows the agent to run without normal approval prompts. Continue?",
+          {
+            title: "Confirm Full Access",
+            kind: "warning",
+          },
+        );
+        if (!confirmed) return;
+      }
+    }
 
     setTasks((prev) => {
       const next = prev.map((t) =>
