@@ -3,6 +3,7 @@ import {
   ArrowUp,
   BookmarkPlus,
   ChevronDown,
+  FileText,
   Hand,
   Image as ImageIcon,
   Map as MapIcon,
@@ -10,8 +11,8 @@ import {
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
-import type { AgentType, PermissionMode } from "../../types";
-import { permissionModeLabel } from "../../types";
+import type { AgentType, PermissionMode, PromptTemplate } from "../../types";
+import { isPermissionAllowed, permissionModeLabel } from "../../types";
 import s from "../../styles";
 import claudeLogo from "../../assets/claude.svg";
 import chatgptLogo from "../../assets/chatgpt.svg";
@@ -29,6 +30,12 @@ function agentIcon(agent: AgentType): string {
 
 function setMenuItemHover(el: HTMLElement, hover: boolean) {
   el.style.background = hover ? "var(--accent-subtle)" : "transparent";
+}
+
+function setEnabledMenuItemHover(el: HTMLElement, hover: boolean, enabled = true) {
+  if (enabled) {
+    setMenuItemHover(el, hover);
+  }
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -51,22 +58,28 @@ export function AgentPermSelector({
   agent,
   permMode,
   planMode,
+  maxPermissionMode,
+  promptTemplates,
   isEmpty,
   hasImages,
   onSetAgent,
   onSetPermMode,
   onTogglePlanMode,
+  onSelectTemplate,
   onAddImages,
   onSubmit,
 }: {
   agent: AgentType;
   permMode: PermissionMode;
   planMode: boolean;
+  maxPermissionMode: PermissionMode;
+  promptTemplates: PromptTemplate[];
   isEmpty: boolean;
   hasImages: boolean;
   onSetAgent: (agent: AgentType) => void;
   onSetPermMode: (mode: PermissionMode) => void;
   onTogglePlanMode: () => void;
+  onSelectTemplate: (template: PromptTemplate) => void;
   onAddImages: (dataUrls: string[]) => void;
   onSubmit: (immediate: boolean) => void;
 }) {
@@ -161,6 +174,32 @@ export function AgentPermSelector({
                   />
                 </span>
               </button>
+
+              {promptTemplates.length > 0 && (
+                <>
+                  <div style={s.toolbarMenuSeparator} />
+                  {promptTemplates.map((template) => (
+                    <Popover.Close asChild key={template.id}>
+                      <button
+                        style={{
+                          ...s.toolbarMenuItem,
+                          width: "100%",
+                          border: "none",
+                          background: "none",
+                        }}
+                        onClick={() => onSelectTemplate(template)}
+                        onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
+                        onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
+                        onFocus={(e) => setMenuItemHover(e.currentTarget, true)}
+                        onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
+                      >
+                        <FileText size={15} strokeWidth={2} color="var(--text-muted)" />
+                        {template.name}
+                      </button>
+                    </Popover.Close>
+                  ))}
+                </>
+              )}
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
@@ -218,19 +257,27 @@ export function AgentPermSelector({
           <Select.Portal>
             <Select.Content position="popper" sideOffset={6} style={s.toolbarMenuContent}>
               <Select.Viewport>
-                {PERMS.map((perm) => (
-                  <Select.Item
-                    key={perm}
-                    value={perm}
-                    style={s.toolbarMenuItem}
-                    onFocus={(e) => setMenuItemHover(e.currentTarget, true)}
-                    onBlur={(e) => setMenuItemHover(e.currentTarget, false)}
-                    onMouseEnter={(e) => setMenuItemHover(e.currentTarget, true)}
-                    onMouseLeave={(e) => setMenuItemHover(e.currentTarget, false)}
-                  >
-                    <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
-                  </Select.Item>
-                ))}
+                {PERMS.map((perm) => {
+                  const allowed = isPermissionAllowed(perm, maxPermissionMode);
+                  return (
+                    <Select.Item
+                      key={perm}
+                      value={perm}
+                      disabled={!allowed}
+                      style={{
+                        ...s.toolbarMenuItem,
+                        opacity: allowed ? 1 : 0.42,
+                        cursor: allowed ? "pointer" : "not-allowed",
+                      }}
+                      onFocus={(e) => setEnabledMenuItemHover(e.currentTarget, true, allowed)}
+                      onBlur={(e) => setEnabledMenuItemHover(e.currentTarget, false, allowed)}
+                      onMouseEnter={(e) => setEnabledMenuItemHover(e.currentTarget, true, allowed)}
+                      onMouseLeave={(e) => setEnabledMenuItemHover(e.currentTarget, false, allowed)}
+                    >
+                      <Select.ItemText>{permissionModeLabel(perm, agent)}</Select.ItemText>
+                    </Select.Item>
+                  );
+                })}
               </Select.Viewport>
             </Select.Content>
           </Select.Portal>

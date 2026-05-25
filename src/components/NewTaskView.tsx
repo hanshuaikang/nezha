@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { TriangleAlert } from "lucide-react";
-import type { Project, AgentType, PermissionMode } from "../types";
+import type { Project, AgentType, PermissionMode, ProjectConfig, PromptTemplate } from "../types";
+import { isAgentType, isPermissionAllowed, isPermissionMode } from "../types";
 import { useToast } from "./Toast";
 import {
   MentionPopover,
@@ -12,6 +14,7 @@ import {
 import { PromptEditor, usePromptEditor } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
+import { resolvePromptTemplate } from "../utils/promptTemplates";
 import claudeGif from "../assets/gif/claude.gif";
 import codexGif from "../assets/gif/codex.gif";
 import s from "../styles";
@@ -55,8 +58,12 @@ export function NewTaskView({
   }) => void;
 }) {
   const { showToast } = useToast();
+  const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null);
   const [agent, setAgent] = useState<AgentType>("claude");
   const [permMode, setPermMode] = useState<PermissionMode>("ask");
+  const [maxPermissionMode, setMaxPermissionMode] = useState<PermissionMode>("auto_edit");
+  const [confirmFullAccess, setConfirmFullAccess] = useState(true);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [planMode, setPlanMode] = useState(false);
 
   const [allFiles, setAllFiles] = useState<FileEntry[]>([]);
@@ -71,25 +78,49 @@ export function NewTaskView({
 
   const { editorRef, isComposingRef, handle: editorHandle } = usePromptEditor();
 
-  // Load default agent and permission mode from project config when project changes
+  // Load project defaults, permission limits, and prompt templates when project changes.
   useEffect(() => {
-    invoke<{ agent: { default: string; default_permission_mode?: string } }>(
-      "read_project_config",
-      { projectPath: project.path },
-    )
+    invoke<ProjectConfig>("read_project_config", { projectPath: project.path })
       .then((cfg) => {
-        const defaultAgent = cfg.agent.default;
-        if (defaultAgent === "claude" || defaultAgent === "codex") {
+        setProjectConfig(cfg);
+
+        const defaultAgent = cfg.agent?.default;
+        if (typeof defaultAgent === "string" && isAgentType(defaultAgent)) {
           setAgent(defaultAgent);
         }
-        const defaultPerm = cfg.agent.default_permission_mode;
-        if (defaultPerm === "ask" || defaultPerm === "auto_edit" || defaultPerm === "full_access") {
-          setPermMode(defaultPerm);
-        }
+
+        const configuredMax = cfg.permissions?.max_mode;
+        const nextMaxPermissionMode =
+          typeof configuredMax === "string" && isPermissionMode(configuredMax)
+          ? configuredMax
+          : "auto_edit";
+        setMaxPermissionMode(nextMaxPermissionMode);
+        setConfirmFullAccess(cfg.permissions?.confirm_full_access ?? true);
+        setPromptTemplates(cfg.prompt_templates?.templates ?? []);
+
+        const permissionsDefault = cfg.permissions?.default_mode;
+        const agentDefault = cfg.agent?.default_permission_mode;
+        const requestedDefault =
+          typeof permissionsDefault === "string" && isPermissionMode(permissionsDefault)
+          ? permissionsDefault
+          : typeof agentDefault === "string" && isPermissionMode(agentDefault)
+            ? agentDefault
+            : "ask";
+        setPermMode(
+          isPermissionAllowed(requestedDefault, nextMaxPermissionMode)
+            ? requestedDefault
+            : nextMaxPermissionMode,
+        );
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  useEffect(() => {
+    if (projectConfig && !isPermissionAllowed(permMode, maxPermissionMode)) {
+      setPermMode(maxPermissionMode);
+    }
+  }, [projectConfig, permMode, maxPermissionMode]);
 
   const [hasMdFile, setHasMdFile] = useState<boolean | null>(null);
 
@@ -218,9 +249,34 @@ export function NewTaskView({
     setMentionIndex(0);
   }
 
-  function handleSubmit(immediate: boolean) {
+  function handleSelectTemplate(template: PromptTemplate) {
+    const text = resolvePromptTemplate(template, {
+      project,
+      branch: project.branch,
+      agent,
+    });
+    editorHandle.insertText(text);
+    setIsEmpty(false);
+    setMentionSearch(null);
+  }
+
+  async function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
     if (!text && pastedImages.length === 0) return;
+    if (!isPermissionAllowed(permMode, maxPermissionMode)) {
+      showToast("This permission mode exceeds the project limit.", "warning");
+      return;
+    }
+    if (immediate && permMode === "full_access" && confirmFullAccess) {
+      const confirmed = await confirm(
+        "Full Access allows the agent to run without normal approval prompts. Continue?",
+        {
+          title: "Confirm Full Access",
+          kind: "warning",
+        },
+      );
+      if (!confirmed) return;
+    }
     const finalPrompt = planMode && text ? `${text}\n\nPlease use plan mode.` : text;
     onSubmit({
       prompt: finalPrompt,
@@ -345,11 +401,14 @@ export function NewTaskView({
           agent={agent}
           permMode={permMode}
           planMode={planMode}
+          maxPermissionMode={maxPermissionMode}
+          promptTemplates={promptTemplates}
           isEmpty={isEmpty}
           hasImages={pastedImages.length > 0}
           onSetAgent={setAgent}
           onSetPermMode={setPermMode}
           onTogglePlanMode={() => setPlanMode((v) => !v)}
+          onSelectTemplate={handleSelectTemplate}
           onAddImages={(dataUrls) => {
             setPastedImages((prev) => [
               ...prev,

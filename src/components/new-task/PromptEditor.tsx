@@ -133,6 +133,7 @@ export interface PromptEditorHandle {
   serialize: () => string;
   clear: () => void;
   focus: () => void;
+  insertText: (text: string) => void;
 }
 
 export function usePromptEditor() {
@@ -145,6 +146,33 @@ export function usePromptEditor() {
       if (editorRef.current) editorRef.current.innerHTML = "";
     },
     focus: () => editorRef.current?.focus(),
+    insertText: (text: string) => {
+      const editor = editorRef.current;
+      if (!editor || !text) return;
+
+      const sel = window.getSelection();
+      const range =
+        sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).commonAncestorContainer)
+          ? sel.getRangeAt(0)
+          : null;
+      const textNode = document.createTextNode(text);
+
+      if (range) {
+        range.deleteContents();
+        range.insertNode(textNode);
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        sel!.removeAllRanges();
+        sel!.addRange(range);
+      } else {
+        if (editor.textContent?.trim() || editor.querySelector("[data-file-path]")) {
+          editor.appendChild(document.createTextNode("\n"));
+        }
+        editor.appendChild(textNode);
+      }
+
+      editor.focus();
+    },
   };
 
   return { editorRef, isComposingRef, handle };
