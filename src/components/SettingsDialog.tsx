@@ -1,21 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
-import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
+import {
+  isPermissionAllowed,
+  permissionModeLabel,
+  type AgentType,
+  type PermissionMode,
+  type ProjectConfig,
+  type PromptTemplate,
+} from "../types";
 import s from "../styles";
 
-interface ProjectConfig {
-  agent: {
-    default: string;
-    default_permission_mode: string;
-    prompt_prefix: string;
-    claude_version: string;
-    codex_version: string;
-  };
-  git: { commit_prompt: string };
-}
-
 const PERMISSION_MODES: PermissionMode[] = ["ask", "auto_edit", "full_access"];
+const TEMPLATE_VARIABLES = ["{projectName}", "{projectPath}", "{branch}", "{date}", "{agent}"];
 
 interface AgentVersions {
   claude_version: string;
@@ -119,8 +116,14 @@ function Select({
 
 function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClose: () => void }) {
   const [config, setConfig] = useState<ProjectConfig | null>(null);
-  const [agentDefault, setAgentDefault] = useState("claude");
+  const [agentDefault, setAgentDefault] = useState<AgentType>("claude");
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
+  const [maxPermissionMode, setMaxPermissionMode] = useState<PermissionMode>("auto_edit");
+  const [confirmFullAccess, setConfirmFullAccess] = useState(true);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateName, setTemplateName] = useState("");
+  const [templateContent, setTemplateContent] = useState("");
   const [promptPrefix, setPromptPrefix] = useState("");
   const [commitPrompt, setCommitPrompt] = useState("");
   const [claudeVersion, setClaudeVersion] = useState("");
@@ -134,10 +137,10 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
       .then((c) => {
         setConfig(c);
         setAgentDefault(c.agent.default);
-        const mode = c.agent.default_permission_mode;
-        if (mode === "ask" || mode === "auto_edit" || mode === "full_access") {
-          setDefaultPermissionMode(mode);
-        }
+        setDefaultPermissionMode(c.permissions?.default_mode ?? c.agent.default_permission_mode ?? "ask");
+        setMaxPermissionMode(c.permissions?.max_mode ?? "auto_edit");
+        setConfirmFullAccess(c.permissions?.confirm_full_access ?? true);
+        setPromptTemplates(c.prompt_templates?.templates ?? []);
         setPromptPrefix(c.agent.prompt_prefix ?? "");
         setCommitPrompt(c.git.commit_prompt);
         setClaudeVersion(c.agent.claude_version ?? "");
@@ -164,9 +167,66 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     }
   }
 
+  function resetTemplateEditor() {
+    setEditingTemplateId(null);
+    setTemplateName("");
+    setTemplateContent("");
+  }
+
+  function startEditTemplate(template: PromptTemplate) {
+    setEditingTemplateId(template.id);
+    setTemplateName(template.name);
+    setTemplateContent(template.content);
+    setError(null);
+  }
+
+  function saveTemplateDraft() {
+    const name = templateName.trim();
+    const content = templateContent.trim();
+    if (!name || !content) {
+      setError("Template name and content are required.");
+      return;
+    }
+
+    if (editingTemplateId) {
+      setPromptTemplates((templates) =>
+        templates.map((template) =>
+          template.id === editingTemplateId ? { ...template, name, content } : template,
+        ),
+      );
+    } else {
+      setPromptTemplates((templates) => [
+        ...templates,
+        {
+          id: `tmpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          content,
+        },
+      ]);
+    }
+    setError(null);
+    resetTemplateEditor();
+  }
+
+  function deleteTemplate(id: string) {
+    setPromptTemplates((templates) => templates.filter((template) => template.id !== id));
+    if (editingTemplateId === id) {
+      resetTemplateEditor();
+    }
+  }
+
+  function insertTemplateVariable(variable: string) {
+    setTemplateContent((content) => `${content}${variable}`);
+  }
+
   async function handleSave() {
     setSaving(true);
     setError(null);
+    if (!isPermissionAllowed(defaultPermissionMode, maxPermissionMode)) {
+      setSaving(false);
+      setError("Default permission cannot exceed the project maximum permission.");
+      return;
+    }
     try {
       await invoke("write_project_config", {
         projectPath,
@@ -178,6 +238,12 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             claude_version: claudeVersion,
             codex_version: codexVersion,
           },
+          permissions: {
+            default_mode: defaultPermissionMode,
+            max_mode: maxPermissionMode,
+            confirm_full_access: confirmFullAccess,
+          },
+          prompt_templates: { templates: promptTemplates },
           git: { commit_prompt: commitPrompt },
         },
       });
@@ -209,7 +275,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                 </label>
                 <Select
                   value={agentDefault}
-                  onChange={setAgentDefault}
+                  onChange={(v) => setAgentDefault(v as AgentType)}
                   options={[
                     { value: "claude", label: "Claude Code" },
                     { value: "codex", label: "Codex" },
@@ -228,10 +294,44 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                   onChange={(v) => setDefaultPermissionMode(v as PermissionMode)}
                   options={PERMISSION_MODES.map((mode) => ({
                     value: mode,
-                    label: permissionModeLabel(mode, agentDefault as AgentType),
+                    label: permissionModeLabel(mode, agentDefault),
                   }))}
                 />
               </div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>
+                  Maximum Permission Mode
+                  <span style={s.modalLabelHint}>
+                    Highest permission mode tasks may use in this project
+                  </span>
+                </label>
+                <Select
+                  value={maxPermissionMode}
+                  onChange={(v) => setMaxPermissionMode(v as PermissionMode)}
+                  options={PERMISSION_MODES.map((mode) => ({
+                    value: mode,
+                    label: permissionModeLabel(mode, agentDefault),
+                  }))}
+                />
+              </div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  color: "var(--text-secondary)",
+                  fontSize: 12.5,
+                  marginBottom: 14,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={confirmFullAccess}
+                  onChange={(e) => setConfirmFullAccess(e.target.checked)}
+                />
+                Confirm before launching Full Access tasks
+              </label>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
                   Prompt Prefix
@@ -296,6 +396,111 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                     {detecting ? "Detecting..." : "Detect"}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <div style={s.modalSection}>
+              <div style={s.modalSectionTitle}>Prompt Templates</div>
+              {promptTemplates.length === 0 ? (
+                <div style={{ color: "var(--text-hint)", fontSize: 12.5, marginBottom: 12 }}>
+                  No templates yet.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                  {promptTemplates.map((template) => (
+                    <div
+                      key={template.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "9px 10px",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: 8,
+                        background: "var(--bg-secondary)",
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            color: "var(--text-primary)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            marginBottom: 3,
+                          }}
+                        >
+                          {template.name}
+                        </div>
+                        <div
+                          style={{
+                            color: "var(--text-hint)",
+                            fontSize: 12,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={template.content}
+                        >
+                          {template.content}
+                        </div>
+                      </div>
+                      <button
+                        style={{ ...s.modalCancelBtn, padding: "5px 9px" }}
+                        onClick={() => startEditTemplate(template)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        style={{ ...s.modalCancelBtn, padding: "5px 9px", color: "var(--danger)" }}
+                        onClick={() => deleteTemplate(template.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>Template Name</label>
+                <input
+                  style={s.modalInput}
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="e.g. Bug fix"
+                  spellCheck={false}
+                />
+              </div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>Template Content</label>
+                <textarea
+                  style={s.modalTextarea}
+                  value={templateContent}
+                  onChange={(e) => setTemplateContent(e.target.value)}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder="Describe the task..."
+                />
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                {TEMPLATE_VARIABLES.map((variable) => (
+                  <button
+                    key={variable}
+                    style={{ ...s.modalCancelBtn, padding: "4px 8px", fontFamily: "var(--font-mono)" }}
+                    onClick={() => insertTemplateVariable(variable)}
+                  >
+                    {variable}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={s.modalSaveBtn} onClick={saveTemplateDraft}>
+                  {editingTemplateId ? "Update Template" : "Add Template"}
+                </button>
+                {editingTemplateId && (
+                  <button style={s.modalCancelBtn} onClick={resetTemplateEditor}>
+                    Cancel Edit
+                  </button>
+                )}
               </div>
             </div>
 
