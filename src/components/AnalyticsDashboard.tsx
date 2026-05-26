@@ -32,6 +32,24 @@ interface WeeklyAnalytics {
   claude_tasks: number;
   codex_tasks: number;
   projects: ProjectAnalytics[];
+  sessions: SessionUsage[];
+}
+
+interface SessionUsage {
+  task_id: string;
+  task_name: string;
+  project_id: string;
+  project_name: string;
+  agent: string;
+  status: string;
+  created_at: number;
+  session_path: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_tokens: number;
+  total_tokens: number;
+  tool_calls: number;
+  duration_secs: number;
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -82,15 +100,34 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<WeeklyAnalytics>("get_weekly_analytics")
-      .then((d) => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(String(e));
-        setLoading(false);
-      });
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const load = () => {
+      invoke<WeeklyAnalytics>("get_weekly_analytics")
+        .then((d) => {
+          if (cancelled) return;
+          setData(d);
+          setError(null);
+          setLoading(false);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setError(String(e));
+          setLoading(false);
+        })
+        .finally(() => {
+          if (!cancelled) {
+            timer = setTimeout(load, 5000);
+          }
+        });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   if (loading) {
@@ -189,6 +226,34 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
         <StatCard value={formatTokens(data.total_cache_tokens)} label="Cache Tokens" />
         <StatCard value={`${successRate}%`} label="Success Rate" />
         <StatCard value={String(data.total_tool_calls)} label="Tool Calls" />
+      </div>
+
+      <div style={s.analyticsCard}>
+        <div style={s.analyticsCardTitle}>Session Usage</div>
+        {data.sessions.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--text-hint)" }}>No session data</div>
+        ) : (
+          <div style={s.sessionUsageList}>
+            {data.sessions.slice(0, 12).map((session) => (
+              <div key={`${session.task_id}-${session.session_path}`} style={s.sessionUsageRow}>
+                <div style={s.sessionUsageMain}>
+                  <div style={s.sessionUsageTitle}>{session.task_name || "Untitled task"}</div>
+                  <div style={s.sessionUsageMeta}>
+                    {session.project_name} · {session.agent} · {session.status}
+                  </div>
+                </div>
+                <div style={s.sessionUsageStats}>
+                  <span title="Input tokens">I {formatTokens(session.input_tokens)}</span>
+                  <span title="Output tokens">O {formatTokens(session.output_tokens)}</span>
+                  <span title="Cache tokens">C {formatTokens(session.cache_tokens)}</span>
+                  <span title="Total tokens">T {formatTokens(session.total_tokens)}</span>
+                  <span title="Tool calls">{session.tool_calls} tools</span>
+                  <span title="Duration">{formatDuration(session.duration_secs)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Agent + project row */}

@@ -28,7 +28,7 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
                 cache_tokens: 0,
                 tool_calls: 0,
                 duration_secs: 0.0,
-            }
+            };
         }
     };
 
@@ -177,6 +177,24 @@ pub struct ProjectAnalytics {
     pub tool_calls: u64,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct SessionUsage {
+    pub task_id: String,
+    pub task_name: String,
+    pub project_id: String,
+    pub project_name: String,
+    pub agent: String,
+    pub status: String,
+    pub created_at: i64,
+    pub session_path: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_tokens: u64,
+    pub total_tokens: u64,
+    pub tool_calls: u64,
+    pub duration_secs: f64,
+}
+
 #[derive(serde::Serialize)]
 pub struct WeeklyAnalytics {
     pub daily: Vec<DayStats>,
@@ -191,159 +209,193 @@ pub struct WeeklyAnalytics {
     pub claude_tasks: u32,
     pub codex_tasks: u32,
     pub projects: Vec<ProjectAnalytics>,
+    pub sessions: Vec<SessionUsage>,
+}
+
+fn build_session_usage(
+    task: &crate::storage::Task,
+    project: &crate::storage::Project,
+    session_path: &str,
+    metrics: &SessionMetrics,
+) -> SessionUsage {
+    let task_name = task.name.clone().unwrap_or_else(|| task.prompt.clone());
+    SessionUsage {
+        task_id: task.id.clone(),
+        task_name,
+        project_id: project.id.clone(),
+        project_name: project.name.clone(),
+        agent: task.agent.clone(),
+        status: task.status.clone(),
+        created_at: task.created_at,
+        session_path: session_path.to_string(),
+        input_tokens: metrics.input_tokens,
+        output_tokens: metrics.output_tokens,
+        cache_tokens: metrics.cache_tokens,
+        total_tokens: metrics.input_tokens + metrics.output_tokens + metrics.cache_tokens,
+        tool_calls: metrics.tool_calls,
+        duration_secs: metrics.duration_secs,
+    }
 }
 
 #[tauri::command]
 pub async fn get_weekly_analytics() -> Result<WeeklyAnalytics, String> {
-    use chrono::{Duration, Local};
+    tokio::task::spawn_blocking(|| {
+        use chrono::{Duration, Local};
 
-    let today = Local::now().date_naive();
-    // Build a list of the last 7 dates (oldest first)
-    let dates: Vec<String> = (0..7i64)
-        .rev()
-        .map(|i| (today - Duration::days(i)).format("%Y-%m-%d").to_string())
-        .collect();
+        let today = Local::now().date_naive();
+        // Build a list of the last 7 dates (oldest first)
+        let dates: Vec<String> = (0..7i64)
+            .rev()
+            .map(|i| (today - Duration::days(i)).format("%Y-%m-%d").to_string())
+            .collect();
 
-    let cutoff_ms = (Local::now() - Duration::days(7)).timestamp_millis();
+        let cutoff_ms = (Local::now() - Duration::days(7)).timestamp_millis();
 
-    // Load all projects
-    let projects = crate::storage::load_projects()?;
+        // Load all projects
+        let projects = crate::storage::load_projects()?;
 
-    let mut daily_map: HashMap<String, DayStats> = dates
-        .iter()
-        .map(|d| {
-            (
-                d.clone(),
-                DayStats {
-                    date: d.clone(),
-                    task_count: 0,
-                    done_count: 0,
-                    token_count: 0,
-                },
-            )
-        })
-        .collect();
-
-    let mut project_map: HashMap<String, ProjectAnalytics> = HashMap::new();
-    let mut total_tasks: u32 = 0;
-    let mut done_tasks: u32 = 0;
-    let mut failed_tasks: u32 = 0;
-    let mut total_input_tokens: u64 = 0;
-    let mut total_output_tokens: u64 = 0;
-    let mut total_cache_tokens: u64 = 0;
-    let mut total_tool_calls: u64 = 0;
-    let mut total_duration_secs: f64 = 0.0;
-    let mut claude_tasks: u32 = 0;
-    let mut codex_tasks: u32 = 0;
-
-    for project in &projects {
-        let tasks = crate::storage::load_project_tasks(project.id.clone())?;
-
-        for task in &tasks {
-            if task.created_at < cutoff_ms {
-                continue;
-            }
-
-            // Determine date bucket
-            let task_date = chrono::DateTime::from_timestamp_millis(task.created_at)
-                .map(|dt| dt.with_timezone(&Local).format("%Y-%m-%d").to_string())
-                .unwrap_or_default();
-
-            total_tasks += 1;
-            if task.status == "done" {
-                done_tasks += 1;
-            }
-            if task.status == "failed" {
-                failed_tasks += 1;
-            }
-            if task.agent == "claude" {
-                claude_tasks += 1;
-            } else {
-                codex_tasks += 1;
-            }
-
-            // Read session metrics if available
-            let session_path = task
-                .claude_session_path
-                .as_deref()
-                .or(task.codex_session_path.as_deref());
-
-            let (tok_in, tok_out, tok_cache, tc, dur) = if let Some(sp) = session_path {
-                let p = std::path::Path::new(sp);
-                if p.exists() {
-                    let m = parse_session_metrics_cached(p);
-                    (
-                        m.input_tokens,
-                        m.output_tokens,
-                        m.cache_tokens,
-                        m.tool_calls,
-                        m.duration_secs,
-                    )
-                } else {
-                    (0, 0, 0, 0, 0.0)
-                }
-            } else {
-                (0, 0, 0, 0, 0.0)
-            };
-
-            total_input_tokens += tok_in;
-            total_output_tokens += tok_out;
-            total_cache_tokens += tok_cache;
-            total_tool_calls += tc;
-            total_duration_secs += dur;
-
-            let token_count = tok_in + tok_out + tok_cache;
-
-            // Update daily bucket
-            if let Some(day) = daily_map.get_mut(&task_date) {
-                day.task_count += 1;
-                if task.status == "done" {
-                    day.done_count += 1;
-                }
-                day.token_count += token_count;
-            }
-
-            // Update project bucket
-            let proj_entry =
-                project_map
-                    .entry(project.id.clone())
-                    .or_insert_with(|| ProjectAnalytics {
-                        project_id: project.id.clone(),
-                        project_name: project.name.clone(),
+        let mut daily_map: HashMap<String, DayStats> = dates
+            .iter()
+            .map(|d| {
+                (
+                    d.clone(),
+                    DayStats {
+                        date: d.clone(),
                         task_count: 0,
                         done_count: 0,
                         token_count: 0,
-                        tool_calls: 0,
-                    });
-            proj_entry.task_count += 1;
-            if task.status == "done" {
-                proj_entry.done_count += 1;
+                    },
+                )
+            })
+            .collect();
+
+        let mut project_map: HashMap<String, ProjectAnalytics> = HashMap::new();
+        let mut total_tasks: u32 = 0;
+        let mut done_tasks: u32 = 0;
+        let mut failed_tasks: u32 = 0;
+        let mut total_input_tokens: u64 = 0;
+        let mut total_output_tokens: u64 = 0;
+        let mut total_cache_tokens: u64 = 0;
+        let mut total_tool_calls: u64 = 0;
+        let mut total_duration_secs: f64 = 0.0;
+        let mut claude_tasks: u32 = 0;
+        let mut codex_tasks: u32 = 0;
+        let mut sessions: Vec<SessionUsage> = Vec::new();
+
+        for project in &projects {
+            let tasks = crate::storage::load_project_tasks(project.id.clone())?;
+
+            for task in &tasks {
+                if task.created_at < cutoff_ms {
+                    continue;
+                }
+
+                // Determine date bucket
+                let task_date = chrono::DateTime::from_timestamp_millis(task.created_at)
+                    .map(|dt| dt.with_timezone(&Local).format("%Y-%m-%d").to_string())
+                    .unwrap_or_default();
+
+                total_tasks += 1;
+                if task.status == "done" {
+                    done_tasks += 1;
+                }
+                if task.status == "failed" {
+                    failed_tasks += 1;
+                }
+                if task.agent == "claude" {
+                    claude_tasks += 1;
+                } else {
+                    codex_tasks += 1;
+                }
+
+                // Read session metrics if available
+                let session_path = task
+                    .claude_session_path
+                    .as_deref()
+                    .or(task.codex_session_path.as_deref());
+
+                let (tok_in, tok_out, tok_cache, tc, dur) = if let Some(sp) = session_path {
+                    let p = std::path::Path::new(sp);
+                    if p.exists() {
+                        let m = parse_session_metrics_cached(p);
+                        sessions.push(build_session_usage(task, project, sp, &m));
+                        (
+                            m.input_tokens,
+                            m.output_tokens,
+                            m.cache_tokens,
+                            m.tool_calls,
+                            m.duration_secs,
+                        )
+                    } else {
+                        (0, 0, 0, 0, 0.0)
+                    }
+                } else {
+                    (0, 0, 0, 0, 0.0)
+                };
+
+                total_input_tokens += tok_in;
+                total_output_tokens += tok_out;
+                total_cache_tokens += tok_cache;
+                total_tool_calls += tc;
+                total_duration_secs += dur;
+
+                let token_count = tok_in + tok_out + tok_cache;
+
+                // Update daily bucket
+                if let Some(day) = daily_map.get_mut(&task_date) {
+                    day.task_count += 1;
+                    if task.status == "done" {
+                        day.done_count += 1;
+                    }
+                    day.token_count += token_count;
+                }
+
+                // Update project bucket
+                let proj_entry =
+                    project_map
+                        .entry(project.id.clone())
+                        .or_insert_with(|| ProjectAnalytics {
+                            project_id: project.id.clone(),
+                            project_name: project.name.clone(),
+                            task_count: 0,
+                            done_count: 0,
+                            token_count: 0,
+                            tool_calls: 0,
+                        });
+                proj_entry.task_count += 1;
+                if task.status == "done" {
+                    proj_entry.done_count += 1;
+                }
+                proj_entry.token_count += token_count;
+                proj_entry.tool_calls += tc;
             }
-            proj_entry.token_count += token_count;
-            proj_entry.tool_calls += tc;
         }
-    }
 
-    let mut daily: Vec<DayStats> = dates.iter().filter_map(|d| daily_map.remove(d)).collect();
-    daily.sort_by(|a, b| a.date.cmp(&b.date));
+        let mut daily: Vec<DayStats> = dates.iter().filter_map(|d| daily_map.remove(d)).collect();
+        daily.sort_by(|a, b| a.date.cmp(&b.date));
 
-    let mut project_list: Vec<ProjectAnalytics> = project_map.into_values().collect();
-    project_list.sort_by(|a, b| b.task_count.cmp(&a.task_count));
+        let mut project_list: Vec<ProjectAnalytics> = project_map.into_values().collect();
+        project_list.sort_by(|a, b| b.task_count.cmp(&a.task_count));
+        sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
-    Ok(WeeklyAnalytics {
-        daily,
-        total_tasks,
-        done_tasks,
-        failed_tasks,
-        total_input_tokens,
-        total_output_tokens,
-        total_cache_tokens,
-        total_tool_calls,
-        total_duration_secs,
-        claude_tasks,
-        codex_tasks,
-        projects: project_list,
+        Ok(WeeklyAnalytics {
+            daily,
+            total_tasks,
+            done_tasks,
+            failed_tasks,
+            total_input_tokens,
+            total_output_tokens,
+            total_cache_tokens,
+            total_tool_calls,
+            total_duration_secs,
+            claude_tasks,
+            codex_tasks,
+            projects: project_list,
+            sessions,
+        })
     })
+    .await
+    .map_err(|e| format!("get_weekly_analytics join error: {}", e))?
 }
 
 #[cfg(test)]
@@ -400,5 +452,48 @@ mod tests {
         assert_eq!(metrics.tool_calls, 1);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn builds_session_usage_for_task_metrics() {
+        let project = crate::storage::Project {
+            id: "project-1".to_string(),
+            name: "Nezha".to_string(),
+            path: "/tmp/nezha".to_string(),
+            branch: None,
+            last_opened_at: 0,
+        };
+        let task = crate::storage::Task {
+            id: "task-1".to_string(),
+            project_id: "project-1".to_string(),
+            name: Some("Add analytics".to_string()),
+            prompt: "fallback prompt".to_string(),
+            agent: "codex".to_string(),
+            permission_mode: "ask".to_string(),
+            status: "done".to_string(),
+            created_at: 1_770_000_000_000,
+            attention_requested_at: None,
+            claude_session_id: None,
+            claude_session_path: None,
+            codex_session_id: Some("session-1".to_string()),
+            codex_session_path: Some("/tmp/session.jsonl".to_string()),
+            starred: None,
+            failure_reason: None,
+        };
+        let metrics = SessionMetrics {
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_tokens: 30,
+            tool_calls: 2,
+            duration_secs: 4.0,
+        };
+
+        let usage = build_session_usage(&task, &project, "/tmp/session.jsonl", &metrics);
+
+        assert_eq!(usage.task_name, "Add analytics");
+        assert_eq!(usage.project_name, "Nezha");
+        assert_eq!(usage.agent, "codex");
+        assert_eq!(usage.total_tokens, 60);
+        assert_eq!(usage.tool_calls, 2);
     }
 }
