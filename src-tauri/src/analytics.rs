@@ -2,7 +2,7 @@
 
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -41,6 +41,9 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
     // Codex 每回合会发两条 token_count 事件,内容完全一致。
     // 用 total_token_usage(单调递增累计快照)只记最后一次,天然幂等。
     let mut codex_cumulative: Option<(u64, u64, u64)> = None;
+    // Claude Code 的 JSONL logger 会把一次 API 响应按 content block 拆成多行,
+    // 每行复制同一个 usage。按 message.id 去重,每个 id 只计 1 次 usage。
+    let mut counted_message_ids: HashSet<String> = HashSet::new();
 
     for line in content.lines() {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -94,31 +97,39 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
 
         if let Some(message) = val.get("message") {
             if let Some(usage) = message.get("usage") {
-                input_tokens += usage
-                    .get("input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                output_tokens += usage
-                    .get("output_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                cache_tokens += usage
-                    .get("cache_creation_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                cache_tokens += usage
-                    .get("cache_read_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                cache_tokens += usage
-                    .get("cached_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                cache_tokens += usage
-                    .get("input_tokens_details")
-                    .and_then(|v| v.get("cached_tokens"))
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
+                // 若有 message.id 且已经计过,跳过(usage 在拆分行间被复制)。
+                // 无 id 时按现行行为计入,作为兜底。
+                let should_count = match message.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => counted_message_ids.insert(id.to_string()),
+                    None => true,
+                };
+                if should_count {
+                    input_tokens += usage
+                        .get("input_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    output_tokens += usage
+                        .get("output_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    cache_tokens += usage
+                        .get("cache_creation_input_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    cache_tokens += usage
+                        .get("cache_read_input_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    cache_tokens += usage
+                        .get("cached_input_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    cache_tokens += usage
+                        .get("input_tokens_details")
+                        .and_then(|v| v.get("cached_tokens"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                }
             }
             if let Some(content_arr) = message.get("content").and_then(|v| v.as_array()) {
                 for item in content_arr {
@@ -630,6 +641,76 @@ mod tests {
         assert_eq!(metrics.input_tokens, 160);
         assert_eq!(metrics.output_tokens, 60);
         assert_eq!(metrics.cache_tokens, 90);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn deduplicates_claude_assistant_messages_by_id() {
+        // Claude Code 的 JSONL logger 把一次 API 响应按 content block 拆成多行,
+        // 每行复制同一份 usage。按 message.id 去重,每个 id 只计 1 次 usage;
+        // 但 tool_use 仍按 content block per 行计(每个分块行只携带一个块)。
+        let path =
+            std::env::temp_dir().join(format!("nezha-analytics-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut file = std::fs::File::create(&path).expect("create temp session");
+        let usage = serde_json::json!({
+            "input_tokens": 6,
+            "output_tokens": 211,
+            "cache_creation_input_tokens": 100,
+            "cache_read_input_tokens": 200,
+        });
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-05-26T10:00:00Z",
+                "message": {
+                    "id": "msg_dup_001",
+                    "usage": usage,
+                    "content": [{ "type": "thinking" }]
+                }
+            })
+        )
+        .expect("write thinking line");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-05-26T10:00:00Z",
+                "message": {
+                    "id": "msg_dup_001",
+                    "usage": usage,
+                    "content": [{ "type": "tool_use", "name": "Bash" }]
+                }
+            })
+        )
+        .expect("write tool_use line");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-05-26T10:00:01Z",
+                "message": {
+                    "id": "msg_dup_001",
+                    "usage": usage,
+                    "content": [{ "type": "tool_use", "name": "Read" }]
+                }
+            })
+        )
+        .expect("write second tool_use line");
+
+        let metrics = parse_session_metrics_from_path(&path);
+
+        assert_eq!(metrics.input_tokens, 6, "duplicate usage must not multiply");
+        assert_eq!(metrics.output_tokens, 211);
+        assert_eq!(metrics.cache_tokens, 300);
+        assert_eq!(
+            metrics.tool_calls, 2,
+            "tool_use across split lines must still count each block"
+        );
 
         let _ = std::fs::remove_file(path);
     }
