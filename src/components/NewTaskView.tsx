@@ -2,7 +2,14 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { TriangleAlert } from "lucide-react";
-import type { Project, AgentType, PermissionMode, ProjectConfig, PromptTemplate } from "../types";
+import type {
+  Project,
+  AgentType,
+  PermissionMode,
+  ProjectConfig,
+  PromptTemplate,
+  AppSettings,
+} from "../types";
 import { isAgentType, isPermissionAllowed, isPermissionMode } from "../types";
 import { useToast } from "./Toast";
 import {
@@ -268,6 +275,16 @@ export function NewTaskView({
       return;
     }
     if (immediate && permMode === "full_access" && confirmFullAccess) {
+      invoke<AppSettings>("load_app_settings")
+        .then((settings) => {
+          if (!settings.notifications.permission_risk) return undefined;
+          return invoke("notify_permission_risk", {
+            title: "Full Access task",
+            body: `${agent} is about to start with Full Access in ${project.name}.`,
+          });
+        })
+        .catch(() => {});
+
       const confirmed = await confirm(
         "Full Access allows the agent to run without normal approval prompts. Continue?",
         {

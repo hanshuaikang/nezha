@@ -124,6 +124,8 @@ pub fn run() {
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,
+            notification::notify_task_status,
+            notification::notify_permission_risk,
             usage::read_usage_snapshot,
         ])
         .run(tauri::generate_context!())

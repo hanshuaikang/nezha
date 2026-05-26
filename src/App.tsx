@@ -79,6 +79,8 @@ function App() {
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const startupBackupProjectKeyRef = useRef<string | null>(null);
+  const appSettingsRef = useRef<AppSettings | null>(null);
+  const tasksRef = useRef<Task[]>([]);
 
   const tm = useTerminalManager();
 
@@ -141,6 +143,12 @@ function App() {
 
   useEffect(() => {
     async function init() {
+      invoke<AppSettings>("load_app_settings")
+        .then((settings) => {
+          appSettingsRef.current = settings;
+        })
+        .catch(console.error);
+
       // Load projects from ~/.nezha/projects.json
       const loadedProjects = await invoke<Project[]>("load_projects");
       setProjects(loadedProjects);
@@ -156,6 +164,10 @@ function App() {
       .catch(console.error)
       .finally(() => setProjectsLoaded(true));
   }, []);
+
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
 
   useEffect(() => {
     if (!projectsLoaded) {
@@ -205,6 +217,16 @@ function App() {
       (e) => {
         const { task_id, status, failure_reason } = e.payload;
         updateTaskStatus(task_id, status, undefined, failure_reason);
+        if (
+          appSettingsRef.current?.notifications.task_status &&
+          ["done", "failed", "cancelled", "input_required"].includes(status)
+        ) {
+          const task = tasksRef.current.find((item) => item.id === task_id);
+          invoke("notify_task_status", {
+            title: task?.name || "Nezha Task",
+            body: `Task status: ${status}`,
+          }).catch(() => {});
+        }
         if (!isActiveTaskStatus(status)) {
           tm.removeTaskBuffers([task_id]);
         }

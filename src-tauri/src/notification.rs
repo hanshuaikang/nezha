@@ -90,6 +90,12 @@ pub struct NotificationResult {
     pub has_unread_popup: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalNotificationResult {
+    pub delivered: bool,
+    pub reason: Option<String>,
+}
+
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
 fn nezha_dir() -> Result<PathBuf, String> {
@@ -285,6 +291,28 @@ async fn fetch_remote() -> Result<Vec<RemoteNotification>, String> {
 
 // ── Tauri commands ───────────────────────────────────────────────────────────
 
+fn native_notifications_unconfigured_result() -> LocalNotificationResult {
+    LocalNotificationResult {
+        delivered: false,
+        reason: Some("Native notifications are not configured in this build".to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn notify_task_status(title: String, body: String) -> Result<LocalNotificationResult, String> {
+    let _ = (title, body);
+    Ok(native_notifications_unconfigured_result())
+}
+
+#[tauri::command]
+pub fn notify_permission_risk(
+    title: String,
+    body: String,
+) -> Result<LocalNotificationResult, String> {
+    let _ = (title, body);
+    Ok(native_notifications_unconfigured_result())
+}
+
 #[tauri::command]
 pub async fn get_notifications() -> Result<NotificationResult, String> {
     let mut store =
@@ -413,5 +441,28 @@ mod tests {
         assert_eq!(store.read_ids, vec!["keep".to_string()]);
         assert_eq!(store.cached_notifications.unwrap().len(), 2);
         assert!(store.last_fetched_at.is_some());
+    }
+
+    #[test]
+    fn notify_task_status_returns_noop_when_native_notifications_unconfigured() {
+        let result = notify_task_status("Task done".to_string(), "Body".to_string()).unwrap();
+
+        assert!(!result.delivered);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some("Native notifications are not configured in this build")
+        );
+    }
+
+    #[test]
+    fn notify_permission_risk_returns_noop_when_native_notifications_unconfigured() {
+        let result =
+            notify_permission_risk("Full Access task".to_string(), "Body".to_string()).unwrap();
+
+        assert!(!result.delivered);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some("Native notifications are not configured in this build")
+        );
     }
 }
