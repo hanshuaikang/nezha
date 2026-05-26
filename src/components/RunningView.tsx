@@ -10,7 +10,7 @@ import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import s from "../styles";
 import { X, RotateCcw, Pencil, Send } from "lucide-react";
-import { formatCodexComposerSubmit } from "../utils/codexComposer";
+import { formatComposerSubmit } from "../utils/composer";
 
 interface SessionMetrics {
   duration_secs: number;
@@ -84,7 +84,7 @@ export function RunningView({
 
   function submitComposer() {
     if (!composerValue.trim()) return;
-    onInput(formatCodexComposerSubmit(composerValue));
+    onInput(formatComposerSubmit(composerValue));
     setComposerValue("");
     window.requestAnimationFrame(() => composerRef.current?.focus());
   }
