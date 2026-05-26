@@ -156,7 +156,15 @@ fn add_copy_source(
     }
 }
 
-fn cleanup_old_backups(destination_root: &Path, retain: u32) -> Result<(), String> {
+fn is_nezha_backup_dir(path: &Path) -> bool {
+    path.join("manifest.json").is_file()
+}
+
+fn cleanup_old_backups(
+    destination_root: &Path,
+    current_backup_dir: &Path,
+    retain: u32,
+) -> Result<(), String> {
     if retain == 0 || !destination_root.is_dir() {
         return Ok(());
     }
@@ -171,6 +179,12 @@ fn cleanup_old_backups(destination_root: &Path, retain: u32) -> Result<(), Strin
             }
             let name = entry.file_name().to_string_lossy().into_owned();
             if !is_timestamped_backup_name(&name) {
+                return None;
+            }
+            if normalize_path(&path) == normalize_path(current_backup_dir) {
+                return None;
+            }
+            if !is_nezha_backup_dir(&path) {
                 return None;
             }
             Some((name, path))
@@ -223,7 +237,7 @@ fn run_backup_blocking(projects: Vec<Project>) -> Result<BackupResult, String> {
     let codex_source = home.join(".codex");
     let claude_source = home.join(".claude");
     let backup_status_path = status_path()?;
-    let excluded_from_nezha = vec![destination_root.clone(), backup_status_path];
+    let excluded_roots = vec![destination_root.clone(), backup_dir.clone(), backup_status_path];
 
     let mut warnings = Vec::new();
     let mut copied_count = 0;
@@ -233,21 +247,21 @@ fn run_backup_blocking(projects: Vec<Project>) -> Result<BackupResult, String> {
         &mut warnings,
         nezha_source,
         backup_dir.join("home").join(".nezha"),
-        &excluded_from_nezha,
+        &excluded_roots,
     );
     add_copy_source(
         &mut copied_count,
         &mut warnings,
         codex_source,
         backup_dir.join("home").join(".codex"),
-        &[],
+        &excluded_roots,
     );
     add_copy_source(
         &mut copied_count,
         &mut warnings,
         claude_source,
         backup_dir.join("home").join(".claude"),
-        &[],
+        &excluded_roots,
     );
 
     for project in &projects {
@@ -258,21 +272,19 @@ fn run_backup_blocking(projects: Vec<Project>) -> Result<BackupResult, String> {
             &mut warnings,
             project_root.join(".nezha"),
             project_destination.join(".nezha"),
-            &[],
+            &excluded_roots,
         );
         add_copy_source(
             &mut copied_count,
             &mut warnings,
             project_root.join(".codex").join("sessions"),
             project_destination.join(".codex").join("sessions"),
-            &[],
+            &excluded_roots,
         );
     }
 
-    cleanup_old_backups(&destination_root, retain)?;
-
     let manifest_path = backup_dir.join("manifest.json");
-    let result = BackupResult {
+    let mut result = BackupResult {
         status: status_from_result(copied_count, &warnings),
         destination: backup_dir.display().to_string(),
         manifest_path: manifest_path.display().to_string(),
@@ -287,6 +299,20 @@ fn run_backup_blocking(projects: Vec<Project>) -> Result<BackupResult, String> {
     };
     let manifest_raw = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     atomic_write(&manifest_path, &manifest_raw)?;
+
+    if let Err(message) = cleanup_old_backups(&destination_root, &backup_dir, retain) {
+        result.warnings.push(BackupWarning {
+            source: destination_root.display().to_string(),
+            message: format!("Retention cleanup failed: {}", message),
+        });
+        result.status = status_from_result(result.copied_count, &result.warnings);
+        let manifest = BackupManifest {
+            result: &result,
+            projects: &projects,
+        };
+        let manifest_raw = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+        atomic_write(&manifest_path, &manifest_raw)?;
+    }
 
     let status = BackupStatus {
         last_result: Some(result.clone()),
@@ -381,5 +407,10 @@ mod tests {
             &excluded
         ));
         assert!(!should_skip_path(Path::new("/home/me/.nezha/projects"), &excluded));
+    }
+
+    #[test]
+    fn timestamped_dir_without_manifest_is_not_a_nezha_backup() {
+        assert!(!is_nezha_backup_dir(Path::new("/path/that/does/not/exist/20260526-120102")));
     }
 }

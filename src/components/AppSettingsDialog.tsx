@@ -1022,7 +1022,8 @@ function GeneralPanel({ projects }: { projects: Project[] }) {
                 <button
                   type="button"
                   onClick={handleBackupNow}
-                  disabled={backupRunning}
+                  disabled={backupRunning || isDirty}
+                  title={isDirty ? "Save app settings before running a backup" : undefined}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -1033,8 +1034,8 @@ function GeneralPanel({ projects }: { projects: Project[] }) {
                     borderRadius: 7,
                     fontSize: 12,
                     color: "var(--primary-action-fg)",
-                    cursor: backupRunning ? "default" : "pointer",
-                    opacity: backupRunning ? 0.65 : 1,
+                    cursor: backupRunning || isDirty ? "default" : "pointer",
+                    opacity: backupRunning || isDirty ? 0.65 : 1,
                     flexShrink: 0,
                   }}
                 >
@@ -1042,6 +1043,9 @@ function GeneralPanel({ projects }: { projects: Project[] }) {
                   {backupRunning ? "Backing up..." : "Back Up Now"}
                 </button>
               </div>
+              {isDirty && (
+                <span style={hintStyle}>Save app settings before running a manual backup.</span>
+              )}
             </div>
           </>
         )}
