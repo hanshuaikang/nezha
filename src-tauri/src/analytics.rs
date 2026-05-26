@@ -38,6 +38,9 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
     let mut tool_calls: u64 = 0;
     let mut first_ts: Option<f64> = None;
     let mut last_ts: Option<f64> = None;
+    // Codex 每回合会发两条 token_count 事件,内容完全一致。
+    // 用 total_token_usage(单调递增累计快照)只记最后一次,天然幂等。
+    let mut codex_cumulative: Option<(u64, u64, u64)> = None;
 
     for line in content.lines() {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -62,7 +65,7 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
                     payload.get("type").and_then(|v| v.as_str()) == Some("token_count")
                 })
                 .and_then(|payload| payload.get("info"))
-                .and_then(|info| info.get("last_token_usage"))
+                .and_then(|info| info.get("total_token_usage"))
             {
                 let raw_input_tokens = usage
                     .get("input_tokens")
@@ -72,12 +75,15 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
                     .get("cached_input_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                input_tokens += raw_input_tokens.saturating_sub(cached_input_tokens);
-                output_tokens += usage
+                let output = usage
                     .get("output_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cache_tokens += cached_input_tokens;
+                codex_cumulative = Some((
+                    raw_input_tokens.saturating_sub(cached_input_tokens),
+                    output,
+                    cached_input_tokens,
+                ));
             }
             continue;
         }
@@ -128,6 +134,12 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
         (Some(first), Some(last)) => (last - first).max(0.0),
         _ => 0.0,
     };
+
+    if let Some((i, o, c)) = codex_cumulative {
+        input_tokens += i;
+        output_tokens += o;
+        cache_tokens += c;
+    }
 
     SessionMetrics {
         input_tokens,
@@ -495,6 +507,12 @@ mod tests {
                 "payload": {
                     "type": "token_count",
                     "info": {
+                        "total_token_usage": {
+                            "input_tokens": 100,
+                            "cached_input_tokens": 40,
+                            "output_tokens": 25,
+                            "total_tokens": 125
+                        },
                         "last_token_usage": {
                             "input_tokens": 100,
                             "cached_input_tokens": 40,
@@ -512,6 +530,106 @@ mod tests {
         assert_eq!(metrics.input_tokens, 60);
         assert_eq!(metrics.output_tokens, 25);
         assert_eq!(metrics.cache_tokens, 40);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn deduplicates_repeated_codex_token_count_events() {
+        // Codex 实测下,每个回合会发两条内容完全一致的 token_count 事件。
+        // 累加 last_token_usage 会让 token 统计翻倍,所以这里改成读
+        // total_token_usage 并覆盖,以保证重复事件幂等。
+        let path =
+            std::env::temp_dir().join(format!("nezha-analytics-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut file = std::fs::File::create(&path).expect("create temp session");
+        let payload = serde_json::json!({
+            "type": "event_msg",
+            "timestamp": "2026-05-26T10:00:00Z",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 40,
+                        "output_tokens": 25,
+                        "total_tokens": 125
+                    },
+                    "last_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 40,
+                        "output_tokens": 25,
+                        "total_tokens": 125
+                    }
+                }
+            }
+        });
+        writeln!(file, "{}", payload).expect("write first dup");
+        writeln!(file, "{}", payload).expect("write second dup");
+
+        let metrics = parse_session_metrics_from_path(&path);
+
+        assert_eq!(metrics.input_tokens, 60, "duplicate events must not double input");
+        assert_eq!(metrics.output_tokens, 25, "duplicate events must not double output");
+        assert_eq!(metrics.cache_tokens, 40, "duplicate events must not double cache");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn aggregates_codex_multi_turn_via_total_usage() {
+        // 多回合场景:第一条 total_token_usage 是回合 1 累计,第二条是回合 1+2 累计。
+        // 解析结果应该等于最后一条 total_token_usage 推出的数字,不重复加。
+        let path =
+            std::env::temp_dir().join(format!("nezha-analytics-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut file = std::fs::File::create(&path).expect("create temp session");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-05-26T10:00:00Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 100,
+                            "cached_input_tokens": 40,
+                            "output_tokens": 25,
+                            "total_tokens": 125
+                        }
+                    }
+                }
+            })
+        )
+        .expect("write turn 1");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-05-26T10:01:00Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 250,
+                            "cached_input_tokens": 90,
+                            "output_tokens": 60,
+                            "total_tokens": 310
+                        }
+                    }
+                }
+            })
+        )
+        .expect("write turn 2");
+
+        let metrics = parse_session_metrics_from_path(&path);
+
+        // 期望取最后一条 total_token_usage 的 cumulative 值:
+        // input = 250 - 90 = 160, output = 60, cache = 90
+        assert_eq!(metrics.input_tokens, 160);
+        assert_eq!(metrics.output_tokens, 60);
+        assert_eq!(metrics.cache_tokens, 90);
 
         let _ = std::fs::remove_file(path);
     }
