@@ -22,6 +22,7 @@ import { TodoTaskView } from "./TodoTaskView";
 import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTerminalPanel";
 import { AnalyticsDashboard } from "./AnalyticsDashboard";
 import { ErrorBoundary } from "./ErrorBoundary";
+import type { TerminalController } from "./TerminalView";
 import { useProjectPanels } from "../hooks/useProjectPanels";
 import s from "../styles";
 
@@ -50,6 +51,7 @@ export function ProjectPage({
   onResize,
   onRegisterTerminal,
   onTerminalReady,
+  onRevealTerminalLatest,
   onSnapshot,
   onBack,
   onSwitchProject,
@@ -93,9 +95,10 @@ export function ProjectPage({
   onResize: (taskId: string, cols: number, rows: number) => void;
   onRegisterTerminal: (
     taskId: string,
-    writeFn: ((data: string, callback?: () => void) => void) | null,
+    controller: TerminalController | null,
   ) => number;
   onTerminalReady: (taskId: string, generation: number) => void;
+  onRevealTerminalLatest: (taskId: string) => void;
   onSnapshot: (taskId: string, snapshot: string) => void;
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
@@ -348,6 +351,7 @@ export function ProjectPage({
                   onResize={(cols, rows) => onResize(task.id, cols, rows)}
                   onRegisterTerminal={(fn) => onRegisterTerminal(task.id, fn)}
                   onTerminalReady={(generation) => onTerminalReady(task.id, generation)}
+                  onRevealTerminalLatest={() => onRevealTerminalLatest(task.id)}
                   onSnapshot={(snapshot) => onSnapshot(task.id, snapshot)}
                   getRestoreState={() => getTaskRestoreState(task.id)}
                   onRename={(name) => onRenameTask(task.id, name)}

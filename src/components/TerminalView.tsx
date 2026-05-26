@@ -17,7 +17,7 @@ interface TerminalViewProps {
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
   onRegisterTerminal: (
-    writeFn: ((data: string, callback?: () => void) => void) | null,
+    controller: TerminalController | null,
   ) => number;
   onReady?: (generation: number) => void;
   isDark: boolean;
@@ -25,6 +25,11 @@ interface TerminalViewProps {
   initialData?: string;
   initialSnapshot?: string;
   onSnapshot?: (snapshot: string) => void;
+}
+
+export interface TerminalController {
+  write: (data: string, callback?: () => void) => void;
+  revealLatest: () => void;
 }
 
 export function TerminalView({
@@ -88,7 +93,17 @@ export function TerminalView({
 
     const writer = createSmartWriter(term);
 
-    const terminalGeneration = onRegisterRef.current(writer.write);
+    const revealLatest = () => {
+      writer.setSelectionPaused(false);
+      writer.drainPending();
+      term.scrollToBottom();
+      term.refresh(0, term.rows - 1);
+    };
+
+    const terminalGeneration = onRegisterRef.current({
+      write: writer.write,
+      revealLatest,
+    });
 
     const completeRestore = () => {
       onReadyRef.current?.(terminalGeneration);

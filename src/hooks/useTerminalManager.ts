@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { TerminalController } from "../components/TerminalView";
 
 // ── Buffer constants ─────────────────────────────────────────────────────────
 
@@ -15,8 +16,6 @@ interface TaskBuffer {
   totalLen: number;
   droppedLen: number;
 }
-
-export type TerminalWriteFn = (data: string, callback?: () => void) => void;
 
 interface TerminalWriteState {
   pending: string[];
@@ -74,7 +73,7 @@ export function useTerminalManager() {
   const terminalSnapshotRef = useRef<Record<string, { snapshot: string; bufferLength: number }>>(
     {},
   );
-  const terminalWriteRefs = useRef<Record<string, TerminalWriteFn>>({});
+  const terminalRefs = useRef<Record<string, TerminalController>>({});
   const terminalWriteStateRef = useRef<Record<string, TerminalWriteState>>({});
   const terminalSizeRef = useRef<{ cols: number; rows: number }>({ cols: 220, rows: 50 });
 
@@ -94,9 +93,9 @@ export function useTerminalManager() {
         state.pending.push(data);
         return;
       }
-      const writeFn = terminalWriteRefs.current[taskId];
-      if (writeFn) {
-        writeFn(data);
+      const terminal = terminalRefs.current[taskId];
+      if (terminal) {
+        terminal.write(data);
       }
     },
     [resetTerminalWriteState],
@@ -124,7 +123,7 @@ export function useTerminalManager() {
       for (const [taskId, chunks] of pendingOutputs) {
         const joined = chunks.length === 1 ? chunks[0] : chunks.join("");
 
-        if (terminalWriteRefs.current[taskId]) {
+        if (terminalRefs.current[taskId]) {
           enqueueTerminalWrite(taskId, joined);
         }
         if (taskId in taskBufferRef.current) {
@@ -172,15 +171,15 @@ export function useTerminalManager() {
     for (const taskId of taskIds) {
       delete taskBufferRef.current[taskId];
       delete terminalSnapshotRef.current[taskId];
-      delete terminalWriteRefs.current[taskId];
+      delete terminalRefs.current[taskId];
       delete terminalWriteStateRef.current[taskId];
     }
   }, []);
 
   const writeErrorToTerminal = useCallback((taskId: string, errMsg: string) => {
-    const writeFn = terminalWriteRefs.current[taskId];
-    if (writeFn) {
-      writeFn(errMsg);
+    const terminal = terminalRefs.current[taskId];
+    if (terminal) {
+      terminal.write(errMsg);
     }
     const buf = taskBufferRef.current[taskId] ?? createTaskBuffer();
     pushToBuffer(buf, errMsg);
@@ -191,18 +190,22 @@ export function useTerminalManager() {
     invoke("send_input", { taskId, data }).catch(console.error);
   }, []);
 
+  const revealTerminalLatest = useCallback((taskId: string) => {
+    terminalRefs.current[taskId]?.revealLatest();
+  }, []);
+
   const handleResize = useCallback((taskId: string, cols: number, rows: number) => {
     terminalSizeRef.current = { cols, rows };
     invoke("resize_pty", { taskId, cols, rows }).catch(console.error);
   }, []);
 
   const handleRegisterTerminal = useCallback(
-    (taskId: string, fn: TerminalWriteFn | null): number => {
+    (taskId: string, terminal: TerminalController | null): number => {
       const state = resetTerminalWriteState(taskId);
-      if (fn) {
-        terminalWriteRefs.current[taskId] = fn;
+      if (terminal) {
+        terminalRefs.current[taskId] = terminal;
       } else {
-        delete terminalWriteRefs.current[taskId];
+        delete terminalRefs.current[taskId];
       }
       return state.generation;
     },
@@ -214,10 +217,10 @@ export function useTerminalManager() {
     if (!state || state.generation !== generation) return;
     state.ready = true;
     if (state.pending.length > 0) {
-      const writeFn = terminalWriteRefs.current[taskId];
-      if (writeFn) {
+      const terminal = terminalRefs.current[taskId];
+      if (terminal) {
         const data = state.pending.length === 1 ? state.pending[0] : state.pending.join("");
-        writeFn(data);
+        terminal.write(data);
       }
       state.pending = [];
     }
@@ -260,6 +263,7 @@ export function useTerminalManager() {
     removeTaskBuffers,
     writeErrorToTerminal,
     handleInput,
+    revealTerminalLatest,
     handleResize,
     handleRegisterTerminal,
     handleTerminalReady,

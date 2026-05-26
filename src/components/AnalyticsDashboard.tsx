@@ -221,9 +221,9 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
       <div style={s.statGrid}>
         <StatCard value={String(data.total_tasks)} label="Total Tasks" />
         <StatCard value={formatTokens(totalTokens)} label="Total Tokens" />
-        <StatCard value={formatTokens(data.total_input_tokens)} label="Input Tokens" />
+        <StatCard value={formatTokens(data.total_input_tokens)} label="New Input" />
         <StatCard value={formatTokens(data.total_output_tokens)} label="Output Tokens" />
-        <StatCard value={formatTokens(data.total_cache_tokens)} label="Cache Tokens" />
+        <StatCard value={formatTokens(data.total_cache_tokens)} label="Cached Input" />
         <StatCard value={`${successRate}%`} label="Success Rate" />
         <StatCard value={String(data.total_tool_calls)} label="Tool Calls" />
       </div>
@@ -243,9 +243,9 @@ export function AnalyticsDashboard({ projects: _projects }: { projects: Project[
                   </div>
                 </div>
                 <div style={s.sessionUsageStats}>
-                  <span title="Input tokens">I {formatTokens(session.input_tokens)}</span>
+                  <span title="New input tokens">I {formatTokens(session.input_tokens)}</span>
                   <span title="Output tokens">O {formatTokens(session.output_tokens)}</span>
-                  <span title="Cache tokens">C {formatTokens(session.cache_tokens)}</span>
+                  <span title="Cached input tokens">C {formatTokens(session.cache_tokens)}</span>
                   <span title="Total tokens">T {formatTokens(session.total_tokens)}</span>
                   <span title="Tool calls">{session.tool_calls} tools</span>
                   <span title="Duration">{formatDuration(session.duration_secs)}</span>

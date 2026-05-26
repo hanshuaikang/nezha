@@ -11,6 +11,7 @@ import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import s from "../styles";
 import { X, RotateCcw, Pencil, Send } from "lucide-react";
 import { formatComposerSubmit } from "../utils/composer";
+import type { TerminalController } from "./TerminalView";
 
 interface SessionMetrics {
   duration_secs: number;
@@ -45,6 +46,7 @@ export function RunningView({
   onResize,
   onRegisterTerminal,
   onTerminalReady,
+  onRevealTerminalLatest,
   onSnapshot,
   getRestoreState,
   onRename,
@@ -58,8 +60,9 @@ export function RunningView({
   onResume?: () => void;
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
-  onRegisterTerminal: (writeFn: ((data: string, callback?: () => void) => void) | null) => number;
+  onRegisterTerminal: (controller: TerminalController | null) => number;
   onTerminalReady: (generation: number) => void;
+  onRevealTerminalLatest?: () => void;
   onSnapshot?: (snapshot: string) => void;
   getRestoreState?: () => { initialData?: string; initialSnapshot?: string };
   onRename: (name: string) => void;
@@ -85,6 +88,7 @@ export function RunningView({
   function submitComposer() {
     if (!composerValue.trim()) return;
     onInput(formatComposerSubmit(composerValue));
+    onRevealTerminalLatest?.();
     setComposerValue("");
     window.requestAnimationFrame(() => composerRef.current?.focus());
   }

@@ -3,6 +3,26 @@ import type { Task } from "../../types";
 import { TaskListItem } from "./TaskListItem";
 import s from "../../styles";
 
+export function groupTasksForTaskList(
+  sortedTasks: Task[],
+  todayTs: number,
+  threeDaysAgoTs: number,
+) {
+  const attentionTasks = sortedTasks.filter((t) => t.status === "input_required");
+  const starredTasks = sortedTasks.filter((t) => t.starred && t.status !== "input_required");
+  const todoTasks = sortedTasks.filter((t) => t.status === "todo" && !t.starred);
+  const regularTasks = sortedTasks.filter(
+    (t) => t.status !== "input_required" && t.status !== "todo" && !t.starred,
+  );
+  const todayTasks = regularTasks.filter((t) => t.createdAt >= todayTs);
+  const earlierTasks = regularTasks.filter(
+    (t) => t.createdAt >= threeDaysAgoTs && t.createdAt < todayTs,
+  );
+  const olderTasks = regularTasks.filter((t) => t.createdAt < threeDaysAgoTs);
+
+  return { attentionTasks, starredTasks, todoTasks, todayTasks, earlierTasks, olderTasks };
+}
+
 export function TaskList({
   tasks,
   query,
@@ -45,15 +65,9 @@ export function TaskList({
     const todayTs = d.getTime();
     return { todayTs, threeDaysAgoTs: todayTs - 3 * 24 * 60 * 60 * 1000 };
   }, []);
-  const attentionTasks = sorted.filter((t) => t.status === "input_required");
-  const starredTasks = sorted.filter((t) => t.starred && t.status !== "input_required");
-  const todoTasks = sorted.filter((t) => t.status === "todo" && !t.starred);
-  const regularTasks = sorted.filter(
-    (t) => t.status !== "input_required" && t.status !== "todo" && !t.starred,
-  );
-  const todayTasks = regularTasks.filter((t) => t.createdAt >= todayTs);
-  const earlierTasks = regularTasks.filter(
-    (t) => t.createdAt >= threeDaysAgoTs && t.createdAt < todayTs,
+  const { attentionTasks, starredTasks, todoTasks, todayTasks, earlierTasks, olderTasks } = useMemo(
+    () => groupTasksForTaskList(sorted, todayTs, threeDaysAgoTs),
+    [sorted, todayTs, threeDaysAgoTs],
   );
 
   function renderGroup(label: string, groupTasks: Task[], showRunTodo?: boolean) {
@@ -84,6 +98,7 @@ export function TaskList({
       {renderGroup("Todo", todoTasks, true)}
       {renderGroup("Today", todayTasks)}
       {renderGroup("Earlier", earlierTasks)}
+      {renderGroup("Older", olderTasks)}
     </div>
   );
 }

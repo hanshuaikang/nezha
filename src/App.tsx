@@ -672,6 +672,7 @@ function App() {
               onResize={tm.handleResize}
               onRegisterTerminal={tm.handleRegisterTerminal}
               onTerminalReady={tm.handleTerminalReady}
+              onRevealTerminalLatest={tm.revealTerminalLatest}
               onSnapshot={tm.handleSnapshot}
               onBack={handleBack}
               onSwitchProject={handleProjectClick}

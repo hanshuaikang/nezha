@@ -64,18 +64,20 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
                 .and_then(|payload| payload.get("info"))
                 .and_then(|info| info.get("last_token_usage"))
             {
-                input_tokens += usage
+                let raw_input_tokens = usage
                     .get("input_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
+                let cached_input_tokens = usage
+                    .get("cached_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                input_tokens += raw_input_tokens.saturating_sub(cached_input_tokens);
                 output_tokens += usage
                     .get("output_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cache_tokens += usage
-                    .get("cached_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
+                cache_tokens += cached_input_tokens;
             }
             continue;
         }
@@ -507,7 +509,7 @@ mod tests {
 
         let metrics = parse_session_metrics_from_path(&path);
 
-        assert_eq!(metrics.input_tokens, 100);
+        assert_eq!(metrics.input_tokens, 60);
         assert_eq!(metrics.output_tokens, 25);
         assert_eq!(metrics.cache_tokens, 40);
 
