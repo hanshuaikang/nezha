@@ -22,12 +22,65 @@ pub fn get_login_shell_path() -> &'static str {
     crate::platform::login_shell_path()
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct NotificationSettings {
+    #[serde(default = "default_true")]
+    pub task_status: bool,
+    #[serde(default = "default_true")]
+    pub permission_risk: bool,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            task_status: true,
+            permission_risk: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct BackupSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_backup_destination")]
+    pub destination: String,
+    #[serde(default = "default_backup_retain")]
+    pub retain: u32,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            destination: default_backup_destination(),
+            retain: default_backup_retain(),
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_backup_destination() -> String {
+    "~/.nezha/backups".to_string()
+}
+
+fn default_backup_retain() -> u32 {
+    10
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default)]
     pub claude_path: String,
     #[serde(default)]
     pub codex_path: String,
+    #[serde(default)]
+    pub notifications: NotificationSettings,
+    #[serde(default)]
+    pub backup: BackupSettings,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -277,6 +330,8 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
     AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
+        notifications: settings.notifications,
+        backup: settings.backup,
     }
 }
 
@@ -290,6 +345,7 @@ pub fn load_settings_internal() -> AppSettings {
         let settings = normalize_settings(AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
+            ..AppSettings::default()
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -340,6 +396,7 @@ pub fn detect_agent_paths() -> Result<AppSettings, String> {
     Ok(normalize_settings(AppSettings {
         claude_path: detect_path("claude"),
         codex_path: detect_path("codex"),
+        ..AppSettings::default()
     }))
 }
 
@@ -436,4 +493,34 @@ pub fn detect_agent_versions_for_settings(settings: AppSettings) -> Result<Agent
 pub struct AgentVersions {
     pub claude_version: String,
     pub codex_version: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_settings_without_new_sections_deserializes() {
+        let raw = r#"{"claude_path":"/usr/local/bin/claude","codex_path":"/usr/local/bin/codex"}"#;
+
+        let settings: AppSettings = serde_json::from_str(raw).expect("old settings should deserialize");
+
+        assert_eq!(settings.claude_path, "/usr/local/bin/claude");
+        assert_eq!(settings.codex_path, "/usr/local/bin/codex");
+        assert_eq!(
+            settings.notifications,
+            NotificationSettings {
+                task_status: true,
+                permission_risk: true,
+            }
+        );
+        assert_eq!(
+            settings.backup,
+            BackupSettings {
+                enabled: false,
+                destination: "~/.nezha/backups".to_string(),
+                retain: 10,
+            }
+        );
+    }
 }

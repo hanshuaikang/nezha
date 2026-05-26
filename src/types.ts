@@ -78,6 +78,24 @@ export interface ProjectConfig {
   git: { commit_prompt: string };
 }
 
+export interface NotificationSettings {
+  task_status: boolean;
+  permission_risk: boolean;
+}
+
+export interface BackupSettings {
+  enabled: boolean;
+  destination: string;
+  retain: number;
+}
+
+export interface AppSettings {
+  claude_path: string;
+  codex_path: string;
+  notifications: NotificationSettings;
+  backup: BackupSettings;
+}
+
 const PERMISSION_RANK: Record<PermissionMode, number> = {
   ask: 0,
   auto_edit: 1,

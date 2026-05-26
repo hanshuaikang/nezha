@@ -10,7 +10,7 @@ import {
   Star,
   Monitor,
 } from "lucide-react";
-import type { ThemeMode } from "../types";
+import type { AppSettings, ThemeMode } from "../types";
 import { APP_PLATFORM } from "../platform";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -31,11 +31,6 @@ function getHighlighter(): Promise<Highlighter> {
 
 type NavKey = "general" | "theme" | "about" | "claude" | "codex";
 
-interface AppSettings {
-  claude_path: string;
-  codex_path: string;
-}
-
 interface AgentVersions {
   claude_version: string;
   codex_version: string;
@@ -44,6 +39,38 @@ interface AgentVersions {
 type AgentKey = "claude" | "codex";
 
 const GITHUB_REPO_URL = "https://github.com/hanshuaikang/nezha";
+
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  claude_path: "",
+  codex_path: "",
+  notifications: {
+    task_status: true,
+    permission_risk: true,
+  },
+  backup: {
+    enabled: false,
+    destination: "~/.nezha/backups",
+    retain: 10,
+  },
+};
+
+function normalizeAppSettings(settings: Partial<AppSettings>): AppSettings {
+  const retain = settings.backup?.retain ?? DEFAULT_APP_SETTINGS.backup.retain;
+
+  return {
+    claude_path: settings.claude_path ?? DEFAULT_APP_SETTINGS.claude_path,
+    codex_path: settings.codex_path ?? DEFAULT_APP_SETTINGS.codex_path,
+    notifications: {
+      ...DEFAULT_APP_SETTINGS.notifications,
+      ...settings.notifications,
+    },
+    backup: {
+      ...DEFAULT_APP_SETTINGS.backup,
+      ...settings.backup,
+      retain: Math.min(100, Math.max(1, retain)),
+    },
+  };
+}
 
 function getAgentSettingsFilePath(agent: AgentKey): string {
   if (APP_PLATFORM === "windows") {
@@ -535,8 +562,8 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
 // ── General Panel ─────────────────────────────────────────────────────────────
 
 function GeneralPanel() {
-  const [settings, setSettings] = useState<AppSettings>({ claude_path: "", codex_path: "" });
-  const [original, setOriginal] = useState<AppSettings>({ claude_path: "", codex_path: "" });
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [original, setOriginal] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",
     codex_version: "",
@@ -565,9 +592,10 @@ function GeneralPanel() {
   useEffect(() => {
     invoke<AppSettings>("load_app_settings")
       .then(async (loadedSettings) => {
-        setSettings(loadedSettings);
-        setOriginal(loadedSettings);
-        await loadVersions(loadedSettings);
+        const normalized = normalizeAppSettings(loadedSettings);
+        setSettings(normalized);
+        setOriginal(normalized);
+        await loadVersions(normalized);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -578,8 +606,13 @@ function GeneralPanel() {
     setError(null);
     try {
       const detected = await invoke<AppSettings>("detect_agent_paths");
-      setSettings(detected);
-      await loadVersions(detected);
+      const normalized = normalizeAppSettings({
+        ...settings,
+        claude_path: detected.claude_path,
+        codex_path: detected.codex_path,
+      });
+      setSettings(normalized);
+      await loadVersions(normalized);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -605,7 +638,13 @@ function GeneralPanel() {
   }
 
   const isDirty =
-    settings.claude_path !== original.claude_path || settings.codex_path !== original.codex_path;
+    settings.claude_path !== original.claude_path ||
+    settings.codex_path !== original.codex_path ||
+    settings.notifications.task_status !== original.notifications.task_status ||
+    settings.notifications.permission_risk !== original.notifications.permission_risk ||
+    settings.backup.enabled !== original.backup.enabled ||
+    settings.backup.destination !== original.backup.destination ||
+    settings.backup.retain !== original.backup.retain;
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -633,6 +672,32 @@ function GeneralPanel() {
     flexDirection: "column",
     gap: 5,
     marginBottom: 18,
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    paddingTop: 18,
+    marginTop: 18,
+    borderTop: "1px solid var(--border-dim)",
+  };
+
+  const checkboxRowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    color: "var(--text-primary)",
+    fontSize: 12.5,
+    cursor: "pointer",
+  };
+
+  const checkboxStyle: React.CSSProperties = {
+    width: 14,
+    height: 14,
+    margin: 0,
+    accentColor: "var(--accent)",
+    flexShrink: 0,
   };
 
   const hintStyle: React.CSSProperties = {
@@ -770,6 +835,112 @@ function GeneralPanel() {
               <span style={hintStyle}>
                 Versions are detected from the configured executable path or the system PATH.
               </span>
+            </div>
+
+            <div style={sectionStyle}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Notifications
+              </span>
+              <label style={checkboxRowStyle}>
+                <input
+                  type="checkbox"
+                  style={checkboxStyle}
+                  checked={settings.notifications.task_status}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      notifications: {
+                        ...prev.notifications,
+                        task_status: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Task status notifications
+              </label>
+              <label style={checkboxRowStyle}>
+                <input
+                  type="checkbox"
+                  style={checkboxStyle}
+                  checked={settings.notifications.permission_risk}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      notifications: {
+                        ...prev.notifications,
+                        permission_risk: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Permission risk notifications
+              </label>
+            </div>
+
+            <div style={sectionStyle}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Backups
+              </span>
+              <label style={checkboxRowStyle}>
+                <input
+                  type="checkbox"
+                  style={checkboxStyle}
+                  checked={settings.backup.enabled}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      backup: {
+                        ...prev.backup,
+                        enabled: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Automatic metadata backup
+              </label>
+
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Destination</label>
+                <input
+                  style={inputStyle}
+                  value={settings.backup.destination}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      backup: {
+                        ...prev.backup,
+                        destination: e.target.value,
+                      },
+                    }))
+                  }
+                  placeholder="~/.nezha/backups"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div style={{ ...fieldStyle, marginBottom: 0 }}>
+                <label style={labelStyle}>Retain</label>
+                <input
+                  style={{ ...inputStyle, maxWidth: 120 }}
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={settings.backup.retain}
+                  onChange={(e) => {
+                    const parsed = Number(e.target.value);
+                    const retain = Number.isFinite(parsed)
+                      ? Math.min(100, Math.max(1, parsed))
+                      : DEFAULT_APP_SETTINGS.backup.retain;
+                    setSettings((prev) => ({
+                      ...prev,
+                      backup: {
+                        ...prev.backup,
+                        retain,
+                      },
+                    }));
+                  }}
+                />
+              </div>
             </div>
           </>
         )}
