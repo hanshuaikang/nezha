@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import { marked } from "marked";
 
-interface SessionContent {
+export interface SessionContent {
   type: "text" | "tool_use" | "thinking";
   text?: string;
   id?: string;
@@ -12,9 +12,40 @@ interface SessionContent {
   thinking?: string;
 }
 
-interface SessionMessage {
+export interface SessionMessage {
   role: "user" | "assistant";
   content: SessionContent[];
+}
+
+export type SessionRoleFilter = "all" | "user" | "assistant" | "tool";
+
+const SESSION_ROLE_FILTERS: SessionRoleFilter[] = ["all", "user", "assistant", "tool"];
+
+export function contentText(content: SessionContent): string {
+  return [content.text, content.name, content.input, content.thinking].filter(Boolean).join("\n");
+}
+
+export function messageMatchesSearch(message: SessionMessage, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  return message.content.some((part) => contentText(part).toLowerCase().includes(needle));
+}
+
+export function messageMatchesRole(
+  message: SessionMessage,
+  filter: SessionRoleFilter,
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "tool") return message.content.some((part) => part.type === "tool_use");
+  return message.role === filter;
+}
+
+export function countToolCalls(messages: SessionMessage[]): number {
+  return messages.reduce(
+    (count, message) =>
+      count + message.content.filter((part) => part.type === "tool_use").length,
+    0,
+  );
 }
 
 function ToolUseCard({ name, input }: { name: string; input: string }) {
@@ -231,7 +262,19 @@ export function SessionView({ sessionPath }: { sessionPath: string }) {
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<SessionRoleFilter>("all");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const filteredMessages = useMemo(
+    () =>
+      messages.filter(
+        (message) =>
+          messageMatchesSearch(message, search) && messageMatchesRole(message, roleFilter),
+      ),
+    [messages, search, roleFilter],
+  );
+  const toolCallCount = useMemo(() => countToolCalls(filteredMessages), [filteredMessages]);
 
   useEffect(() => {
     setLoading(true);
@@ -271,7 +314,80 @@ export function SessionView({ sessionPath }: { sessionPath: string }) {
           No messages found in session file.
         </div>
       )}
-      {messages.map((msg, i) => (
+      {!loading && !error && messages.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            marginBottom: 18,
+            paddingBottom: 14,
+            borderBottom: "1px solid var(--border-dim)",
+          }}
+        >
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search session"
+            aria-label="Search session"
+            style={{
+              height: 30,
+              minWidth: 180,
+              flex: "1 1 220px",
+              padding: "0 10px",
+              borderRadius: 6,
+              border: "1px solid var(--border-dim)",
+              background: "var(--bg-input)",
+              color: "var(--text-primary)",
+              fontSize: 12.5,
+              outline: "none",
+            }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {SESSION_ROLE_FILTERS.map((filter) => {
+              const selected = roleFilter === filter;
+              return (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setRoleFilter(filter)}
+                  aria-pressed={selected}
+                  style={{
+                    height: 30,
+                    padding: "0 9px",
+                    borderRadius: 6,
+                    border: `1px solid ${selected ? "var(--accent)" : "var(--border-dim)"}`,
+                    background: selected ? "var(--accent-subtle)" : "var(--bg-input)",
+                    color: selected ? "var(--text-primary)" : "var(--text-secondary)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {filter}
+                </button>
+              );
+            })}
+          </div>
+          <div
+            style={{
+              marginLeft: "auto",
+              color: "var(--text-hint)",
+              fontSize: 12,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {filteredMessages.length} messages · {toolCallCount} tool calls
+          </div>
+        </div>
+      )}
+      {!loading && !error && messages.length > 0 && filteredMessages.length === 0 && (
+        <div style={{ color: "var(--text-hint)", fontSize: 13, padding: "12px 0" }}>
+          No messages match the current filters.
+        </div>
+      )}
+      {filteredMessages.map((msg, i) => (
         <MessageBlock key={i} message={msg} />
       ))}
     </div>
