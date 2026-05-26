@@ -308,24 +308,32 @@ export function NewTaskView({
     setPastedImages([]);
   }
 
+  function addImageFiles(files: FileList | File[]) {
+    const images = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    for (const file of images) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        if (!dataUrl) return;
+        setPastedImages((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, dataUrl }]);
+        setIsEmpty(false);
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
   // Handle image paste at this level (PromptEditor delegates image items up)
   function handleEditorPaste(e: React.ClipboardEvent<HTMLDivElement>) {
     const items = Array.from(e.clipboardData.items);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
     if (imageItems.length > 0) {
       e.preventDefault();
-      for (const item of imageItems) {
-        const file = item.getAsFile();
-        if (!file) continue;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const dataUrl = ev.target?.result as string;
-          if (!dataUrl) return;
-          setPastedImages((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, dataUrl }]);
-          setIsEmpty(false);
-        };
-        reader.readAsDataURL(file);
-      }
+      addImageFiles(
+        imageItems.flatMap((item) => {
+          const file = item.getAsFile();
+          return file ? [file] : [];
+        }),
+      );
     }
   }
 
@@ -405,6 +413,7 @@ export function NewTaskView({
           }}
           onSetMentionIndex={setMentionIndex}
           onSubmit={handleSubmit}
+          onAddImages={addImageFiles}
         />
 
         {/* Image previews */}

@@ -1,4 +1,5 @@
 import { useRef, useCallback } from "react";
+import { Plus } from "lucide-react";
 import type { Project } from "../../types";
 import { CODE_EXTS } from "../../utils";
 import type { FileEntry, CrossProjectRef, MentionItem } from "./MentionPopover";
@@ -212,6 +213,7 @@ export function PromptEditor({
   onSelectProject,
   onSetMentionIndex,
   onSubmit,
+  onAddImages,
 }: {
   editorRef: React.RefObject<HTMLDivElement | null>;
   isComposingRef: React.MutableRefObject<boolean>;
@@ -224,7 +226,9 @@ export function PromptEditor({
   onSelectProject: (project: Project) => void;
   onSetMentionIndex: (index: number) => void;
   onSubmit: (immediate: boolean) => void;
+  onAddImages: (files: FileList | File[]) => void;
 }) {
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const selectFile = useCallback(
     (file: FileEntry, crossProject?: CrossProjectRef) => {
       const editor = editorRef.current;
@@ -350,7 +354,12 @@ export function PromptEditor({
     const items = Array.from(e.clipboardData.items);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
     if (imageItems.length > 0) {
-      // Image paste is handled by the parent — we just prevent default
+      e.preventDefault();
+      const files = imageItems.flatMap((item) => {
+        const file = item.getAsFile();
+        return file ? [file] : [];
+      });
+      onAddImages(files);
       return;
     }
     e.preventDefault();
@@ -372,7 +381,27 @@ export function PromptEditor({
   }
 
   return (
-    <div style={{ position: "relative" }}>
+    <div style={s.composeEditorWrap}>
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          onAddImages(e.currentTarget.files ?? []);
+          e.currentTarget.value = "";
+        }}
+      />
+      <button
+        type="button"
+        style={s.composeInlineAddBtn}
+        title="Add images"
+        aria-label="Add images"
+        onClick={() => imageInputRef.current?.click()}
+      >
+        <Plus size={16} strokeWidth={2} />
+      </button>
       {isEmpty && (
         <div
           style={{
@@ -380,7 +409,7 @@ export function PromptEditor({
             top: 0,
             left: 0,
             right: 0,
-            padding: "22px 24px 12px",
+            padding: "18px 52px 18px 20px",
             color: "var(--text-hint)",
             fontSize: 14,
             lineHeight: 1.65,
@@ -389,7 +418,7 @@ export function PromptEditor({
             fontFamily: "var(--font-ui)",
           }}
         >
-          Describe your task… type @ to mention a file
+          Describe the task, constraints, and files to consider. Type @ to mention a file.
         </div>
       )}
       <div
@@ -410,7 +439,7 @@ export function PromptEditor({
         style={
           {
             ...s.composeTextarea,
-            height: 120,
+            height: 150,
             overflowY: "auto",
             wordBreak: "break-word",
             whiteSpace: "pre-wrap",
