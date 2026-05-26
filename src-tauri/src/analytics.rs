@@ -55,6 +55,31 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
         }
 
         let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if msg_type == "event_msg" {
+            if let Some(usage) = val
+                .get("payload")
+                .filter(|payload| {
+                    payload.get("type").and_then(|v| v.as_str()) == Some("token_count")
+                })
+                .and_then(|payload| payload.get("info"))
+                .and_then(|info| info.get("last_token_usage"))
+            {
+                input_tokens += usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                output_tokens += usage
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                cache_tokens += usage
+                    .get("cached_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+            }
+            continue;
+        }
+
         if msg_type != "assistant" {
             continue;
         }
@@ -450,6 +475,41 @@ mod tests {
         assert_eq!(metrics.output_tokens, 26);
         assert_eq!(metrics.cache_tokens, 41);
         assert_eq!(metrics.tool_calls, 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_codex_token_count_events() {
+        let path =
+            std::env::temp_dir().join(format!("nezha-analytics-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut file = std::fs::File::create(&path).expect("create temp session");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-05-26T10:00:00Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": 100,
+                            "cached_input_tokens": 40,
+                            "output_tokens": 25,
+                            "total_tokens": 125
+                        }
+                    }
+                }
+            })
+        )
+        .expect("write token count line");
+
+        let metrics = parse_session_metrics_from_path(&path);
+
+        assert_eq!(metrics.input_tokens, 100);
+        assert_eq!(metrics.output_tokens, 25);
+        assert_eq!(metrics.cache_tokens, 40);
 
         let _ = std::fs::remove_file(path);
     }
