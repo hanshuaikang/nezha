@@ -9,6 +9,7 @@ use std::time::SystemTime;
 pub(crate) struct SessionMetrics {
     pub(crate) input_tokens: u64,
     pub(crate) output_tokens: u64,
+    pub(crate) cache_tokens: u64,
     pub(crate) tool_calls: u64,
     pub(crate) duration_secs: f64,
 }
@@ -20,11 +21,20 @@ static METRICS_CACHE: Lazy<Mutex<HashMap<String, (SystemTime, SessionMetrics)>>>
 pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> SessionMetrics {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
-        Err(_) => return SessionMetrics { input_tokens: 0, output_tokens: 0, tool_calls: 0, duration_secs: 0.0 },
+        Err(_) => {
+            return SessionMetrics {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_tokens: 0,
+                tool_calls: 0,
+                duration_secs: 0.0,
+            }
+        }
     };
 
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
+    let mut cache_tokens: u64 = 0;
     let mut tool_calls: u64 = 0;
     let mut first_ts: Option<f64> = None;
     let mut last_ts: Option<f64> = None;
@@ -36,8 +46,7 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
 
         if let Some(ts_str) = val.get("timestamp").and_then(|v| v.as_str()) {
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts_str) {
-                let ts =
-                    dt.timestamp() as f64 + dt.timestamp_subsec_millis() as f64 / 1000.0;
+                let ts = dt.timestamp() as f64 + dt.timestamp_subsec_millis() as f64 / 1000.0;
                 if first_ts.is_none() {
                     first_ts = Some(ts);
                 }
@@ -52,14 +61,33 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
 
         if let Some(message) = val.get("message") {
             if let Some(usage) = message.get("usage") {
-                input_tokens +=
-                    usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                output_tokens +=
-                    usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                input_tokens += usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                output_tokens += usage
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                cache_tokens += usage
+                    .get("cache_creation_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                cache_tokens += usage
+                    .get("cache_read_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                cache_tokens += usage
+                    .get("cached_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                cache_tokens += usage
+                    .get("input_tokens_details")
+                    .and_then(|v| v.get("cached_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
             }
-            if let Some(content_arr) =
-                message.get("content").and_then(|v| v.as_array())
-            {
+            if let Some(content_arr) = message.get("content").and_then(|v| v.as_array()) {
                 for item in content_arr {
                     if item.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
                         tool_calls += 1;
@@ -74,7 +102,13 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
         _ => 0.0,
     };
 
-    SessionMetrics { input_tokens, output_tokens, tool_calls, duration_secs }
+    SessionMetrics {
+        input_tokens,
+        output_tokens,
+        cache_tokens,
+        tool_calls,
+        duration_secs,
+    }
 }
 
 /// 带缓存的 session 指标解析
@@ -151,6 +185,7 @@ pub struct WeeklyAnalytics {
     pub failed_tasks: u32,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub total_cache_tokens: u64,
     pub total_tool_calls: u64,
     pub total_duration_secs: f64,
     pub claude_tasks: u32,
@@ -160,7 +195,7 @@ pub struct WeeklyAnalytics {
 
 #[tauri::command]
 pub async fn get_weekly_analytics() -> Result<WeeklyAnalytics, String> {
-    use chrono::{Local, Duration};
+    use chrono::{Duration, Local};
 
     let today = Local::now().date_naive();
     // Build a list of the last 7 dates (oldest first)
@@ -176,7 +211,17 @@ pub async fn get_weekly_analytics() -> Result<WeeklyAnalytics, String> {
 
     let mut daily_map: HashMap<String, DayStats> = dates
         .iter()
-        .map(|d| (d.clone(), DayStats { date: d.clone(), task_count: 0, done_count: 0, token_count: 0 }))
+        .map(|d| {
+            (
+                d.clone(),
+                DayStats {
+                    date: d.clone(),
+                    task_count: 0,
+                    done_count: 0,
+                    token_count: 0,
+                },
+            )
+        })
         .collect();
 
     let mut project_map: HashMap<String, ProjectAnalytics> = HashMap::new();
@@ -185,6 +230,7 @@ pub async fn get_weekly_analytics() -> Result<WeeklyAnalytics, String> {
     let mut failed_tasks: u32 = 0;
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
+    let mut total_cache_tokens: u64 = 0;
     let mut total_tool_calls: u64 = 0;
     let mut total_duration_secs: f64 = 0.0;
     let mut claude_tasks: u32 = 0;
@@ -204,59 +250,81 @@ pub async fn get_weekly_analytics() -> Result<WeeklyAnalytics, String> {
                 .unwrap_or_default();
 
             total_tasks += 1;
-            if task.status == "done" { done_tasks += 1; }
-            if task.status == "failed" { failed_tasks += 1; }
-            if task.agent == "claude" { claude_tasks += 1; } else { codex_tasks += 1; }
+            if task.status == "done" {
+                done_tasks += 1;
+            }
+            if task.status == "failed" {
+                failed_tasks += 1;
+            }
+            if task.agent == "claude" {
+                claude_tasks += 1;
+            } else {
+                codex_tasks += 1;
+            }
 
             // Read session metrics if available
-            let session_path = task.claude_session_path.as_deref()
+            let session_path = task
+                .claude_session_path
+                .as_deref()
                 .or(task.codex_session_path.as_deref());
 
-            let (tok_in, tok_out, tc, dur) = if let Some(sp) = session_path {
+            let (tok_in, tok_out, tok_cache, tc, dur) = if let Some(sp) = session_path {
                 let p = std::path::Path::new(sp);
                 if p.exists() {
                     let m = parse_session_metrics_cached(p);
-                    (m.input_tokens, m.output_tokens, m.tool_calls, m.duration_secs)
+                    (
+                        m.input_tokens,
+                        m.output_tokens,
+                        m.cache_tokens,
+                        m.tool_calls,
+                        m.duration_secs,
+                    )
                 } else {
-                    (0, 0, 0, 0.0)
+                    (0, 0, 0, 0, 0.0)
                 }
             } else {
-                (0, 0, 0, 0.0)
+                (0, 0, 0, 0, 0.0)
             };
 
             total_input_tokens += tok_in;
             total_output_tokens += tok_out;
+            total_cache_tokens += tok_cache;
             total_tool_calls += tc;
             total_duration_secs += dur;
 
-            let token_count = tok_in + tok_out;
+            let token_count = tok_in + tok_out + tok_cache;
 
             // Update daily bucket
             if let Some(day) = daily_map.get_mut(&task_date) {
                 day.task_count += 1;
-                if task.status == "done" { day.done_count += 1; }
+                if task.status == "done" {
+                    day.done_count += 1;
+                }
                 day.token_count += token_count;
             }
 
             // Update project bucket
-            let proj_entry = project_map.entry(project.id.clone()).or_insert_with(|| ProjectAnalytics {
-                project_id: project.id.clone(),
-                project_name: project.name.clone(),
-                task_count: 0,
-                done_count: 0,
-                token_count: 0,
-                tool_calls: 0,
-            });
+            let proj_entry =
+                project_map
+                    .entry(project.id.clone())
+                    .or_insert_with(|| ProjectAnalytics {
+                        project_id: project.id.clone(),
+                        project_name: project.name.clone(),
+                        task_count: 0,
+                        done_count: 0,
+                        token_count: 0,
+                        tool_calls: 0,
+                    });
             proj_entry.task_count += 1;
-            if task.status == "done" { proj_entry.done_count += 1; }
+            if task.status == "done" {
+                proj_entry.done_count += 1;
+            }
             proj_entry.token_count += token_count;
             proj_entry.tool_calls += tc;
         }
     }
 
-    let mut daily: Vec<DayStats> = dates.iter()
-        .filter_map(|d| daily_map.remove(d))
-        .collect();
+    let mut daily: Vec<DayStats> = dates.iter().filter_map(|d| daily_map.remove(d)).collect();
     daily.sort_by(|a, b| a.date.cmp(&b.date));
 
     let mut project_list: Vec<ProjectAnalytics> = project_map.into_values().collect();
@@ -269,10 +337,68 @@ pub async fn get_weekly_analytics() -> Result<WeeklyAnalytics, String> {
         failed_tasks,
         total_input_tokens,
         total_output_tokens,
+        total_cache_tokens,
         total_tool_calls,
         total_duration_secs,
         claude_tasks,
         codex_tasks,
         projects: project_list,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn parses_input_output_and_cache_tokens() {
+        let path =
+            std::env::temp_dir().join(format!("nezha-analytics-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut file = std::fs::File::create(&path).expect("create temp session");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-05-26T10:00:00Z",
+                "message": {
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "cache_creation_input_tokens": 7,
+                        "cache_read_input_tokens": 30
+                    },
+                    "content": [{ "type": "tool_use" }]
+                }
+            })
+        )
+        .expect("write first line");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-05-26T10:00:02Z",
+                "message": {
+                    "usage": {
+                        "input_tokens": 5,
+                        "output_tokens": 6,
+                        "cached_input_tokens": 4
+                    },
+                    "content": []
+                }
+            })
+        )
+        .expect("write second line");
+
+        let metrics = parse_session_metrics_from_path(&path);
+
+        assert_eq!(metrics.input_tokens, 105);
+        assert_eq!(metrics.output_tokens, 26);
+        assert_eq!(metrics.cache_tokens, 41);
+        assert_eq!(metrics.tool_calls, 1);
+
+        let _ = std::fs::remove_file(path);
+    }
 }

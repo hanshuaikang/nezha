@@ -140,10 +140,8 @@ export function insertLineBreakAtSelection(editor: HTMLDivElement): boolean {
   if (!editor.contains(range.commonAncestorContainer)) return false;
 
   range.deleteContents();
-  const br = document.createElement("br");
-  const marker = document.createTextNode("\u200B");
+  const marker = document.createTextNode("\n");
   range.insertNode(marker);
-  range.insertNode(br);
 
   const nextRange = document.createRange();
   nextRange.setStart(marker, 1);

@@ -19,8 +19,12 @@ describe("PromptEditor", () => {
     selection?.addRange(range);
 
     insertLineBreakAtSelection(editor);
+    expect(editor.textContent).toContain("\n");
+
+    const selectionAfterBreak = window.getSelection();
+    const rangeAfterBreak = selectionAfterBreak?.getRangeAt(0);
     const tail = document.createTextNode("second");
-    editor.appendChild(tail);
+    rangeAfterBreak?.insertNode(tail);
 
     expect(serializeEditorForTest(editor)).toBe("first\nsecond");
 

@@ -28,7 +28,12 @@ export const common = {
     width: 26,
   },
   analyticsDivider: { height: 1, background: "var(--border-dim)", margin: "24px 0" },
-  statGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 },
+  statGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(112px, 1fr))",
+    gap: 12,
+    marginBottom: 24,
+  },
   statCard: {
     background: "var(--bg-card)",
     border: "1px solid var(--border-dim)",
