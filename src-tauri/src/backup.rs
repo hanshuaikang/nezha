@@ -192,7 +192,8 @@ fn cleanup_old_backups(
         .collect::<Vec<_>>();
 
     entries.sort_by(|a, b| b.0.cmp(&a.0));
-    for (_, path) in entries.into_iter().skip(retain as usize) {
+    let retained_old_count = retain.saturating_sub(1) as usize;
+    for (_, path) in entries.into_iter().skip(retained_old_count) {
         fs::remove_dir_all(path).map_err(|e| e.to_string())?;
     }
 
