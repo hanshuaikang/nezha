@@ -42,6 +42,8 @@ pub struct BackupStatus {
 
 #[derive(Serialize)]
 struct BackupManifest<'a> {
+    kind: &'static str,
+    version: u32,
     result: &'a BackupResult,
     projects: &'a [Project],
 }
@@ -157,7 +159,17 @@ fn add_copy_source(
 }
 
 fn is_nezha_backup_dir(path: &Path) -> bool {
-    path.join("manifest.json").is_file()
+    let manifest_path = path.join("manifest.json");
+    let Ok(raw) = fs::read_to_string(manifest_path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    value
+        .get("kind")
+        .and_then(|kind| kind.as_str())
+        .is_some_and(|kind| kind == "nezha.metadata_backup")
 }
 
 fn cleanup_old_backups(
@@ -295,6 +307,8 @@ fn run_backup_blocking(projects: Vec<Project>) -> Result<BackupResult, String> {
     };
 
     let manifest = BackupManifest {
+        kind: "nezha.metadata_backup",
+        version: 1,
         result: &result,
         projects: &projects,
     };
@@ -308,6 +322,8 @@ fn run_backup_blocking(projects: Vec<Project>) -> Result<BackupResult, String> {
         });
         result.status = status_from_result(result.copied_count, &result.warnings);
         let manifest = BackupManifest {
+            kind: "nezha.metadata_backup",
+            version: 1,
             result: &result,
             projects: &projects,
         };
@@ -413,5 +429,27 @@ mod tests {
     #[test]
     fn timestamped_dir_without_manifest_is_not_a_nezha_backup() {
         assert!(!is_nezha_backup_dir(Path::new("/path/that/does/not/exist/20260526-120102")));
+    }
+
+    #[test]
+    fn timestamped_dir_requires_nezha_manifest_kind() {
+        let root = std::env::temp_dir().join(format!(
+            "nezha-backup-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp backup dir");
+
+        fs::write(root.join("manifest.json"), r#"{"kind":"other"}"#).expect("write manifest");
+        assert!(!is_nezha_backup_dir(&root));
+
+        fs::write(
+            root.join("manifest.json"),
+            r#"{"kind":"nezha.metadata_backup","version":1}"#,
+        )
+        .expect("write manifest");
+        assert!(is_nezha_backup_dir(&root));
+
+        let _ = fs::remove_dir_all(root);
     }
 }
