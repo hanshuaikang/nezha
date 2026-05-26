@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
-import type { ThemeMode } from "../types";
+import type { Project, ThemeMode } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
@@ -13,12 +13,14 @@ export function SidebarFooterActions({
   systemPrefersDark,
   onThemeModeChange,
   onToggleTheme,
+  projects,
 }: {
   isDark: boolean;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
   onToggleTheme: () => void;
+  projects: Project[];
 }) {
   const [showAppSettings, setShowAppSettings] = useState(false);
 
@@ -53,6 +55,7 @@ export function SidebarFooterActions({
           themeMode={themeMode}
           systemPrefersDark={systemPrefersDark}
           onThemeModeChange={onThemeModeChange}
+          projects={projects}
           onClose={() => setShowAppSettings(false)}
         />
       )}

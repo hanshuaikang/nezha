@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -11,6 +11,8 @@ import type {
   AgentType,
   PermissionMode,
   ThemeMode,
+  AppSettings,
+  BackupStatus,
 } from "./types";
 import { isActiveTaskStatus } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
@@ -75,6 +77,8 @@ function App() {
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const startupBackupProjectKeyRef = useRef<string | null>(null);
 
   const tm = useTerminalManager();
 
@@ -148,8 +152,51 @@ function App() {
       setTasks(chunks.flat());
     }
 
-    init().catch(console.error);
+    init()
+      .catch(console.error)
+      .finally(() => setProjectsLoaded(true));
   }, []);
+
+  useEffect(() => {
+    if (!projectsLoaded) {
+      return;
+    }
+
+    if (startupBackupProjectKeyRef.current !== null) {
+      return;
+    }
+
+    const projectKey = projects.map((project) => project.id).join("|");
+    startupBackupProjectKeyRef.current = projectKey;
+
+    async function maybeRunStartupBackup() {
+      try {
+        const settings = await invoke<AppSettings>("load_app_settings");
+        if (!settings.backup?.enabled) {
+          return;
+        }
+
+        const status = await invoke<BackupStatus>("get_backup_status");
+        const lastResult = status.lastResult ?? null;
+        const lastCreatedAt = lastResult ? Date.parse(lastResult.createdAt) : Number.NaN;
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        const isSuccessfulEnough =
+          lastResult?.status === "success" || lastResult?.status === "partial";
+        const isFresh =
+          Number.isFinite(lastCreatedAt) && Date.now() - lastCreatedAt < oneDayMs;
+
+        if (isSuccessfulEnough && isFresh) {
+          return;
+        }
+
+        await invoke("run_backup_now", { projects });
+      } catch (e) {
+        console.error("Startup metadata backup failed", e);
+      }
+    }
+
+    maybeRunStartupBackup();
+  }, [projects, projectsLoaded]);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
   useEffect(() => {

@@ -211,6 +211,7 @@ export function ProjectPage({
       />
       <TaskPanel
         project={project}
+        projects={allProjects}
         tasks={projectTasks}
         selectedId={selectedTaskId}
         isNewTask={isNewTask}

@@ -136,6 +136,7 @@ export function WelcomePage({
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={onThemeModeChange}
               onToggleTheme={onToggleTheme}
+              projects={projects}
             />
           </div>
         </div>

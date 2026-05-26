@@ -9,6 +9,7 @@ import s from "../styles";
 
 export function TaskPanel({
   project,
+  projects,
   tasks,
   selectedId,
   isNewTask,
@@ -29,6 +30,7 @@ export function TaskPanel({
   onToggleCollapsed,
 }: {
   project: Project;
+  projects: Project[];
   tasks: Task[];
   selectedId: string | null;
   isNewTask: boolean;
@@ -160,6 +162,7 @@ export function TaskPanel({
           systemPrefersDark={systemPrefersDark}
           onThemeModeChange={onThemeModeChange}
           onToggleTheme={onToggleTheme}
+          projects={projects}
         />
       </div>
     </div>

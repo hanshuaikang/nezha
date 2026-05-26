@@ -7,6 +7,7 @@ use usage::CodexRpcClient;
 
 mod analytics;
 mod app_settings;
+mod backup;
 mod config;
 mod fs;
 mod git;
@@ -118,6 +119,8 @@ pub fn run() {
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,
+            backup::run_backup_now,
+            backup::get_backup_status,
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,

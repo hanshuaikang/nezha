@@ -89,6 +89,24 @@ export interface BackupSettings {
   retain: number;
 }
 
+export interface BackupWarning {
+  source: string;
+  message: string;
+}
+
+export interface BackupResult {
+  status: "success" | "partial" | "failed";
+  destination: string;
+  manifestPath: string;
+  warnings: BackupWarning[];
+  copiedCount: number;
+  createdAt: string;
+}
+
+export interface BackupStatus {
+  lastResult?: BackupResult | null;
+}
+
 export interface AppSettings {
   claude_path: string;
   codex_path: string;

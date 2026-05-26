@@ -9,8 +9,9 @@ import {
   ExternalLink,
   Star,
   Monitor,
+  Archive,
 } from "lucide-react";
-import type { AppSettings, ThemeMode } from "../types";
+import type { AppSettings, BackupResult, BackupStatus, Project, ThemeMode } from "../types";
 import { APP_PLATFORM } from "../platform";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -564,9 +565,11 @@ function ThemePanel({ themeMode, systemPrefersDark, onThemeModeChange }: ThemePa
 
 // ── General Panel ─────────────────────────────────────────────────────────────
 
-function GeneralPanel() {
+function GeneralPanel({ projects }: { projects: Project[] }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [original, setOriginal] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus>({});
+  const [backupRunning, setBackupRunning] = useState(false);
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",
     codex_version: "",
@@ -592,6 +595,15 @@ function GeneralPanel() {
     }
   }
 
+  async function loadBackupStatus() {
+    try {
+      const status = await invoke<BackupStatus>("get_backup_status");
+      setBackupStatus(status);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   useEffect(() => {
     invoke<AppSettings>("load_app_settings")
       .then(async (loadedSettings) => {
@@ -602,7 +614,21 @@ function GeneralPanel() {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+    loadBackupStatus();
   }, []);
+
+  async function handleBackupNow() {
+    setBackupRunning(true);
+    setError(null);
+    try {
+      const result = await invoke<BackupResult>("run_backup_now", { projects });
+      setBackupStatus({ lastResult: result });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBackupRunning(false);
+    }
+  }
 
   async function handleDetect() {
     setDetectingPaths(true);
@@ -708,6 +734,16 @@ function GeneralPanel() {
     color: "var(--text-hint)",
     marginTop: 3,
   };
+
+  const lastBackup = backupStatus.lastResult ?? null;
+  const backupStatusLabel =
+    lastBackup?.status === "success"
+      ? "Success"
+      : lastBackup?.status === "partial"
+        ? "Partial"
+        : lastBackup?.status === "failed"
+          ? "Failed"
+          : "No backup yet";
 
   return (
     <>
@@ -943,6 +979,68 @@ function GeneralPanel() {
                     }));
                   }}
                 />
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  paddingTop: 2,
+                }}
+              >
+                <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+                    Last backup: {backupStatusLabel}
+                  </span>
+                  {lastBackup ? (
+                    <>
+                      <span style={hintStyle}>
+                        {new Date(lastBackup.createdAt).toLocaleString()} ·{" "}
+                        {lastBackup.copiedCount} files copied
+                        {lastBackup.warnings.length > 0
+                          ? ` · ${lastBackup.warnings.length} warning${
+                              lastBackup.warnings.length === 1 ? "" : "s"
+                            }`
+                          : ""}
+                      </span>
+                      <span
+                        style={{
+                          ...hintStyle,
+                          fontFamily: "var(--font-mono)",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {lastBackup.manifestPath}
+                      </span>
+                    </>
+                  ) : (
+                    <span style={hintStyle}>Manual and automatic runs save a manifest here.</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleBackupNow}
+                  disabled={backupRunning}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 11px",
+                    background: "var(--primary-action-bg)",
+                    border: "1px solid var(--primary-action-bg)",
+                    borderRadius: 7,
+                    fontSize: 12,
+                    color: "var(--primary-action-fg)",
+                    cursor: backupRunning ? "default" : "pointer",
+                    opacity: backupRunning ? 0.65 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Archive size={13} />
+                  {backupRunning ? "Backing up..." : "Back Up Now"}
+                </button>
               </div>
             </div>
           </>
@@ -1363,12 +1461,14 @@ export function AppSettingsDialog({
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
+  projects,
 }: {
   onClose: () => void;
   isDark: boolean;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
+  projects: Project[];
 }) {
   const [activeNav, setActiveNav] = useState<NavKey>("general");
 
@@ -1443,7 +1543,7 @@ export function AppSettingsDialog({
           </div>
 
           {activeNav === "general" ? (
-            <GeneralPanel key="general" />
+            <GeneralPanel key="general" projects={projects} />
           ) : activeNav === "theme" ? (
             <ThemePanel
               key="theme"
