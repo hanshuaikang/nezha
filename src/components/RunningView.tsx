@@ -9,7 +9,8 @@ import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import s from "../styles";
-import { X, RotateCcw, Pencil } from "lucide-react";
+import { X, RotateCcw, Pencil, Send } from "lucide-react";
+import { formatCodexComposerSubmit } from "../utils/codexComposer";
 
 interface SessionMetrics {
   duration_secs: number;
@@ -75,7 +76,18 @@ export function RunningView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [hoverHeader, setHoverHeader] = useState(false);
+  const [composerValue, setComposerValue] = useState("");
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  const showCodexComposer = isActive && task.agent === "codex";
+
+  function submitComposer() {
+    if (!composerValue.trim()) return;
+    onInput(formatCodexComposerSubmit(composerValue));
+    setComposerValue("");
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }
 
   useEffect(() => {
     if (!sessionPath) {
@@ -287,7 +299,7 @@ export function RunningView({
 
       {/* Main content: terminal when active, session view when done/failed. */}
       {isActive || !sessionPath ? (
-        <div style={s.terminalContainer}>
+        <div style={{ ...s.terminalContainer, paddingBottom: showCodexComposer ? 10 : 16 }}>
           <TerminalView
             key={`${task.id}-${runCount}`}
             onInput={onInput}
@@ -303,6 +315,39 @@ export function RunningView({
         </div>
       ) : (
         <SessionView sessionPath={sessionPath} />
+      )}
+
+      {showCodexComposer && (
+        <div style={s.codexComposerWrap}>
+          <div style={s.codexComposerBox}>
+            <textarea
+              ref={composerRef}
+              value={composerValue}
+              onChange={(e) => setComposerValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  submitComposer();
+                }
+              }}
+              placeholder="Type a Codex reply"
+              rows={2}
+              style={s.codexComposerInput}
+            />
+            <button
+              type="button"
+              title="Send to Codex"
+              onClick={submitComposer}
+              disabled={!composerValue.trim()}
+              style={{
+                ...s.codexComposerSend,
+                ...(!composerValue.trim() ? s.codexComposerSendDisabled : null),
+              }}
+            >
+              <Send size={13} strokeWidth={2.4} />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Status bar when task is done and no session path (terminal fallback) */}
