@@ -318,8 +318,8 @@ export function RunningView({
       )}
 
       {showCodexComposer && (
-        <div style={s.codexComposerWrap}>
-          <div style={s.codexComposerBox}>
+        <div style={s.composerWrap}>
+          <div style={s.composerBox}>
             <textarea
               ref={composerRef}
               value={composerValue}
@@ -332,7 +332,7 @@ export function RunningView({
               }}
               placeholder="Type a Codex reply"
               rows={2}
-              style={s.codexComposerInput}
+              style={s.composerInput}
             />
             <button
               type="button"
@@ -340,8 +340,8 @@ export function RunningView({
               onClick={submitComposer}
               disabled={!composerValue.trim()}
               style={{
-                ...s.codexComposerSend,
-                ...(!composerValue.trim() ? s.codexComposerSendDisabled : null),
+                ...s.composerSend,
+                ...(!composerValue.trim() ? s.composerSendDisabled : null),
               }}
             >
               <Send size={13} strokeWidth={2.4} />

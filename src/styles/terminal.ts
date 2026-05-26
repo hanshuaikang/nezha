@@ -35,13 +35,13 @@ export const terminal = {
     flexShrink: 0,
   },
   terminalContainer: { flex: 1, overflow: "hidden" as const, padding: "14px 16px 16px" },
-  codexComposerWrap: {
+  composerWrap: {
     flexShrink: 0,
     padding: "10px 16px 14px",
     borderTop: "1px solid var(--border-dim)",
     background: "var(--bg-panel)",
   },
-  codexComposerBox: {
+  composerBox: {
     display: "flex",
     alignItems: "flex-end",
     gap: 10,
@@ -50,7 +50,7 @@ export const terminal = {
     borderRadius: 8,
     background: "var(--bg-input)",
   },
-  codexComposerInput: {
+  composerInput: {
     flex: 1,
     minHeight: 38,
     maxHeight: 130,
@@ -63,7 +63,7 @@ export const terminal = {
     fontSize: 13,
     lineHeight: 1.45,
   },
-  codexComposerSend: {
+  composerSend: {
     flexShrink: 0,
     height: 32,
     padding: "0 13px",
@@ -75,7 +75,7 @@ export const terminal = {
     fontWeight: 650,
     cursor: "pointer",
   },
-  codexComposerSendDisabled: {
+  composerSendDisabled: {
     opacity: 0.45,
     cursor: "default",
   },
