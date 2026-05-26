@@ -56,6 +56,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
 
 function normalizeAppSettings(settings: Partial<AppSettings>): AppSettings {
   const retain = settings.backup?.retain ?? DEFAULT_APP_SETTINGS.backup.retain;
+  const normalizedRetain = Number.isFinite(retain)
+    ? Math.min(100, Math.max(1, Math.trunc(retain)))
+    : DEFAULT_APP_SETTINGS.backup.retain;
 
   return {
     claude_path: settings.claude_path ?? DEFAULT_APP_SETTINGS.claude_path,
@@ -67,7 +70,7 @@ function normalizeAppSettings(settings: Partial<AppSettings>): AppSettings {
     backup: {
       ...DEFAULT_APP_SETTINGS.backup,
       ...settings.backup,
-      retain: Math.min(100, Math.max(1, retain)),
+      retain: normalizedRetain,
     },
   };
 }
@@ -929,7 +932,7 @@ function GeneralPanel() {
                   onChange={(e) => {
                     const parsed = Number(e.target.value);
                     const retain = Number.isFinite(parsed)
-                      ? Math.min(100, Math.max(1, parsed))
+                      ? Math.min(100, Math.max(1, Math.trunc(parsed)))
                       : DEFAULT_APP_SETTINGS.backup.retain;
                     setSettings((prev) => ({
                       ...prev,

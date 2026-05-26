@@ -71,6 +71,17 @@ fn default_backup_retain() -> u32 {
     10
 }
 
+fn normalize_backup_settings(backup: BackupSettings) -> BackupSettings {
+    BackupSettings {
+        retain: if backup.retain == 0 {
+            default_backup_retain()
+        } else {
+            backup.retain.min(100)
+        },
+        ..backup
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default)]
@@ -331,7 +342,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         notifications: settings.notifications,
-        backup: settings.backup,
+        backup: normalize_backup_settings(settings.backup),
     }
 }
 
@@ -522,5 +533,26 @@ mod tests {
                 retain: 10,
             }
         );
+    }
+
+    #[test]
+    fn normalize_settings_clamps_backup_retain() {
+        let zero = normalize_settings(AppSettings {
+            backup: BackupSettings {
+                retain: 0,
+                ..BackupSettings::default()
+            },
+            ..AppSettings::default()
+        });
+        let too_high = normalize_settings(AppSettings {
+            backup: BackupSettings {
+                retain: 101,
+                ..BackupSettings::default()
+            },
+            ..AppSettings::default()
+        });
+
+        assert_eq!(zero.backup.retain, default_backup_retain());
+        assert_eq!(too_high.backup.retain, 100);
     }
 }
