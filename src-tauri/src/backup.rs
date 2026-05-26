@@ -87,10 +87,6 @@ fn should_skip_path(path: &Path, excluded_roots: &[PathBuf]) -> bool {
         .any(|excluded| normalized == excluded || normalized.starts_with(excluded))
 }
 
-pub fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<usize, String> {
-    copy_dir_recursive_excluding(source, destination, &[])
-}
-
 fn copy_dir_recursive_excluding(
     source: &Path,
     destination: &Path,
@@ -213,7 +209,7 @@ fn cleanup_old_backups(
 }
 
 fn is_timestamped_backup_name(name: &str) -> bool {
-    name.len() == 16
+    name.len() == 15
         && name.as_bytes()[8] == b'-'
         && name
             .bytes()

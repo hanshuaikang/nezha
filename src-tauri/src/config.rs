@@ -180,14 +180,14 @@ impl<'de> serde::Deserialize<'de> for ProjectConfig {
         } else {
             default_permission_mode()
         };
-        let permissions = raw.permissions.map_or_else(
-            || PermissionConfig {
+        let permissions = match raw.permissions {
+            Some(permissions) => permissions.into_config(legacy_default_mode.clone()),
+            None => PermissionConfig {
                 default_mode: legacy_default_mode.clone(),
                 max_mode: max_permission_mode_at_least(&legacy_default_mode),
                 ..PermissionConfig::default()
             },
-            |permissions| permissions.into_config(legacy_default_mode),
-        );
+        };
 
         Ok(ProjectConfig {
             agent: raw.agent,
@@ -277,6 +277,7 @@ fn max_permission_mode_at_least(mode: &str) -> String {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn effective_default_permission_mode(config: &ProjectConfig) -> String {
     if config.permissions_default_mode_configured
         && permission_rank(&config.permissions.default_mode).is_some()
