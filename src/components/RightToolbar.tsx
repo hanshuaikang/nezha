@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { IconButton } from "./IconButton";
-import { Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
+import { BarChart3, Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
+import type { RightPanel } from "../hooks/useProjectPanels";
 
 export function RightToolbar({
   activePanel,
@@ -9,20 +10,21 @@ export function RightToolbar({
   onToggleTerminal,
   onOpenSettings,
 }: {
-  activePanel: "files" | "git-changes" | "git-history" | null;
-  onToggle: (panel: "files" | "git-changes" | "git-history") => void;
+  activePanel: RightPanel;
+  onToggle: (panel: NonNullable<RightPanel>) => void;
   terminalActive: boolean;
   onToggleTerminal: () => void;
   onOpenSettings: () => void;
 }) {
   const buttons: Array<{
-    key: "files" | "git-changes" | "git-history";
+    key: NonNullable<RightPanel>;
     icon: ReactNode;
     title: string;
   }> = [
     { key: "files", icon: <Folder size={17} />, title: "File Explorer" },
     { key: "git-changes", icon: <GitBranch size={17} />, title: "Git Changes" },
     { key: "git-history", icon: <History size={17} />, title: "Git History" },
+    { key: "analytics", icon: <BarChart3 size={17} />, title: "Usage Analytics" },
   ];
 
   const placeholders = [{ icon: <Search size={17} />, title: "Search (coming soon)" }];

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 
-type RightPanel = "files" | "git-changes" | "git-history" | null;
+type RightPanel = "files" | "git-changes" | "git-history" | "analytics" | null;
 type OpenFileTab = { path: string; name: string };
 
 type OpenDiff =
@@ -25,7 +25,7 @@ export function useProjectPanels() {
   const terminalHeightRef = useRef(terminalHeight);
   terminalHeightRef.current = terminalHeight;
 
-  const handleTogglePanel = useCallback((panel: "files" | "git-changes" | "git-history") => {
+  const handleTogglePanel = useCallback((panel: NonNullable<RightPanel>) => {
     setRightPanel((prev) => (prev === panel ? null : panel));
   }, []);
 

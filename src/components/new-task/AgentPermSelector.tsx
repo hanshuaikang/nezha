@@ -115,17 +115,6 @@ export function AgentPermSelector({
               sideOffset={8}
               style={s.toolbarActionMenuContent}
             >
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  void handleImageFiles(e.currentTarget.files);
-                  e.currentTarget.value = "";
-                }}
-              />
               <button
                 style={{ ...s.toolbarMenuItem, width: "100%", border: "none", background: "none" }}
                 onClick={() => imageInputRef.current?.click()}
@@ -203,6 +192,27 @@ export function AgentPermSelector({
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
+
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            void handleImageFiles(e.currentTarget.files);
+            e.currentTarget.value = "";
+          }}
+        />
+        <button
+          type="button"
+          style={s.toolbarIconBtn}
+          title="Add images"
+          aria-label="Add images"
+          onClick={() => imageInputRef.current?.click()}
+        >
+          <ImageIcon size={15} strokeWidth={2} color="var(--text-muted)" />
+        </button>
 
         <Select.Root value={agent} onValueChange={(v) => onSetAgent(v as AgentType)}>
           <Select.Trigger style={s.toolbarBtn} aria-label="Agent">

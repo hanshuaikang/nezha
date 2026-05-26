@@ -129,6 +129,30 @@ function serializeEditor(editor: HTMLDivElement): string {
     .trim();
 }
 
+export function serializeEditorForTest(editor: HTMLDivElement): string {
+  return serializeEditor(editor);
+}
+
+export function insertLineBreakAtSelection(editor: HTMLDivElement): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return false;
+
+  range.deleteContents();
+  const br = document.createElement("br");
+  const marker = document.createTextNode("\u200B");
+  range.insertNode(marker);
+  range.insertNode(br);
+
+  const nextRange = document.createRange();
+  nextRange.setStart(marker, 1);
+  nextRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(nextRange);
+  return true;
+}
+
 export interface PromptEditorHandle {
   serialize: () => string;
   clear: () => void;
@@ -313,6 +337,14 @@ export function PromptEditor({
     if (e.metaKey && e.key === "Enter") {
       e.preventDefault();
       onSubmit(true);
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+      e.preventDefault();
+      if (editorRef.current && insertLineBreakAtSelection(editorRef.current)) {
+        onSetIsEmpty(false);
+        onUpdateMention();
+      }
     }
   }
 

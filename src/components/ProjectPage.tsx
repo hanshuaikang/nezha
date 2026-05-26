@@ -20,6 +20,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { RightToolbar } from "./RightToolbar";
 import { TodoTaskView } from "./TodoTaskView";
 import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTerminalPanel";
+import { AnalyticsDashboard } from "./AnalyticsDashboard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useProjectPanels } from "../hooks/useProjectPanels";
 import s from "../styles";
@@ -414,6 +415,13 @@ export function ProjectPage({
                 onFileClick={handleCommitFileClick}
                 width={rightPanelWidth}
               />
+            </ErrorBoundary>
+          )}
+          {rightPanel === "analytics" && (
+            <ErrorBoundary label="用量统计">
+              <div style={{ width: rightPanelWidth, minWidth: rightPanelWidth, display: "flex" }}>
+                <AnalyticsDashboard projects={allProjects} />
+              </div>
             </ErrorBoundary>
           )}
         </div>
