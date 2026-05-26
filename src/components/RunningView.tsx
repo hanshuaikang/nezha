@@ -80,7 +80,7 @@ export function RunningView({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  const showCodexComposer = isActive && task.agent === "codex";
+  const showComposer = isActive;
 
   function submitComposer() {
     if (!composerValue.trim()) return;
@@ -299,7 +299,7 @@ export function RunningView({
 
       {/* Main content: terminal when active, session view when done/failed. */}
       {isActive || !sessionPath ? (
-        <div style={{ ...s.terminalContainer, paddingBottom: showCodexComposer ? 10 : 16 }}>
+        <div style={{ ...s.terminalContainer, paddingBottom: showComposer ? 10 : 16 }}>
           <TerminalView
             key={`${task.id}-${runCount}`}
             onInput={onInput}
@@ -317,7 +317,7 @@ export function RunningView({
         <SessionView sessionPath={sessionPath} />
       )}
 
-      {showCodexComposer && (
+      {showComposer && (
         <div style={s.composerWrap}>
           <div style={s.composerBox}>
             <textarea
@@ -330,7 +330,7 @@ export function RunningView({
                   submitComposer();
                 }
               }}
-              placeholder="Type a Codex reply"
+              placeholder={task.agent === "codex" ? "Type a Codex reply" : "Type a Claude reply"}
               rows={2}
               style={s.composerInput}
             />
