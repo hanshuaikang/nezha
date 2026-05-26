@@ -79,6 +79,11 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
   term.textarea.setAttribute("autocorrect", "off");
   term.textarea.setAttribute("autocapitalize", "off");
   term.textarea.setAttribute("spellcheck", "false");
+  // hint WKWebView 不需要候选条 UI，跳过 EditorState::stringForCandidateRequest
+  // 路径上的 wordRangeFromPosition → ICU 簇分析。2026-05-26 15s sample 实证该路径
+  // 每帧 willCommitMainFrameData 都跑一次（即使 textarea 已 blur），是 spellcheck=false
+  // 三件套覆盖不到的独立入口。
+  term.textarea.setAttribute("inputmode", "none");
 }
 
 // 真因：macOS 系统设置「显示文内预测文本」会让 NSTextInputContext 对当前 focused
@@ -129,6 +134,12 @@ export function attachMacWebKitTerminalGuard({
     setGuardSelectionActive(active);
     if (active) {
       blurTextareaIfFocused();
+      // 清掉残留 DOM Selection——xterm 选区不依赖 DOM Selection（canvas 渲染），
+      // 但 Frame::selection 若仍指向 .session-prose / .md-preview / .file-viewer-code
+      // 里的 RenderText，每帧 willCommitMainFrameData 都会调
+      // Editor::stringForCandidateRequest → wordRangeFromPosition → ICU 簇分析。
+      // 2026-05-26 15s sample 实证：65 sample 走这条路径，且与 textarea focus 无关。
+      window.getSelection()?.removeAllRanges();
     }
   };
 
