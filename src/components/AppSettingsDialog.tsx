@@ -656,6 +656,9 @@ function GeneralPanel({ projects }: { projects: Project[] }) {
     try {
       await invoke("save_app_settings", { settings });
       setOriginal(settings);
+      window.dispatchEvent(
+        new CustomEvent<AppSettings>("nezha:app-settings-saved", { detail: settings }),
+      );
       await loadVersions(settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

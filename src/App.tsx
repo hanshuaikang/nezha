@@ -170,6 +170,18 @@ function App() {
   }, [tasks]);
 
   useEffect(() => {
+    function handleAppSettingsSaved(event: Event) {
+      const settings = (event as CustomEvent<AppSettings>).detail;
+      if (settings) {
+        appSettingsRef.current = settings;
+      }
+    }
+
+    window.addEventListener("nezha:app-settings-saved", handleAppSettingsSaved);
+    return () => window.removeEventListener("nezha:app-settings-saved", handleAppSettingsSaved);
+  }, []);
+
+  useEffect(() => {
     if (!projectsLoaded) {
       return;
     }
@@ -216,14 +228,16 @@ function App() {
       "task-status",
       (e) => {
         const { task_id, status, failure_reason } = e.payload;
+        const previousTask = tasksRef.current.find((item) => item.id === task_id);
+        const didChangeStatus = previousTask?.status !== status;
         updateTaskStatus(task_id, status, undefined, failure_reason);
         if (
+          didChangeStatus &&
           appSettingsRef.current?.notifications.task_status &&
           ["done", "failed", "cancelled", "input_required"].includes(status)
         ) {
-          const task = tasksRef.current.find((item) => item.id === task_id);
           invoke("notify_task_status", {
-            title: task?.name || "Nezha Task",
+            title: previousTask?.name || "Nezha Task",
             body: `Task status: ${status}`,
           }).catch(() => {});
         }
