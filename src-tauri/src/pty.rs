@@ -474,7 +474,18 @@ pub async fn run_task(
         format!("{}\n\n[Attached images]\n{}", base_prompt, image_paths.join("\n"))
     };
 
-    let launch = crate::app_settings::get_agent_launch_spec(&agent);
+    // 设置读盘 + 反序列化是阻塞操作，要从 Tokio runtime 移到 blocking pool
+    let (launch, user_env_vars) = tokio::task::spawn_blocking({
+        let agent = agent.clone();
+        move || {
+            (
+                crate::app_settings::get_agent_launch_spec(&agent),
+                crate::app_settings::get_user_env_vars(),
+            )
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let agent_bin = launch.program.clone();
     let is_codex = agent == "codex";
 
@@ -508,6 +519,10 @@ pub async fn run_task(
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
     for (key, value) in &launch.extra_env {
+        cmd.env(key, value);
+    }
+    // 用户自定义环境变量在最后注入，可覆盖 nezha 默认值（PATH/LANG 等）
+    for (key, value) in &user_env_vars {
         cmd.env(key, value);
     }
 
@@ -692,7 +707,18 @@ pub async fn resume_task(
         })
         .map_err(|e| e.to_string())?;
 
-    let launch = crate::app_settings::get_agent_launch_spec(&agent);
+    // 设置读盘 + 反序列化是阻塞操作，要从 Tokio runtime 移到 blocking pool
+    let (launch, user_env_vars) = tokio::task::spawn_blocking({
+        let agent = agent.clone();
+        move || {
+            (
+                crate::app_settings::get_agent_launch_spec(&agent),
+                crate::app_settings::get_user_env_vars(),
+            )
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let agent_bin = launch.program.clone();
     let mut cmd = if agent == "codex" {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
@@ -709,6 +735,10 @@ pub async fn resume_task(
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
     for (key, value) in &launch.extra_env {
+        cmd.env(key, value);
+    }
+    // 用户自定义环境变量在最后注入，可覆盖 nezha 默认值（PATH/LANG 等）
+    for (key, value) in &user_env_vars {
         cmd.env(key, value);
     }
 

@@ -1,5 +1,13 @@
 import { Fragment, useState } from "react";
-import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type } from "lucide-react";
+import {
+  X,
+  Keyboard,
+  Monitor,
+  Info,
+  Settings as SettingsIcon,
+  Type,
+  Variable,
+} from "lucide-react";
 import type { ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -7,6 +15,7 @@ import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
 import { AboutPanel } from "./app-settings/AboutPanel";
 import { AgentConfigPanel } from "./app-settings/AgentConfigPanel";
+import { EnvVarsPanel } from "./app-settings/EnvVarsPanel";
 import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
@@ -19,6 +28,7 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "theme", labelKey: "appSettings.theme", section: "application", icon: Monitor },
   { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
+  { key: "env", labelKey: "appSettings.envVars", section: "application", icon: Variable },
   {
     key: "claude",
     labelKey: "Claude Code",
@@ -176,6 +186,8 @@ export function AppSettingsDialog({
             />
           ) : activeNav === "shortcuts" ? (
             <ShortcutsPanel key="shortcuts" />
+          ) : activeNav === "env" ? (
+            <EnvVarsPanel key="env" />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />
           ) : (
