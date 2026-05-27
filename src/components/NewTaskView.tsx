@@ -337,7 +337,7 @@ export function NewTaskView({
 
   function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
-    if (!text && pastedImages.length === 0 && pastedTexts.length === 0) return;
+    if (!text && pastedImages.length === 0 && pastedTexts.length === 0 && !immediate) return;
     if (!immediate && launchMode === "worktree") {
       showToast(t("newTask.worktreeMustSend"), "warning");
       return;

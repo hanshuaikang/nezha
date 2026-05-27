@@ -95,8 +95,8 @@ export function AgentPermSelector({
 }) {
   const { t } = useI18n();
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const canSend = !isEmpty || hasImages;
   const sendShortcutLabel = sendShortcutKeys.join("");
+  const sendLabel = isEmpty && !hasImages ? t("newTask.startTerminal") : t("newTask.send");
   const saveAsTodoDisabled = hasImages || !!saveAsTodoDisabledReason;
   const saveAsTodoTitle = hasImages
     ? t("newTask.imagesMustSend")
@@ -274,16 +274,14 @@ export function AgentPermSelector({
             ...s.sendBtn,
             borderRadius: "6px 0 0 6px",
             borderRight: "1px solid rgba(255,255,255,0.18)",
-            opacity: canSend ? 1 : 0.4,
-            cursor: canSend ? "pointer" : "not-allowed",
           }}
           onClick={() => {
-            if (canSend) onSubmit(true);
+            onSubmit(true);
           }}
-          aria-label={`${t("newTask.send")} (${sendShortcutLabel})`}
+          aria-label={`${sendLabel} (${sendShortcutLabel})`}
           title={sendShortcutLabel}
         >
-          <span>{t("newTask.send")}</span>
+          <span>{sendLabel}</span>
           <SendShortcutIcon keys={sendShortcutKeys} />
         </button>
         <Popover.Root>
@@ -296,10 +294,7 @@ export function AgentPermSelector({
                 padding: "6px 5px",
                 borderRadius: "0 6px 6px 0",
                 borderLeft: "none",
-                opacity: canSend ? 1 : 0.4,
-                cursor: canSend ? "pointer" : "not-allowed",
               }}
-              disabled={!canSend}
             >
               <ChevronDown size={12} strokeWidth={2.5} />
             </button>

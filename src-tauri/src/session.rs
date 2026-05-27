@@ -19,6 +19,9 @@ pub(crate) struct CodexSessionInfo {
 pub(crate) struct ClaudeSessionInfo {
     pub(crate) session_id: String,
     pub(crate) session_path: String,
+    /// true 表示 lazy attach 预先注入的占位条目（jsonl 还未落盘），
+    /// `is_task_active` 和 `finalize_task_exit::had_agent_session` 都应跳过它。
+    pub(crate) is_placeholder: bool,
 }
 
 // ── 公共辅助函数 ──────────────────────────────────────────────────────────────
@@ -57,7 +60,9 @@ pub(crate) fn is_task_active(app: &AppHandle, task_id: &str) -> bool {
         .claude_sessions
         .lock()
         .get(task_id)
-        .map(|info| !info.session_id.is_empty() && !info.session_path.is_empty())
+        .map(|info| {
+            !info.session_id.is_empty() && !info.session_path.is_empty() && !info.is_placeholder
+        })
         .unwrap_or(false);
 
     has_claude_session
@@ -1287,6 +1292,7 @@ pub(crate) fn register_and_watch_session(
             ClaudeSessionInfo {
                 session_id: session_id.to_string(),
                 session_path: path_string.clone(),
+                is_placeholder: false,
             },
         );
     }
@@ -1365,6 +1371,102 @@ fn send_status_command(app: &AppHandle, task_id: &str, is_codex: bool) {
     }
 }
 
+/// 空 prompt Claude 启动专用：立刻按预置 UUID 注册并广播 session id，
+/// 后台等真实 jsonl 文件出现后再 attach 监听。
+/// 最长 2 分钟或任务结束，避免线程长期挂着。
+///
+/// 注入的 `claude_sessions` 条目以 `is_placeholder: true` 标记，`is_task_active`
+/// 和 `finalize_task_exit::had_agent_session` 都会跳过；文件出现后升级为真，
+/// 任何退出路径都会清理占位条目和 claimed 路径。
+fn spawn_claude_lazy_session_attach(
+    app: AppHandle,
+    task_id: String,
+    session_id: String,
+    project_path: String,
+) {
+    thread::spawn(move || {
+        let Some(sessions_dir) = claude_sessions_dir_for_project(&project_path) else {
+            return;
+        };
+        let expected = sessions_dir.join(format!("{}.jsonl", session_id));
+        let path_string = expected.to_string_lossy().into_owned();
+
+        if !claim_session_path(&app, &path_string) {
+            return;
+        }
+
+        {
+            let tm = app.state::<TaskManager>();
+            tm.claude_sessions.lock().insert(
+                task_id.clone(),
+                ClaudeSessionInfo {
+                    session_id: session_id.clone(),
+                    session_path: path_string.clone(),
+                    is_placeholder: true,
+                },
+            );
+        }
+
+        let _ = app.emit(
+            "task-session",
+            serde_json::json!({
+                "task_id": task_id,
+                "session_id": session_id,
+                "session_path": path_string,
+            }),
+        );
+
+        // 后台等文件真正出现（500ms × 240 = 2 分钟，或任务结束）。
+        let mut attached = false;
+        for _ in 0..240 {
+            // child_handles 是判断进程存活的唯一可靠信号；这里不能用 is_task_active，
+            // 因为我们刚注入的占位条目会被它跳过（设计如此），改成直接看进程在不在更准确。
+            let alive = {
+                let tm = app.state::<TaskManager>();
+                let handles = tm.child_handles.lock();
+                handles.contains_key(&task_id)
+            };
+            if !alive {
+                break;
+            }
+            if expected.exists() {
+                // 升级为真：placeholder 翻成 false，让 is_task_active / had_agent_session
+                // 重新识别为有效会话。
+                {
+                    let tm = app.state::<TaskManager>();
+                    let mut sessions = tm.claude_sessions.lock();
+                    if let Some(info) = sessions.get_mut(&task_id) {
+                        info.is_placeholder = false;
+                    }
+                }
+                attached = true;
+                watch_claude_session(app.clone(), task_id.clone(), expected.clone());
+                break;
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+
+        // 文件出现 → watch_claude_session 已接管，claude_sessions 条目交给
+        // finalize_task_exit 在任务退出时清理。
+        if attached {
+            return;
+        }
+
+        // 否则（超时 / 任务退出）：清理占位条目和 claimed 路径，避免泄漏。
+        let tm = app.state::<TaskManager>();
+        let removed = tm.claude_sessions.lock().remove(&task_id);
+        if let Some(info) = removed {
+            if info.is_placeholder {
+                tm.claimed_session_paths.lock().remove(&info.session_path);
+            } else {
+                // 极少数情况：placeholder 已被外部翻成 false 但 attached 仍为 false
+                // （例如 watch 启动失败）。把它还原回 sessions，避免吞掉真实条目。
+                tm.claude_sessions.lock().insert(task_id.clone(), info);
+            }
+        }
+    });
+}
+
 /// 监听 PTY 输出流，通过 `/status` 响应获取 Session ID。
 /// Claude 启动后 1.5 秒发送 `/status`；Codex 则在收到首个输出后再等待 1 秒，
 /// 避免 session 尚未创建时过早查询。
@@ -1378,7 +1480,19 @@ pub(crate) fn spawn_status_session_watcher(
     is_codex: bool,
     rx: mpsc::Receiver<String>,
     pre_session_id: Option<String>,
+    prompt_empty: bool,
 ) {
+    // ── Claude 空 prompt 快速路径：session id 已知，文件 lazy 等 ──
+    // 空 prompt 启动时 Claude 进入 REPL，要等用户实际发出首条消息才落盘 session 文件，
+    // 走标准路径 wait_for_session_file 必然超时；这里直接用预生成 UUID 立刻广播，
+    // 后台再无限等文件出现后 attach 监听。
+    if let Some(ref sid) = pre_session_id {
+        if !is_codex && prompt_empty {
+            spawn_claude_lazy_session_attach(app, task_id, sid.clone(), project_path);
+            return;
+        }
+    }
+
     // ── Claude >= 2.1.87 快速路径：预置 session id，不发 /status ──
     if let Some(ref sid) = pre_session_id {
         if !is_codex {
