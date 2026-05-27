@@ -9,10 +9,6 @@ import { SessionView } from "./SessionView";
 import { useToast } from "./Toast";
 import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
-import {
-  TERMINAL_SELECTION_ACTIVE_EVENT,
-  getTerminalSelectionActive,
-} from "../terminalSelection";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -226,41 +222,21 @@ export function RunningView({
     const load = () => {
       invoke<SessionMetrics>("read_session_metrics", { sessionPath })
         .then((nextMetrics) => {
-          // in-flight 防护：请求发出后用户开始拖选，回包不应触发 setMetrics
-          // (~88ms React commit) 干扰拖选/复制。
-          if (cancelled || getTerminalSelectionActive()) return;
+          if (cancelled) return;
           setMetrics(nextMetrics);
         })
         .catch(() => {});
     };
 
-    // 终端选区期间暂停轮询；订阅 window event 而非 React state，
-    // 让 selection 翻转不进入 React commit。
-    const start = () => {
-      if (timer !== null) return;
-      load();
-      if (isActive) timer = setInterval(load, 3000);
-    };
-    const stop = () => {
+    load();
+    if (isActive) timer = setInterval(load, 3000);
+
+    return () => {
+      cancelled = true;
       if (timer !== null) {
         clearInterval(timer);
         timer = null;
       }
-    };
-
-    if (!getTerminalSelectionActive()) start();
-
-    const onSelectionChange = (event: Event) => {
-      const active = (event as CustomEvent<boolean>).detail === true;
-      if (active) stop();
-      else start();
-    };
-    window.addEventListener(TERMINAL_SELECTION_ACTIVE_EVENT, onSelectionChange);
-
-    return () => {
-      cancelled = true;
-      stop();
-      window.removeEventListener(TERMINAL_SELECTION_ACTIVE_EVENT, onSelectionChange);
     };
   }, [sessionPath, isActive, projectActive]);
 

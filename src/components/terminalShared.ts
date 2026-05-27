@@ -3,7 +3,6 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
-import { publishTerminalSelectionActive } from "../terminalSelection";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -70,8 +69,6 @@ interface TerminalSelectionGuardOptions {
   writer?: Pick<SmartWriter, "setSelectionPaused">;
 }
 
-let macWebKitSelectionGuardCount = 0;
-
 function setMacWebKitTextareaAttrs(term: Terminal): void {
   if (!term.textarea) return;
   term.textarea.setAttribute("autocomplete", "off");
@@ -88,25 +85,20 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
 // characterIndexForPoint，触发 LocalFrame::rangeForPoint → ICU 簇分析，
 // 主线程被打满。
 //
-// 防御分三层：
-//   1) 拖动期间把 textarea 设 disabled——NSTextInputContext 没有可接收 focus
-//      的 text input 就不查询，hit-test 风暴断在源头。松手 enable 后 refocus，
-//      普通字符 / IME 输入照常。社区先例：xterm.js Discussion #5227。
-//   2) 拖动期间临时禁用 terminal DOM 文本选择。xterm 的选区由自身
-//      buffer 坐标维护；禁用 DOM selection 是为了让 WebKit 的
-//      rangeForPoint/TextBreakIterator 少走可选文本路径。
-//   3) 把"选区生命周期 active"通过 TERMINAL_SELECTION_ACTIVE_EVENT 暴露给
-//      RunningView / useUsageSnapshot 等订阅者，让它们在选区期间停掉
-//      read_session_metrics / read_usage_snapshot 之类的 IPC 轮询，避免
-//      回包触发的 React commit 干扰拖选/复制。
+// 修复：拖动期间把 textarea 设 disabled——NSTextInputContext 没有可接收 focus
+// 的 text input 就不查询，hit-test 风暴断在源头。松手 enable 后 refocus，
+// 普通字符 / IME 输入照常。社区先例：xterm.js Discussion #5227。
 //
 // 历史：
-// - 曾经基于 inert 把终端外的 sibling 子树标为不可命中（试图阻断
-//   NSTextInput hit-test 遍历）。2026-05-25 sample 实证 inert 只改变交互
-//   语义，不改变 RenderText 在 layout tree 的存在，hit-test 照样遍历，已删。
-// - 第一层曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，
-//   印证 IME 路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部
-//   回调夺回焦点），改为 disabled 是硬性禁用，更彻底。
+// - 曾经基于 inert 把终端外的 sibling 子树标为不可命中（试图阻断 NSTextInput
+//   hit-test 遍历）。2026-05-25 sample 实证 inert 只改变交互语义，不改变
+//   RenderText 在 layout tree 的存在，hit-test 照样遍历，已删。
+// - 曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，印证 IME
+//   路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部回调夺回焦点），
+//   改为 disabled 是硬性禁用，更彻底。
+// - 曾叠加 user-select:none 抑制 + window.getSelection().removeAllRanges() +
+//   TERMINAL_SELECTION_ACTIVE_EVENT 广播给 RunningView/useUsageSnapshot 暂停
+//   IPC 轮询。2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
 export function attachMacWebKitTerminalGuard({
   term,
   container,
@@ -118,24 +110,11 @@ export function attachMacWebKitTerminalGuard({
 
   let pointerSelecting = false;
   let terminalHasSelection = term.hasSelection();
-  let guardSelectionActive = false;
-  let suppressedSelectionElements: Array<{
-    element: HTMLElement;
-    userSelect: string;
-    webkitUserSelect: string;
-  }> = [];
 
-  const setGuardSelectionActive = (active: boolean) => {
-    if (guardSelectionActive === active) return;
-    guardSelectionActive = active;
-    macWebKitSelectionGuardCount += active ? 1 : -1;
-    publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
-  };
-
-  // 拖选期间用 disabled 而不是 blur 切断 IME host。
-  // - blur: textarea 仍 focusable,后续 RAF / 内部回调可能把焦点夺回,IME 又能查
-  // - disabled: 硬性禁用接收 focus / input,IME 100% 无法发起 NSTextInputClient 查询
-  // 参考: xterm.js Discussion #5227(社区实战验证)。
+  // 拖选期间用 disabled 切断 IME host：
+  // - blur: textarea 仍 focusable，后续 RAF / 内部回调可能把焦点夺回，IME 又能查
+  // - disabled: 硬性禁用接收 focus / input，IME 100% 无法发起 NSTextInputClient 查询
+  // 参考：xterm.js Discussion #5227（社区实战验证）。
   const disableTextarea = () => {
     if (term.textarea && !term.textarea.disabled) {
       term.textarea.disabled = true;
@@ -154,59 +133,9 @@ export function attachMacWebKitTerminalGuard({
     }
   };
 
-  const restoreStyleProperty = (element: HTMLElement, property: string, value: string) => {
-    if (value) {
-      element.style.setProperty(property, value);
-    } else {
-      element.style.removeProperty(property);
-    }
-  };
-
-  const suppressTerminalDomSelection = () => {
-    if (suppressedSelectionElements.length > 0) return;
-    const elements = [
-      container,
-      ...Array.from(
-        container.querySelectorAll<HTMLElement>(
-          ".xterm, .xterm-screen, .xterm-viewport, .xterm-rows, .xterm-accessibility, .xterm-accessibility-tree",
-        ),
-      ),
-    ];
-    suppressedSelectionElements = elements.map((element) => ({
-      element,
-      userSelect: element.style.getPropertyValue("user-select"),
-      webkitUserSelect: element.style.getPropertyValue("-webkit-user-select"),
-    }));
-    for (const { element } of suppressedSelectionElements) {
-      element.style.setProperty("user-select", "none");
-      element.style.setProperty("-webkit-user-select", "none");
-    }
-  };
-
-  const restoreTerminalDomSelection = () => {
-    for (const { element, userSelect, webkitUserSelect } of suppressedSelectionElements) {
-      restoreStyleProperty(element, "user-select", userSelect);
-      restoreStyleProperty(element, "-webkit-user-select", webkitUserSelect);
-    }
-    suppressedSelectionElements = [];
-  };
-
   const syncSelectionGuard = () => {
-    // 选区生命周期信号：拖动中 或 已有选区都视为 active，用于暂停轮询订阅者。
-    const selectionActive = pointerSelecting || terminalHasSelection;
-    setGuardSelectionActive(selectionActive);
-    // textarea disable 仅在 pointer 拖动期间执行——这是 hit-test 风暴主要发作窗口；
-    // 拖完松手后 enable + refocus，让普通字符 / IME 输入路径恢复正常。
-    if (pointerSelecting) {
-      disableTextarea();
-      suppressTerminalDomSelection();
-      // 顺手清掉其他子树（.session-prose / .md-preview 等）里残留的 DOM Selection，
-      // 避免 WebKit 每帧 willCommitMainFrameData 走 wordRangeFromPosition 路径。
-      window.getSelection()?.removeAllRanges();
-    } else {
-      enableTextarea();
-      restoreTerminalDomSelection();
-    }
+    if (pointerSelecting) disableTextarea();
+    else enableTextarea();
   };
 
   const handlePointerDown = (e: PointerEvent) => {
@@ -275,11 +204,9 @@ export function attachMacWebKitTerminalGuard({
     document.removeEventListener("pointercancel", handlePointerCancel);
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
-    restoreTerminalDomSelection();
     // 兜底：若卸载时仍处于选区拖动状态，恢复 textarea，避免下次输入丢失。
     enableTextarea();
     writer?.setSelectionPaused(false);
-    setGuardSelectionActive(false);
   };
 }
 
