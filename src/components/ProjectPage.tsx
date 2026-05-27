@@ -6,6 +6,7 @@ import type {
   PermissionMode,
   TaskStatus,
   ThemeMode,
+  ThemeVariant,
   TerminalFontSize,
   TaskDisplayWindow,
   FontFamily,
@@ -62,7 +63,7 @@ export function ProjectPage({
   onBack,
   onSwitchProject,
   onOpen,
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -124,7 +125,7 @@ export function ProjectPage({
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
   onOpen: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -282,7 +283,7 @@ export function ProjectPage({
         onToggleTaskStar={onToggleTaskStar}
         onRunTodo={onRunTodoTask}
         onBack={onBack}
-        isDark={isDark}
+        themeVariant={themeVariant}
         themeMode={themeMode}
         systemPrefersDark={systemPrefersDark}
         onThemeModeChange={onThemeModeChange}
@@ -373,7 +374,7 @@ export function ProjectPage({
                 onCloseOtherTabs={handleCloseOtherFileTabs}
                 onCloseTabsToRight={handleCloseTabsToRight}
                 onCloseAllTabs={handleCloseAllFileTabs}
-                isDark={isDark}
+                themeVariant={themeVariant}
                 onRunMakeTarget={handleRunMakeTarget}
               />
             ) : isNewTask || !selectedTask ? (
@@ -426,7 +427,7 @@ export function ProjectPage({
                   getRestoreState={() => getTaskRestoreState(task.id)}
                   onRename={(name) => onRenameTask(task.id, name)}
                   onGenerateName={() => onGenerateTaskName(task.id)}
-                  isDark={isDark}
+                  themeVariant={themeVariant}
                   terminalFontSize={terminalFontSize}
                   monoFontFamily={monoFontFamily}
                 />
@@ -440,7 +441,7 @@ export function ProjectPage({
             projectId={project.id}
             isActive={visible}
             onClose={() => setShowShellTerminal(false)}
-            isDark={isDark}
+            themeVariant={themeVariant}
             terminalFontSize={terminalFontSize}
             monoFontFamily={monoFontFamily}
             onReady={handleShellReady}
@@ -470,7 +471,6 @@ export function ProjectPage({
                 projectPath={project.path}
                 projectName={project.name}
                 onFileSelect={handleFileSelect}
-                isDark={isDark}
                 active={visible}
                 width={rightPanelWidth}
               />

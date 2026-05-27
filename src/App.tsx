@@ -10,6 +10,7 @@ import type {
   AgentType,
   PermissionMode,
   ThemeMode,
+  ThemeVariant,
   TerminalFontSize,
   TaskDisplayWindow,
 } from "./types";
@@ -135,7 +136,14 @@ function getSystemPrefersDark() {
 
 function getInitialThemeMode(): ThemeMode {
   const stored = localStorage.getItem("nezha:theme");
-  return stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+  return stored === "dark" || stored === "light" || stored === "system" || stored === "eyecare"
+    ? stored
+    : "system";
+}
+
+function resolveThemeVariant(mode: ThemeMode, systemPrefersDark: boolean): ThemeVariant {
+  if (mode === "system") return systemPrefersDark ? "dark" : "light";
+  return mode;
 }
 
 function getInitialTerminalFontSize(): TerminalFontSize {
@@ -161,7 +169,7 @@ function App() {
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
-  const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
+  const themeVariant: ThemeVariant = resolveThemeVariant(themeMode, systemPrefersDark);
   const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
     getInitialTerminalFontSize,
   );
@@ -245,13 +253,19 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
+    const root = document.documentElement;
+    root.classList.toggle("dark", themeVariant === "dark");
+    root.classList.toggle("eyecare", themeVariant === "eyecare");
     localStorage.setItem("nezha:theme", themeMode);
-  }, [isDark, themeMode]);
+  }, [themeVariant, themeMode]);
 
   useEffect(() => {
+    // Tauri window theme only understands light/dark/null; map eyecare to light
+    // so the native chrome (titlebar, scrollbars) stays in the light family.
+    const nativeTheme =
+      themeMode === "system" ? null : themeMode === "dark" ? "dark" : "light";
     getCurrentWindow()
-      .setTheme(themeMode === "system" ? null : themeMode)
+      .setTheme(nativeTheme)
       .catch(console.error);
   }, [themeMode]);
 
@@ -277,9 +291,13 @@ function App() {
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
-      const currentlyDark =
-        currentMode === "system" ? systemPrefersDark : currentMode === "dark";
-      return currentlyDark ? "light" : "dark";
+      // Toggle only cycles between the two standard variants. Special themes
+      // (eyecare and any future opt-in variants) retreat to "light" so the
+      // shortcut remains a one-tap escape hatch back to the canonical pair.
+      if (currentMode === "dark") return "light";
+      if (currentMode === "light") return "dark";
+      if (currentMode === "system") return systemPrefersDark ? "light" : "dark";
+      return "light";
     });
   }, [systemPrefersDark]);
 
@@ -1007,7 +1025,7 @@ function App() {
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
               onOpen={handleOpen}
-              isDark={isDark}
+              themeVariant={themeVariant}
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={setThemeMode}
@@ -1038,7 +1056,7 @@ function App() {
             onOpen={handleOpen}
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
-            isDark={isDark}
+            themeVariant={themeVariant}
             themeMode={themeMode}
             systemPrefersDark={systemPrefersDark}
             onThemeModeChange={setThemeMode}

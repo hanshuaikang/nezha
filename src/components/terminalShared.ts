@@ -4,6 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
 import { publishTerminalSelectionActive } from "../terminalSelection";
+import type { ThemeVariant } from "../types";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,36 @@ export const LIGHT_THEME = {
   brightCyan: "#3192aa",
   brightWhite: "#8c959f",
 };
+
+// Solarized Light–inspired warm palette to match the eyecare CSS tokens.
+export const EYECARE_THEME = {
+  background: "#fdf6e3",
+  foreground: "#586e75",
+  cursor: "#586e75",
+  selectionBackground: "#eee8d5",
+  black: "#073642",
+  red: "#dc322f",
+  green: "#859900",
+  yellow: "#b58900",
+  blue: "#268bd2",
+  magenta: "#d33682",
+  cyan: "#2aa198",
+  white: "#93a1a1",
+  brightBlack: "#657b83",
+  brightRed: "#cb4b16",
+  brightGreen: "#586e75",
+  brightYellow: "#657b83",
+  brightBlue: "#839496",
+  brightMagenta: "#6c71c4",
+  brightCyan: "#93a1a1",
+  brightWhite: "#fdf6e3",
+};
+
+export function themeFor(variant: ThemeVariant) {
+  if (variant === "dark") return DARK_THEME;
+  if (variant === "eyecare") return EYECARE_THEME;
+  return LIGHT_THEME;
+}
 
 // ── Watermark flow control ───────────────────────────────────────────────────
 
@@ -296,7 +327,7 @@ export interface InitTerminalResult {
  * 调用方负责 term.open(container)。
  */
 export function initTerminal(
-  isDark: boolean,
+  variant: ThemeVariant,
   scrollback = 1000,
   fontSize = 12,
   fontFamily = "monospace",
@@ -307,7 +338,7 @@ export function initTerminal(
     cursorBlink: true,
     fontFamily,
     fontSize,
-    theme: isDark ? DARK_THEME : LIGHT_THEME,
+    theme: themeFor(variant),
     allowProposedApi: true,
   });
 

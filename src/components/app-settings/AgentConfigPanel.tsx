@@ -5,13 +5,17 @@ import { useI18n } from "../../i18n";
 import s from "../../styles";
 import { AgentPathSection } from "./AgentPathSection";
 import type { AgentKey } from "./types";
+import type { ThemeVariant } from "../../types";
 
 import type { Highlighter } from "shiki";
 let _highlighterPromise: Promise<Highlighter> | null = null;
 function getHighlighter(): Promise<Highlighter> {
   if (!_highlighterPromise) {
     _highlighterPromise = import("shiki").then(({ createHighlighter }) =>
-      createHighlighter({ themes: ["github-dark", "github-light"], langs: ["json", "toml"] }),
+      createHighlighter({
+        themes: ["github-dark", "github-light", "solarized-light"],
+        langs: ["json", "toml"],
+      }),
     );
   }
   return _highlighterPromise!;
@@ -35,13 +39,19 @@ export function AgentConfigPanel({
   agentKey,
   filePath,
   lang,
-  isDark,
+  themeVariant,
 }: {
   agentKey: AgentKey;
   filePath: string;
   lang: string;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
 }) {
+  const shikiTheme =
+    themeVariant === "dark"
+      ? "github-dark"
+      : themeVariant === "eyecare"
+        ? "solarized-light"
+        : "github-light";
   const { t } = useI18n();
   const [resolvedFilePath, setResolvedFilePath] = useState(filePath);
   const [fileState, setFileState] = useState<FileState>({ status: "loading" });
@@ -90,7 +100,7 @@ export function AgentConfigPanel({
       .then((hl) => {
         const html = hl.codeToHtml(fileState.content, {
           lang,
-          theme: isDark ? "github-dark" : "github-light",
+          theme: shikiTheme,
         });
         if (!cancelled) {
           setHighlighted(html);
@@ -105,7 +115,7 @@ export function AgentConfigPanel({
     return () => {
       cancelled = true;
     };
-  }, [fileState, lang, isDark]);
+  }, [fileState, lang, shikiTheme]);
 
   async function handleSave() {
     if (fileState.status !== "loaded") return;
