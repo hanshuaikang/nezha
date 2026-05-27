@@ -9,7 +9,10 @@ import { SessionView } from "./SessionView";
 import { useToast } from "./Toast";
 import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
-import { useTerminalSelectionActive } from "../hooks/useTerminalSelectionActive";
+import {
+  TERMINAL_SELECTION_ACTIVE_EVENT,
+  getTerminalSelectionActive,
+} from "../terminalSelection";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -113,7 +116,6 @@ export function RunningView({
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
   const resumeSessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
   const restoreState = getRestoreState?.() ?? {};
-  const terminalSelectionActive = useTerminalSelectionActive();
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
 
@@ -216,34 +218,51 @@ export function RunningView({
     // 项目重新激活时这里会立即补拉一次。注意这里用的是 projectActive
     // 而不是 visible —— 后者在同项目内打开 FileViewer / GitDiff 时也会是 false，
     // 那种场景下不应该中断正在运行任务的 duration 更新。
-    if (!projectActive || terminalSelectionActive) return;
+    if (!projectActive) return;
 
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
     const load = () => {
       invoke<SessionMetrics>("read_session_metrics", { sessionPath })
         .then((nextMetrics) => {
-          if (!cancelled) {
-            setMetrics(nextMetrics);
-          }
+          // in-flight 防护：请求发出后用户开始拖选，回包不应触发 setMetrics
+          // (~88ms React commit) 干扰拖选/复制。
+          if (cancelled || getTerminalSelectionActive()) return;
+          setMetrics(nextMetrics);
         })
         .catch(() => {});
     };
 
-    load();
-
-    if (isActive) {
-      const timer = setInterval(load, 3000);
-      return () => {
-        cancelled = true;
+    // 终端选区期间暂停轮询；订阅 window event 而非 React state，
+    // 让 selection 翻转不进入 React commit。
+    const start = () => {
+      if (timer !== null) return;
+      load();
+      if (isActive) timer = setInterval(load, 3000);
+    };
+    const stop = () => {
+      if (timer !== null) {
         clearInterval(timer);
-      };
-    }
+        timer = null;
+      }
+    };
+
+    if (!getTerminalSelectionActive()) start();
+
+    const onSelectionChange = (event: Event) => {
+      const active = (event as CustomEvent<boolean>).detail === true;
+      if (active) stop();
+      else start();
+    };
+    window.addEventListener(TERMINAL_SELECTION_ACTIVE_EVENT, onSelectionChange);
 
     return () => {
       cancelled = true;
+      stop();
+      window.removeEventListener(TERMINAL_SELECTION_ACTIVE_EVENT, onSelectionChange);
     };
-  }, [sessionPath, isActive, projectActive, terminalSelectionActive]);
+  }, [sessionPath, isActive, projectActive]);
 
   return (
     <div
