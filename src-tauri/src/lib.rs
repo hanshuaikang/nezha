@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use usage::CodexRpcClient;
@@ -48,6 +49,91 @@ impl TaskManager {
     }
 }
 
+const MIN_RESTORED_WINDOW_WIDTH: u32 = 640;
+const MIN_RESTORED_WINDOW_HEIGHT: u32 = 480;
+const MIN_VISIBLE_WINDOW_PIXELS: i64 = 80;
+
+fn sanitized_saved_window_size(
+    width: f64,
+    height: f64,
+    scale: f64,
+) -> Option<tauri::PhysicalSize<u32>> {
+    if !width.is_finite() || !height.is_finite() || !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+
+    let physical_width = (width * scale).round();
+    let physical_height = (height * scale).round();
+    if physical_width < f64::from(MIN_RESTORED_WINDOW_WIDTH)
+        || physical_height < f64::from(MIN_RESTORED_WINDOW_HEIGHT)
+        || physical_width > f64::from(u32::MAX)
+        || physical_height > f64::from(u32::MAX)
+    {
+        return None;
+    }
+
+    Some(tauri::PhysicalSize {
+        width: physical_width as u32,
+        height: physical_height as u32,
+    })
+}
+
+fn saved_position_is_visible(
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    monitors: &[tauri::Monitor],
+) -> bool {
+    let window_left = i64::from(position.x);
+    let window_top = i64::from(position.y);
+    let window_right = window_left + i64::from(size.width);
+    let window_bottom = window_top + i64::from(size.height);
+
+    monitors.iter().any(|monitor| {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        let monitor_left = i64::from(monitor_position.x);
+        let monitor_top = i64::from(monitor_position.y);
+        let monitor_right = monitor_left + i64::from(monitor_size.width);
+        let monitor_bottom = monitor_top + i64::from(monitor_size.height);
+
+        let visible_width = window_right.min(monitor_right) - window_left.max(monitor_left);
+        let visible_height = window_bottom.min(monitor_bottom) - window_top.max(monitor_top);
+        visible_width >= MIN_VISIBLE_WINDOW_PIXELS && visible_height >= MIN_VISIBLE_WINDOW_PIXELS
+    })
+}
+
+fn restore_saved_window_geometry(
+    window: &tauri::WebviewWindow,
+    settings: &crate::app_settings::AppSettings,
+) {
+    if !settings.custom_window_size {
+        return;
+    }
+
+    let (Some(saved_width), Some(saved_height)) = (settings.window_width, settings.window_height)
+    else {
+        return;
+    };
+
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let Some(size) = sanitized_saved_window_size(saved_width, saved_height, scale) else {
+        return;
+    };
+
+    let _ = window.set_size(tauri::Size::Physical(size));
+
+    if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
+        let position = tauri::PhysicalPosition { x, y };
+        if window
+            .available_monitors()
+            .map(|monitors| saved_position_is_visible(position, size, &monitors))
+            .unwrap_or(false)
+        {
+            let _ = window.set_position(tauri::Position::Physical(position));
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -60,18 +146,8 @@ pub fn run() {
             {
                 use tauri::Manager;
                 let settings = crate::app_settings::load_settings_internal();
-                if settings.custom_window_size {
-                    if let (Some(lw), Some(lh)) = (settings.window_width, settings.window_height) {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let scale = window.scale_factor().unwrap_or(1.0);
-                            let w = (lw * scale) as u32;
-                            let h = (lh * scale) as u32;
-                            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: w, height: h }));
-                            if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
-                                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-                            }
-                        }
-                    }
+                if let Some(window) = app.get_webview_window("main") {
+                    restore_saved_window_geometry(&window, &settings);
                 }
             }
             // 关闭窗口时若已启用自定义尺寸，保存当前窗口大小和位置
@@ -79,17 +155,31 @@ pub fn run() {
                 use tauri::Manager;
                 if let Some(window) = app.get_webview_window("main") {
                     let win = window.clone();
+                    let closing_after_save = Arc::new(AtomicBool::new(false));
                     window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::CloseRequested { .. } = event {
-                            let settings = crate::app_settings::load_settings_internal();
-                            if settings.custom_window_size {
-                                if let (Ok(inner), Ok(scale), Ok(pos)) =
-                                    (win.inner_size(), win.scale_factor(), win.outer_position())
-                                {
-                                    let lw = inner.width as f64 / scale;
-                                    let lh = inner.height as f64 / scale;
-                                    let _ = crate::app_settings::persist_window_size(lw, lh, pos.x, pos.y);
-                                }
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            if closing_after_save.swap(true, Ordering::SeqCst) {
+                                return;
+                            }
+                            api.prevent_close();
+
+                            let win_to_close = win.clone();
+                            if let (Ok(inner), Ok(scale), Ok(pos)) =
+                                (win.inner_size(), win.scale_factor(), win.outer_position())
+                            {
+                                let lw = inner.width as f64 / scale;
+                                let lh = inner.height as f64 / scale;
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                                        let _ = crate::app_settings::persist_window_size_if_enabled(
+                                            lw, lh, pos.x, pos.y,
+                                        );
+                                    })
+                                    .await;
+                                    let _ = win_to_close.close();
+                                });
+                            } else {
+                                let _ = win_to_close.close();
                             }
                         }
                     });

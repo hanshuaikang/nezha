@@ -544,9 +544,17 @@ pub struct AgentVersions {
     pub codex_version: String,
 }
 
-pub fn persist_window_size(width: f64, height: f64, x: i32, y: i32) -> Result<(), String> {
+pub fn persist_window_size_if_enabled(
+    width: f64,
+    height: f64,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
     let _guard = settings_lock().lock();
     let mut settings = load_settings_unlocked();
+    if !settings.custom_window_size {
+        return Ok(());
+    }
     settings.window_width = Some(width);
     settings.window_height = Some(height);
     settings.window_x = Some(x);
