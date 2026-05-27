@@ -2,6 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { invoke } from "@tauri-apps/api/core";
 import { IS_MAC_WEBKIT } from "../platform";
 import { publishTerminalSelectionActive } from "../terminalSelection";
 import { smartCopy } from "./terminalCopyHelper";
@@ -114,8 +115,18 @@ export function attachMacWebKitTerminalGuard({
   const setGuardSelectionActive = (active: boolean) => {
     if (guardSelectionActive === active) return;
     guardSelectionActive = active;
+    const previousCount = macWebKitSelectionGuardCount;
     macWebKitSelectionGuardCount += active ? 1 : -1;
     publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
+    // 跨 0↔1 边界切换 macOS WKWebView 的 -inputContext override。
+    // 框选期间返回 nil 让 AppKit 跳过本 view 的 NSTextInputClient 路由，
+    // 从源头断 characterIndexForPointAsync × ICU 簇分析；松手立即恢复，
+    // 保证打字、IME 候选条等正常。详见 src-tauri/src/macos_ime.rs。
+    if (previousCount === 0 && macWebKitSelectionGuardCount === 1) {
+      invoke("set_ime_query_suppressed", { suppressed: true }).catch(() => {});
+    } else if (previousCount === 1 && macWebKitSelectionGuardCount === 0) {
+      invoke("set_ime_query_suppressed", { suppressed: false }).catch(() => {});
+    }
   };
 
   const blurTextareaIfFocused = () => {
