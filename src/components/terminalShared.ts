@@ -88,11 +88,14 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
 // characterIndexForPoint，触发 LocalFrame::rangeForPoint → ICU 簇分析，
 // 主线程被打满。
 //
-// 防御分两层：
+// 防御分三层：
 //   1) 拖动期间把 textarea blur 掉——NSTextInputContext 没有 focused text
 //      input 就不查询，hit-test 风暴断在源头。松手立即 refocus，
 //      普通字符 / IME 输入照常。
-//   2) 把"选区生命周期 active"通过 TERMINAL_SELECTION_ACTIVE_EVENT 暴露给
+//   2) 拖动期间临时禁用 terminal DOM 文本选择。xterm 的选区由自身
+//      buffer 坐标维护；禁用 DOM selection 是为了让 WebKit 的
+//      rangeForPoint/TextBreakIterator 少走可选文本路径。
+//   3) 把"选区生命周期 active"通过 TERMINAL_SELECTION_ACTIVE_EVENT 暴露给
 //      RunningView / useUsageSnapshot 等订阅者，让它们在选区期间停掉
 //      read_session_metrics / read_usage_snapshot 之类的 IPC 轮询，避免
 //      回包触发的 React commit 干扰拖选/复制。
@@ -112,6 +115,11 @@ export function attachMacWebKitTerminalGuard({
   let pointerSelecting = false;
   let terminalHasSelection = term.hasSelection();
   let guardSelectionActive = false;
+  let suppressedSelectionElements: Array<{
+    element: HTMLElement;
+    userSelect: string;
+    webkitUserSelect: string;
+  }> = [];
 
   const setGuardSelectionActive = (active: boolean) => {
     if (guardSelectionActive === active) return;
@@ -132,6 +140,43 @@ export function attachMacWebKitTerminalGuard({
     }
   };
 
+  const restoreStyleProperty = (element: HTMLElement, property: string, value: string) => {
+    if (value) {
+      element.style.setProperty(property, value);
+    } else {
+      element.style.removeProperty(property);
+    }
+  };
+
+  const suppressTerminalDomSelection = () => {
+    if (suppressedSelectionElements.length > 0) return;
+    const elements = [
+      container,
+      ...Array.from(
+        container.querySelectorAll<HTMLElement>(
+          ".xterm, .xterm-screen, .xterm-viewport, .xterm-rows, .xterm-accessibility, .xterm-accessibility-tree",
+        ),
+      ),
+    ];
+    suppressedSelectionElements = elements.map((element) => ({
+      element,
+      userSelect: element.style.getPropertyValue("user-select"),
+      webkitUserSelect: element.style.getPropertyValue("-webkit-user-select"),
+    }));
+    for (const { element } of suppressedSelectionElements) {
+      element.style.setProperty("user-select", "none");
+      element.style.setProperty("-webkit-user-select", "none");
+    }
+  };
+
+  const restoreTerminalDomSelection = () => {
+    for (const { element, userSelect, webkitUserSelect } of suppressedSelectionElements) {
+      restoreStyleProperty(element, "user-select", userSelect);
+      restoreStyleProperty(element, "-webkit-user-select", webkitUserSelect);
+    }
+    suppressedSelectionElements = [];
+  };
+
   const syncSelectionGuard = () => {
     // 选区生命周期信号：拖动中 或 已有选区都视为 active，用于暂停轮询订阅者。
     const selectionActive = pointerSelecting || terminalHasSelection;
@@ -140,9 +185,12 @@ export function attachMacWebKitTerminalGuard({
     // 拖完松手后由调用方 refocus，让普通字符 / IME 输入路径恢复正常。
     if (pointerSelecting) {
       blurTextareaIfFocused();
+      suppressTerminalDomSelection();
       // 顺手清掉其他子树（.session-prose / .md-preview 等）里残留的 DOM Selection，
       // 避免 WebKit 每帧 willCommitMainFrameData 走 wordRangeFromPosition 路径。
       window.getSelection()?.removeAllRanges();
+    } else {
+      restoreTerminalDomSelection();
     }
   };
 
@@ -155,6 +203,8 @@ export function attachMacWebKitTerminalGuard({
 
   const handlePointerUp = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    // document 级监听：必须先确认是终端发起的拖选流程，否则会把别处输入框的焦点抢走。
+    if (!pointerSelecting) return;
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
     terminalHasSelection = term.hasSelection();
@@ -163,6 +213,7 @@ export function attachMacWebKitTerminalGuard({
   };
 
   const handlePointerCancel = () => {
+    if (!pointerSelecting) return;
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
     terminalHasSelection = term.hasSelection();
@@ -209,6 +260,7 @@ export function attachMacWebKitTerminalGuard({
     document.removeEventListener("pointercancel", handlePointerCancel);
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
+    restoreTerminalDomSelection();
     writer?.setSelectionPaused(false);
     setGuardSelectionActive(false);
   };
