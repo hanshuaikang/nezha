@@ -9,7 +9,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type { Project, Task, ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -29,7 +29,7 @@ export function TaskPanel({
   onToggleTaskStar,
   onRunTodo,
   onBack,
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -57,7 +57,7 @@ export function TaskPanel({
   onToggleTaskStar: (id: string) => void;
   onRunTodo: (task: Task) => void;
   onBack: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -76,6 +76,7 @@ export function TaskPanel({
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
+  const isDark = themeVariant === "dark";
   const hasAttention = tasks.some(
     (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
   );
@@ -202,7 +203,7 @@ export function TaskPanel({
       />
       <div style={s.taskPanelFooter}>
         <SidebarFooterActions
-          isDark={isDark}
+          themeVariant={themeVariant}
           themeMode={themeMode}
           systemPrefersDark={systemPrefersDark}
           onThemeModeChange={onThemeModeChange}

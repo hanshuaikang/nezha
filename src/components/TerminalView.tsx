@@ -3,10 +3,9 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
-import type { TerminalFontSize, FontFamily } from "../types";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  DARK_THEME,
-  LIGHT_THEME,
+  themeFor,
   initTerminal,
   loadWebglAddon,
   safeFit,
@@ -25,7 +24,7 @@ interface TerminalViewProps {
     writeFn: ((data: string, callback?: () => void) => void) | null,
   ) => number;
   onReady?: (generation: number) => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   isActive?: boolean;
@@ -39,7 +38,7 @@ export function TerminalView({
   onResize,
   onRegisterTerminal,
   onReady,
-  isDark,
+  themeVariant,
   terminalFontSize,
   monoFontFamily,
   isActive = true,
@@ -77,7 +76,7 @@ export function TerminalView({
     if (!containerRef.current) return;
     const container = containerRef.current;
 
-    const { term, fitAddon } = initTerminal(isDark, 1000, terminalFontSize, monoFontFamily);
+    const { term, fitAddon } = initTerminal(themeVariant, 1000, terminalFontSize, monoFontFamily);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
@@ -197,9 +196,9 @@ export function TerminalView({
 
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = isDark ? DARK_THEME : LIGHT_THEME;
+      terminalRef.current.options.theme = themeFor(themeVariant);
     }
-  }, [isDark]);
+  }, [themeVariant]);
 
   useEffect(() => {
     if (!terminalRef.current || !fitAddonRef.current) return;
