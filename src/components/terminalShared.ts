@@ -89,9 +89,9 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
 // 主线程被打满。
 //
 // 防御分三层：
-//   1) 拖动期间把 textarea blur 掉——NSTextInputContext 没有 focused text
-//      input 就不查询，hit-test 风暴断在源头。松手立即 refocus，
-//      普通字符 / IME 输入照常。
+//   1) 拖动期间把 textarea 设 disabled——NSTextInputContext 没有可接收 focus
+//      的 text input 就不查询，hit-test 风暴断在源头。松手 enable 后 refocus，
+//      普通字符 / IME 输入照常。社区先例：xterm.js Discussion #5227。
 //   2) 拖动期间临时禁用 terminal DOM 文本选择。xterm 的选区由自身
 //      buffer 坐标维护；禁用 DOM selection 是为了让 WebKit 的
 //      rangeForPoint/TextBreakIterator 少走可选文本路径。
@@ -100,9 +100,13 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
 //      read_session_metrics / read_usage_snapshot 之类的 IPC 轮询，避免
 //      回包触发的 React commit 干扰拖选/复制。
 //
-// 历史：曾经基于 inert 把终端外的 sibling 子树标为不可命中（试图阻断
-// NSTextInput hit-test 遍历）。2026-05-25 sample 实证 inert 只改变交互
-// 语义，不改变 RenderText 在 layout tree 的存在，hit-test 照样遍历，已删。
+// 历史：
+// - 曾经基于 inert 把终端外的 sibling 子树标为不可命中（试图阻断
+//   NSTextInput hit-test 遍历）。2026-05-25 sample 实证 inert 只改变交互
+//   语义，不改变 RenderText 在 layout tree 的存在，hit-test 照样遍历，已删。
+// - 第一层曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，
+//   印证 IME 路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部
+//   回调夺回焦点），改为 disabled 是硬性禁用，更彻底。
 export function attachMacWebKitTerminalGuard({
   term,
   container,
@@ -128,9 +132,19 @@ export function attachMacWebKitTerminalGuard({
     publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
   };
 
-  const blurTextareaIfFocused = () => {
-    if (term.textarea && document.activeElement === term.textarea) {
-      term.textarea.blur();
+  // 拖选期间用 disabled 而不是 blur 切断 IME host。
+  // - blur: textarea 仍 focusable,后续 RAF / 内部回调可能把焦点夺回,IME 又能查
+  // - disabled: 硬性禁用接收 focus / input,IME 100% 无法发起 NSTextInputClient 查询
+  // 参考: xterm.js Discussion #5227(社区实战验证)。
+  const disableTextarea = () => {
+    if (term.textarea && !term.textarea.disabled) {
+      term.textarea.disabled = true;
+    }
+  };
+
+  const enableTextarea = () => {
+    if (term.textarea && term.textarea.disabled) {
+      term.textarea.disabled = false;
     }
   };
 
@@ -181,15 +195,16 @@ export function attachMacWebKitTerminalGuard({
     // 选区生命周期信号：拖动中 或 已有选区都视为 active，用于暂停轮询订阅者。
     const selectionActive = pointerSelecting || terminalHasSelection;
     setGuardSelectionActive(selectionActive);
-    // textarea blur 仅在 pointer 拖动期间执行——这是 hit-test 风暴主要发作窗口；
-    // 拖完松手后由调用方 refocus，让普通字符 / IME 输入路径恢复正常。
+    // textarea disable 仅在 pointer 拖动期间执行——这是 hit-test 风暴主要发作窗口；
+    // 拖完松手后 enable + refocus，让普通字符 / IME 输入路径恢复正常。
     if (pointerSelecting) {
-      blurTextareaIfFocused();
+      disableTextarea();
       suppressTerminalDomSelection();
       // 顺手清掉其他子树（.session-prose / .md-preview 等）里残留的 DOM Selection，
       // 避免 WebKit 每帧 willCommitMainFrameData 走 wordRangeFromPosition 路径。
       window.getSelection()?.removeAllRanges();
     } else {
+      enableTextarea();
       restoreTerminalDomSelection();
     }
   };
@@ -261,6 +276,8 @@ export function attachMacWebKitTerminalGuard({
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
     restoreTerminalDomSelection();
+    // 兜底：若卸载时仍处于选区拖动状态，恢复 textarea，避免下次输入丢失。
+    enableTextarea();
     writer?.setSelectionPaused(false);
     setGuardSelectionActive(false);
   };
