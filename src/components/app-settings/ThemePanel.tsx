@@ -16,9 +16,15 @@ export function ThemePanel({
   onThemeModeChange,
 }: ThemePanelProps) {
   const { t } = useI18n();
-  const manualThemeModes: Array<Extract<ThemeMode, "dark" | "light">> = ["dark", "light"];
+  type ManualMode = Extract<ThemeMode, "dark" | "light" | "eyecare">;
+  const manualThemeModes: ManualMode[] = ["dark", "light", "eyecare"];
   const currentModeLabel = systemPrefersDark ? t("theme.dark") : t("theme.light");
-  const manualModeLabel = themeMode === "dark" ? t("theme.dark") : t("theme.light");
+  const manualModeLabel =
+    themeMode === "dark"
+      ? t("theme.dark")
+      : themeMode === "eyecare"
+        ? t("theme.eyecare")
+        : t("theme.light");
   const selectedLabel =
     themeMode === "system"
       ? t("theme.followingSystem", { mode: currentModeLabel })
@@ -29,7 +35,7 @@ export function ThemePanel({
   }
 
   function handleManualThemeKeyDown(
-    mode: Extract<ThemeMode, "dark" | "light">,
+    mode: ManualMode,
     event: React.KeyboardEvent<HTMLButtonElement>,
   ) {
     const currentIndex = manualThemeModes.indexOf(mode);
@@ -69,7 +75,7 @@ export function ThemePanel({
     previewBorder,
     previewAccent,
   }: {
-    mode: Extract<ThemeMode, "dark" | "light">;
+    mode: ManualMode;
     title: string;
     description: string;
     previewBackground: string;
@@ -418,7 +424,7 @@ export function ThemePanel({
           {t("theme.manualTheme")}
         </div>
         <div
-          style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}
+          style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}
           role="radiogroup"
           aria-label={t("theme.manualThemeAria")}
         >
@@ -437,6 +443,14 @@ export function ThemePanel({
             previewBackground: "#f5f7fb",
             previewBorder: "rgba(23,27,36,0.08)",
             previewAccent: "#171b24",
+          })}
+          {renderThemeOption({
+            mode: "eyecare",
+            title: t("theme.eyecare"),
+            description: t("theme.eyecareDescription"),
+            previewBackground: "#f5ecd7",
+            previewBorder: "rgba(101,84,51,0.16)",
+            previewAccent: "#5a4a30",
           })}
         </div>
       </div>

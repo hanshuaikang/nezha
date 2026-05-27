@@ -15,6 +15,7 @@ import {
   type PromptEditorContent,
 } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
+import { TextAttachments, type PastedText } from "./new-task/TextAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
 import { LaunchModeSelector, type LaunchMode } from "./new-task/LaunchModeSelector";
 import { useI18n } from "../i18n";
@@ -40,6 +41,7 @@ export interface NewTaskDraft {
   permMode: PermissionMode;
   planMode: boolean;
   pastedImages: PastedImage[];
+  pastedTexts?: PastedText[];
   launchMode?: LaunchMode;
   baseBranch?: string;
 }
@@ -76,6 +78,7 @@ export function NewTaskView({
     agent: AgentType;
     permissionMode: PermissionMode;
     images: string[];
+    texts: string[];
     immediate: boolean;
     launchMode: LaunchMode;
     baseBranch: string;
@@ -101,10 +104,14 @@ export function NewTaskView({
   const [pastedImages, setPastedImages] = useState<PastedImage[]>(
     initialDraft?.pastedImages ?? [],
   );
+  const [pastedTexts, setPastedTexts] = useState<PastedText[]>(
+    initialDraft?.pastedTexts ?? [],
+  );
   const [isEmpty, setIsEmpty] = useState(
     () =>
       !(initialDraft?.promptHtml ?? "").replace(/<[^>]+>/g, "").trim() &&
-      (initialDraft?.pastedImages.length ?? 0) === 0,
+      (initialDraft?.pastedImages.length ?? 0) === 0 &&
+      (initialDraft?.pastedTexts?.length ?? 0) === 0,
   );
   const [sendShortcut, setSendShortcut] = useState<SendShortcut>(DEFAULT_SEND_SHORTCUT);
 
@@ -131,10 +138,10 @@ export function NewTaskView({
   // Cache draft on unmount so reopening the new-task view restores work in progress.
   // Cleared after submit to avoid re-restoring the just-sent prompt.
   const submittedRef = useRef(false);
-  const draftDataRef = useRef({ agent, permMode, planMode, pastedImages, launchMode, baseBranch });
+  const draftDataRef = useRef({ agent, permMode, planMode, pastedImages, pastedTexts, launchMode, baseBranch });
   useEffect(() => {
-    draftDataRef.current = { agent, permMode, planMode, pastedImages, launchMode, baseBranch };
-  }, [agent, permMode, planMode, pastedImages, launchMode, baseBranch]);
+    draftDataRef.current = { agent, permMode, planMode, pastedImages, pastedTexts, launchMode, baseBranch };
+  }, [agent, permMode, planMode, pastedImages, pastedTexts, launchMode, baseBranch]);
   useEffect(() => {
     return () => {
       if (!onCacheDraft) return;
@@ -144,7 +151,7 @@ export function NewTaskView({
       }
       const data = draftDataRef.current;
       const editorContent = editorContentRef.current;
-      if (!editorContent.text.trim() && !editorContent.hasChips && data.pastedImages.length === 0) {
+      if (!editorContent.text.trim() && !editorContent.hasChips && data.pastedImages.length === 0 && data.pastedTexts.length === 0) {
         onCacheDraft(null);
         return;
       }
@@ -154,6 +161,7 @@ export function NewTaskView({
         permMode: data.permMode,
         planMode: data.planMode,
         pastedImages: data.pastedImages,
+        pastedTexts: data.pastedTexts,
         launchMode: data.launchMode,
         baseBranch: data.baseBranch,
       });
@@ -320,6 +328,7 @@ export function NewTaskView({
       agent,
       permissionMode: permMode,
       images: [],
+      texts: [],
       immediate: true,
       launchMode: "local",
       baseBranch: "",
@@ -328,7 +337,7 @@ export function NewTaskView({
 
   function handleSubmit(immediate: boolean) {
     const text = editorHandle.serialize();
-    if (!text && pastedImages.length === 0) return;
+    if (!text && pastedImages.length === 0 && pastedTexts.length === 0) return;
     if (!immediate && launchMode === "worktree") {
       showToast(t("newTask.worktreeMustSend"), "warning");
       return;
@@ -340,6 +349,7 @@ export function NewTaskView({
       agent,
       permissionMode: permMode,
       images: pastedImages.map((img) => img.dataUrl),
+      texts: pastedTexts.map((t) => t.text),
       immediate,
       launchMode,
       baseBranch,
@@ -348,6 +358,7 @@ export function NewTaskView({
     setIsEmpty(true);
     setMentionSearch(null);
     setPastedImages([]);
+    setPastedTexts([]);
   }
 
   // Handle image paste at this level (PromptEditor delegates image items up)
@@ -472,12 +483,42 @@ export function NewTaskView({
           onContentChange={(content) => {
             editorContentRef.current = content;
           }}
+          onPasteLargeText={(text) => {
+            setPastedTexts((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, text }]);
+            setIsEmpty(false);
+          }}
         />
 
         {/* Image previews */}
         <ImageAttachments
           images={pastedImages}
-          onRemove={(id) => setPastedImages((prev) => prev.filter((i) => i.id !== id))}
+          onRemove={(id) => {
+            setPastedImages((prev) => {
+              const next = prev.filter((i) => i.id !== id);
+              if (next.length === 0 && pastedTexts.length === 0) {
+                const text = editorContentRef.current.text;
+                const hasChips = editorContentRef.current.hasChips;
+                setIsEmpty(!text.trim() && !hasChips);
+              }
+              return next;
+            });
+          }}
+        />
+
+        {/* Text attachment previews */}
+        <TextAttachments
+          texts={pastedTexts}
+          onRemove={(id) => {
+            setPastedTexts((prev) => {
+              const next = prev.filter((t) => t.id !== id);
+              if (next.length === 0 && pastedImages.length === 0) {
+                const text = editorContentRef.current.text;
+                const hasChips = editorContentRef.current.hasChips;
+                setIsEmpty(!text.trim() && !hasChips);
+              }
+              return next;
+            });
+          }}
         />
 
         {/* Toolbar */}
@@ -486,7 +527,7 @@ export function NewTaskView({
           permMode={permMode}
           planMode={planMode}
           isEmpty={isEmpty}
-          hasImages={pastedImages.length > 0}
+          hasImages={pastedImages.length > 0 || pastedTexts.length > 0}
           saveAsTodoDisabledReason={
             launchMode === "worktree" ? t("newTask.worktreeMustSend") : undefined
           }
