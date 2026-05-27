@@ -22,6 +22,9 @@ export function ShortcutsPanel() {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    custom_window_size: false,
+    window_width: null,
+    window_height: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

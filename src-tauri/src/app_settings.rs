@@ -34,7 +34,7 @@ pub fn get_login_shell_path() -> &'static str {
     crate::platform::login_shell_path()
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct AppSettings {
     #[serde(default)]
     pub claude_path: String,
@@ -42,6 +42,16 @@ pub struct AppSettings {
     pub codex_path: String,
     #[serde(default = "default_send_shortcut")]
     pub send_shortcut: String,
+    #[serde(default)]
+    pub custom_window_size: bool,
+    #[serde(default)]
+    pub window_width: Option<f64>,
+    #[serde(default)]
+    pub window_height: Option<f64>,
+    #[serde(default)]
+    pub window_x: Option<i32>,
+    #[serde(default)]
+    pub window_y: Option<i32>,
 }
 
 impl Default for AppSettings {
@@ -50,6 +60,11 @@ impl Default for AppSettings {
             claude_path: String::new(),
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
+            custom_window_size: false,
+            window_width: None,
+            window_height: None,
+            window_x: None,
+            window_y: None,
         }
     }
 }
@@ -306,6 +321,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
+        ..settings
     }
 }
 
@@ -320,6 +336,7 @@ fn load_settings_unlocked() -> AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
+            ..AppSettings::default()
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -525,6 +542,39 @@ pub async fn detect_agent_versions_for_settings(settings: AppSettings) -> Result
 pub struct AgentVersions {
     pub claude_version: String,
     pub codex_version: String,
+}
+
+pub fn persist_window_size(width: f64, height: f64, x: i32, y: i32) -> Result<(), String> {
+    let _guard = settings_lock().lock();
+    let mut settings = load_settings_unlocked();
+    settings.window_width = Some(width);
+    settings.window_height = Some(height);
+    settings.window_x = Some(x);
+    settings.window_y = Some(y);
+    let dir = nezha_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = settings_path()?;
+    let normalized = normalize_settings(settings);
+    let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+    crate::storage::atomic_write(&path, &raw)
+}
+
+#[tauri::command]
+pub async fn save_window_size(enabled: bool) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.custom_window_size = enabled;
+        let dir = nezha_dir()?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = settings_path()?;
+        let normalized = normalize_settings(settings);
+        let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+        crate::storage::atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(normalized)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 static SYSTEM_FONTS: OnceLock<Vec<String>> = OnceLock::new();

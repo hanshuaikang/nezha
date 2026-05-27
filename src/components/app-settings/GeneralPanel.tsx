@@ -1,6 +1,8 @@
 import type React from "react";
+import { useEffect, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
+import { invoke } from "@tauri-apps/api/core";
 import { useI18n, type AppLanguage } from "../../i18n";
 import {
   normalizeTaskDisplayWindow,
@@ -8,6 +10,7 @@ import {
   type TaskDisplayWindow,
 } from "../../types";
 import s from "../../styles";
+import type { AppSettings } from "./types";
 
 export function GeneralPanel({
   taskDisplayWindow,
@@ -17,6 +20,22 @@ export function GeneralPanel({
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
 }) {
   const { language, setLanguage, t } = useI18n();
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [savingWindowSize, setSavingWindowSize] = useState(false);
+
+  useEffect(() => {
+    invoke<AppSettings>("load_app_settings").then(setAppSettings).catch(() => {});
+  }, []);
+
+  async function handleCustomWindowSizeToggle(enabled: boolean) {
+    setSavingWindowSize(true);
+    try {
+      const updated = await invoke<AppSettings>("save_window_size", { enabled });
+      setAppSettings(updated);
+    } finally {
+      setSavingWindowSize(false);
+    }
+  }
 
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
@@ -147,6 +166,52 @@ export function GeneralPanel({
           </Select.Portal>
         </Select.Root>
         <span style={hintStyle}>{t("appSettings.taskDisplayWindowHint")}</span>
+      </div>
+
+      <div style={{ ...fieldStyle, marginTop: 18 }}>
+        <label style={labelStyle}>{t("appSettings.customWindowSize")}</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            disabled={savingWindowSize || appSettings === null}
+            onClick={() =>
+              appSettings && handleCustomWindowSizeToggle(!appSettings.custom_window_size)
+            }
+            style={{
+              flexShrink: 0,
+              width: 48,
+              height: 28,
+              borderRadius: 999,
+              border: "none",
+              padding: 3,
+              background: appSettings?.custom_window_size
+                ? "var(--primary-action-bg)"
+                : "var(--border-medium)",
+              boxShadow: appSettings?.custom_window_size
+                ? "0 0 0 4px var(--control-active-bg)"
+                : "inset 0 0 0 1px var(--border-dim)",
+              cursor: savingWindowSize || appSettings === null ? "default" : "pointer",
+              transition: "background 0.12s, box-shadow 0.12s",
+              opacity: savingWindowSize ? 0.6 : 1,
+            }}
+          >
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                background: "var(--control-knob-bg)",
+                transform: appSettings?.custom_window_size ? "translateX(20px)" : "translateX(0)",
+                transition: "transform 0.12s ease",
+              }}
+            />
+          </button>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            {appSettings?.custom_window_size
+              ? t("appSettings.customWindowSizeEnabled")
+              : t("appSettings.customWindowSizeDisabled")}
+          </span>
+        </div>
+        <span style={hintStyle}>{t("appSettings.customWindowSizeHint")}</span>
       </div>
     </div>
   );

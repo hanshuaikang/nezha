@@ -51,11 +51,50 @@ impl TaskManager {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_app| {
+        .setup(|app| {
             // 后台预热 login shell 环境，避免第一次启动任务时阻塞
             std::thread::spawn(|| {
                 crate::app_settings::get_login_shell_path();
             });
+            // 读取保存的自定义窗口尺寸和位置并应用
+            {
+                use tauri::Manager;
+                let settings = crate::app_settings::load_settings_internal();
+                if settings.custom_window_size {
+                    if let (Some(lw), Some(lh)) = (settings.window_width, settings.window_height) {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let scale = window.scale_factor().unwrap_or(1.0);
+                            let w = (lw * scale) as u32;
+                            let h = (lh * scale) as u32;
+                            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: w, height: h }));
+                            if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
+                                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+                            }
+                        }
+                    }
+                }
+            }
+            // 关闭窗口时若已启用自定义尺寸，保存当前窗口大小和位置
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let win = window.clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { .. } = event {
+                            let settings = crate::app_settings::load_settings_internal();
+                            if settings.custom_window_size {
+                                if let (Ok(inner), Ok(scale), Ok(pos)) =
+                                    (win.inner_size(), win.scale_factor(), win.outer_position())
+                                {
+                                    let lw = inner.width as f64 / scale;
+                                    let lh = inner.height as f64 / scale;
+                                    let _ = crate::app_settings::persist_window_size(lw, lh, pos.x, pos.y);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
             Ok(())
         })
         .manage(TaskManager {
@@ -134,6 +173,7 @@ pub fn run() {
             app_settings::save_app_settings,
             app_settings::save_agent_paths,
             app_settings::save_send_shortcut,
+            app_settings::save_window_size,
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,

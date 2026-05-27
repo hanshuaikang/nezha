@@ -7,6 +7,9 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  custom_window_size: boolean;
+  window_width: number | null;
+  window_height: number | null;
 }
 
 export interface AgentVersions {
