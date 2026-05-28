@@ -21,7 +21,7 @@ export function TextAttachments({
   if (texts.length === 0) return null;
 
   return (
-    <div style={s.textAttachmentsRow}>
+    <>
       {texts.map((item) => (
         <div key={item.id} style={s.textAttachmentChip}>
           <FileText size={18} style={s.textAttachmentIcon} />
@@ -31,6 +31,6 @@ export function TextAttachments({
           </button>
         </div>
       ))}
-    </div>
+    </>
   );
 }

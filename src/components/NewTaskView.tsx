@@ -489,37 +489,39 @@ export function NewTaskView({
           }}
         />
 
-        {/* Image previews */}
-        <ImageAttachments
-          images={pastedImages}
-          onRemove={(id) => {
-            setPastedImages((prev) => {
-              const next = prev.filter((i) => i.id !== id);
-              if (next.length === 0 && pastedTexts.length === 0) {
-                const text = editorContentRef.current.text;
-                const hasChips = editorContentRef.current.hasChips;
-                setIsEmpty(!text.trim() && !hasChips);
-              }
-              return next;
-            });
-          }}
-        />
-
-        {/* Text attachment previews */}
-        <TextAttachments
-          texts={pastedTexts}
-          onRemove={(id) => {
-            setPastedTexts((prev) => {
-              const next = prev.filter((t) => t.id !== id);
-              if (next.length === 0 && pastedImages.length === 0) {
-                const text = editorContentRef.current.text;
-                const hasChips = editorContentRef.current.hasChips;
-                setIsEmpty(!text.trim() && !hasChips);
-              }
-              return next;
-            });
-          }}
-        />
+        {/* Attachment previews (images + pasted text on a single row) */}
+        {(pastedImages.length > 0 || pastedTexts.length > 0) && (
+          <div style={s.attachmentsRow}>
+            <ImageAttachments
+              images={pastedImages}
+              onRemove={(id) => {
+                setPastedImages((prev) => {
+                  const next = prev.filter((i) => i.id !== id);
+                  if (next.length === 0 && pastedTexts.length === 0) {
+                    const text = editorContentRef.current.text;
+                    const hasChips = editorContentRef.current.hasChips;
+                    setIsEmpty(!text.trim() && !hasChips);
+                  }
+                  return next;
+                });
+              }}
+            />
+            <TextAttachments
+              texts={pastedTexts}
+              onRemove={(id) => {
+                setPastedTexts((prev) => {
+                  const next = prev.filter((t) => t.id !== id);
+                  if (next.length === 0 && pastedImages.length === 0) {
+                    const text = editorContentRef.current.text;
+                    const hasChips = editorContentRef.current.hasChips;
+                    setIsEmpty(!text.trim() && !hasChips);
+                  }
+                  return next;
+                });
+              }}
+            />
+          </div>
+        )}
 
         {/* Toolbar */}
         <AgentPermSelector
