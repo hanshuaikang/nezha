@@ -116,8 +116,7 @@ export function EnvVarsPanel() {
       if (cancelledRef.current) return;
       setError(String(e));
     } finally {
-      if (cancelledRef.current) return;
-      setSaving(false);
+      if (!cancelledRef.current) setSaving(false);
     }
   }, []);
 

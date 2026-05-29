@@ -474,15 +474,11 @@ pub async fn run_task(
         format!("{}\n\n[Attached images]\n{}", base_prompt, image_paths.join("\n"))
     };
 
-    // 设置读盘 + 反序列化是阻塞操作，要从 Tokio runtime 移到 blocking pool
+    // 设置读盘 + 反序列化是阻塞操作，要从 Tokio runtime 移到 blocking pool；
+    // 一次 load 同时取出启动规格与用户环境变量，避免重复读盘
     let (launch, user_env_vars) = tokio::task::spawn_blocking({
         let agent = agent.clone();
-        move || {
-            (
-                crate::app_settings::get_agent_launch_spec(&agent),
-                crate::app_settings::get_user_env_vars(),
-            )
-        }
+        move || crate::app_settings::get_launch_spec_and_env(&agent)
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -707,15 +703,11 @@ pub async fn resume_task(
         })
         .map_err(|e| e.to_string())?;
 
-    // 设置读盘 + 反序列化是阻塞操作，要从 Tokio runtime 移到 blocking pool
+    // 设置读盘 + 反序列化是阻塞操作，要从 Tokio runtime 移到 blocking pool；
+    // 一次 load 同时取出启动规格与用户环境变量，避免重复读盘
     let (launch, user_env_vars) = tokio::task::spawn_blocking({
         let agent = agent.clone();
-        move || {
-            (
-                crate::app_settings::get_agent_launch_spec(&agent),
-                crate::app_settings::get_user_env_vars(),
-            )
-        }
+        move || crate::app_settings::get_launch_spec_and_env(&agent)
     })
     .await
     .map_err(|e| e.to_string())?;

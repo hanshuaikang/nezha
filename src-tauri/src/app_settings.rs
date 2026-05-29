@@ -456,12 +456,17 @@ pub async fn save_env_vars(env_vars: Vec<EnvVar>) -> Result<AppSettings, String>
     .map_err(|e| e.to_string())?
 }
 
-pub fn get_user_env_vars() -> Vec<(String, String)> {
-    load_settings_internal()
+/// 一次性读盘，同时取出启动规格与用户环境变量——避免任务启动时两次 load_settings_internal()
+/// 各自加锁 + 读盘 + 反序列化。调用方需在 spawn_blocking 内使用。
+pub fn get_launch_spec_and_env(agent: &str) -> (AgentLaunchSpec, Vec<(String, String)>) {
+    let settings = load_settings_internal();
+    let spec = get_agent_launch_spec_from_settings(&settings, agent);
+    let env = settings
         .env_vars
         .into_iter()
         .map(|entry| (entry.key, entry.value))
-        .collect()
+        .collect();
+    (spec, env)
 }
 
 #[tauri::command]
