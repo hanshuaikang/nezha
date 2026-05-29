@@ -408,13 +408,13 @@ function FilePreviewPane({
           alignItems: "center",
           padding: "0 12px",
           borderTop: "1px solid var(--border-dim)",
-          background: "var(--accent)",
+          background: "var(--bg-subtle)",
           flexShrink: 0,
           gap: 8,
         }}
       >
         <span
-          style={{ fontSize: 11, color: "var(--inverse-muted)", fontFamily: "var(--font-mono)" }}
+          style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
         >
           {filePath}
         </span>
@@ -423,7 +423,7 @@ function FilePreviewPane({
             style={{
               marginLeft: "auto",
               fontSize: 11,
-              color: saveStatus === "error" ? "var(--danger-fg)" : "var(--inverse-muted)",
+              color: saveStatus === "error" ? "var(--danger-fg)" : "var(--text-muted)",
               fontFamily: "var(--font-mono)",
             }}
           >
