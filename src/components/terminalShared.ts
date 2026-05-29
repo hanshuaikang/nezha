@@ -362,13 +362,33 @@ export function loadWebglAddon(term: Terminal): void {
 }
 
 /**
- * 安全地执行 fitAddon.fit() 并返回 { cols, rows }，失败时返回 null。
+ * 安全地执行 fitAddon.fit() 并返回 { cols, rows }，失败/容器不可见时返回 null。
+ *
+ * container 传了的话会做两道防御（xterm.js issue #3029 / #4338 / #4841 的已知坑）：
+ * 1. rect 宽高任一为 0 → 容器在 display:none 子树里，跳过。多项目挂载时这是
+ *    日常状态（非激活 ProjectPage display:none）。
+ * 2. proposeDimensions 返回非有限值或 cols/rows < 2 → 退化场景，跳过。
+ *
+ * 为什么必须拦：FitAddon 在 0 尺寸容器上不返回 NaN，而是退化到 `Math.max(
+ * MINIMUM_COLS, Math.floor(0 / cell))` = MINIMUM_COLS (2)；若放过 → 调用方
+ * notifyResize → resize_pty → SIGWINCH → Claude Code / Codex 这类 TUI 按
+ * cols=2 重排，buffer 永久打散成一字一行。VS Code 的同等防线在 _resize()
+ * 里是 `if (isNaN(cols) || isNaN(rows)) return`，但 xterm.js 这条 NaN 路径
+ * 不存在，必须在 rect 层先拦。
  */
 export function safeFit(
   fitAddon: FitAddon,
   term: Terminal,
+  container?: HTMLElement,
 ): { cols: number; rows: number } | null {
+  if (container) {
+    const rect = container.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+  }
   try {
+    const dims = fitAddon.proposeDimensions();
+    if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return null;
+    if (dims.cols < 2 || dims.rows < 2) return null;
     fitAddon.fit();
     return { cols: term.cols, rows: term.rows };
   } catch {
@@ -383,18 +403,20 @@ export function applyTerminalFontSize(
   term: Terminal,
   fitAddon: FitAddon,
   fontSize: number,
+  container?: HTMLElement,
 ): { cols: number; rows: number } | null {
   if (term.options.fontSize === fontSize) return null;
   term.options.fontSize = fontSize;
-  return safeFit(fitAddon, term);
+  return safeFit(fitAddon, term, container);
 }
 
 export function applyTerminalFontFamily(
   term: Terminal,
   fitAddon: FitAddon,
   fontFamily: string,
+  container?: HTMLElement,
 ): { cols: number; rows: number } | null {
   if (term.options.fontFamily === fontFamily) return null;
   term.options.fontFamily = fontFamily;
-  return safeFit(fitAddon, term);
+  return safeFit(fitAddon, term, container);
 }
