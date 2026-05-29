@@ -7,8 +7,15 @@ import {
   Settings as SettingsIcon,
   Type,
   Variable,
+  Blocks,
 } from "lucide-react";
-import type { ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type {
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TaskDisplayWindow,
+  FontFamily,
+} from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -20,6 +27,7 @@ import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
 import { FontPanel } from "./app-settings/FontPanel";
+import { SkillsPanel } from "./app-settings/SkillsPanel";
 import { getAgentSettingsFilePath } from "./app-settings/shared";
 import type { AgentKey, AppSettingsNavItem, NavKey, NavSection } from "./app-settings/types";
 
@@ -29,6 +37,7 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
   { key: "env", labelKey: "appSettings.envVars", section: "application", icon: Variable },
+  { key: "skills", labelKey: "skill.settings.navLabel", section: "application", icon: Blocks },
   {
     key: "claude",
     labelKey: "Claude Code",
@@ -74,7 +83,7 @@ function NavItemIcon({ item, size }: { item: AppSettingsNavItem; size: number })
 
 export function AppSettingsDialog({
   onClose,
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -88,7 +97,7 @@ export function AppSettingsDialog({
   onMonoFontFamilyChange,
 }: {
   onClose: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -188,6 +197,8 @@ export function AppSettingsDialog({
             <ShortcutsPanel key="shortcuts" />
           ) : activeNav === "env" ? (
             <EnvVarsPanel key="env" />
+          ) : activeNav === "skills" ? (
+            <SkillsPanel key="skills" />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />
           ) : (
@@ -196,7 +207,7 @@ export function AppSettingsDialog({
               agentKey={activeNav as AgentKey}
               filePath={activeItem.filePath!}
               lang={activeItem.lang!}
-              isDark={isDark}
+              themeVariant={themeVariant}
             />
           )}
         </div>

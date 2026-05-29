@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
-import type { ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
+import { OPEN_APP_SETTINGS_EVENT } from "./app-settings/types";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { UsagePopover } from "./UsagePopover";
@@ -9,7 +10,7 @@ import { useI18n } from "../i18n";
 import s from "../styles";
 
 export function SidebarFooterActions({
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -23,7 +24,7 @@ export function SidebarFooterActions({
   monoFontFamily,
   onMonoFontFamilyChange,
 }: {
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -39,6 +40,13 @@ export function SidebarFooterActions({
 }) {
   const { t } = useI18n();
   const [showAppSettings, setShowAppSettings] = useState(false);
+  const isDark = themeVariant === "dark";
+
+  useEffect(() => {
+    const open = () => setShowAppSettings(true);
+    window.addEventListener(OPEN_APP_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_APP_SETTINGS_EVENT, open);
+  }, []);
 
   return (
     <>
@@ -67,7 +75,7 @@ export function SidebarFooterActions({
 
       {showAppSettings && (
         <AppSettingsDialog
-          isDark={isDark}
+          themeVariant={themeVariant}
           themeMode={themeMode}
           systemPrefersDark={systemPrefersDark}
           onThemeModeChange={onThemeModeChange}

@@ -5,10 +5,9 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
-import type { TerminalFontSize, FontFamily } from "../types";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  DARK_THEME,
-  LIGHT_THEME,
+  themeFor,
   initTerminal,
   loadWebglAddon,
   safeFit,
@@ -45,7 +44,7 @@ interface Props {
   projectId: string;
   isActive?: boolean;
   onClose: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   onReady?: () => void;
@@ -66,25 +65,25 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   shellId: string;
   projectPath: string;
   isActive: boolean;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   onReady?: () => void;
 }>(
   function ShellTerminalInstance(
-    { shellId, projectPath, isActive, isDark, terminalFontSize, monoFontFamily, onReady },
+    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
-    const isDarkRef = useRef(isDark);
+    const themeVariantRef = useRef(themeVariant);
     const isActiveRef = useRef(isActive);
     const terminalFontSizeRef = useRef(terminalFontSize);
     const monoFontFamilyRef = useRef(monoFontFamily);
     const onReadyRef = useRef(onReady);
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-    isDarkRef.current = isDark;
+    themeVariantRef.current = themeVariant;
     isActiveRef.current = isActive;
     terminalFontSizeRef.current = terminalFontSize;
     monoFontFamilyRef.current = monoFontFamily;
@@ -107,7 +106,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
 
-      const { term, fitAddon } = initTerminal(isDarkRef.current, 5000, terminalFontSizeRef.current, monoFontFamilyRef.current);
+      const { term, fitAddon } = initTerminal(themeVariantRef.current, 5000, terminalFontSizeRef.current, monoFontFamilyRef.current);
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
@@ -118,7 +117,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const fit = () => {
         if (cleaned) return;
-        const s = safeFit(fitAddon, term);
+        const s = safeFit(fitAddon, term, container);
         if (!s) return;
         const last = lastSizeRef.current;
         if (last && last.cols === s.cols && last.rows === s.rows) return;
@@ -214,8 +213,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     useEffect(() => {
       if (!isActive) return;
       window.requestAnimationFrame(() => {
-        if (!fitAddonRef.current || !terminalRef.current) return;
-        const s = safeFit(fitAddonRef.current, terminalRef.current);
+        if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
+        const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
         if (s) {
           const last = lastSizeRef.current;
           if (!last || last.cols !== s.cols || last.rows !== s.rows) {
@@ -229,13 +228,18 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
     useEffect(() => {
       if (terminalRef.current) {
-        terminalRef.current.options.theme = isDark ? DARK_THEME : LIGHT_THEME;
+        terminalRef.current.options.theme = themeFor(themeVariant);
       }
-    }, [isDark]);
+    }, [themeVariant]);
 
     useEffect(() => {
-      if (!terminalRef.current || !fitAddonRef.current) return;
-      const size = applyTerminalFontSize(terminalRef.current, fitAddonRef.current, terminalFontSize);
+      if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
+      const size = applyTerminalFontSize(
+        terminalRef.current,
+        fitAddonRef.current,
+        terminalFontSize,
+        containerRef.current,
+      );
       if (!size) return;
       const last = lastSizeRef.current;
       if (last && last.cols === size.cols && last.rows === size.rows) return;
@@ -244,8 +248,13 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [terminalFontSize, shellId]);
 
     useEffect(() => {
-      if (!terminalRef.current || !fitAddonRef.current) return;
-      const size = applyTerminalFontFamily(terminalRef.current, fitAddonRef.current, monoFontFamily);
+      if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
+      const size = applyTerminalFontFamily(
+        terminalRef.current,
+        fitAddonRef.current,
+        monoFontFamily,
+        containerRef.current,
+      );
       if (!size) return;
       const last = lastSizeRef.current;
       if (last && last.cols === size.cols && last.rows === size.rows) return;
@@ -277,7 +286,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       projectId,
       isActive = true,
       onClose,
-      isDark,
+      themeVariant,
       terminalFontSize,
       monoFontFamily,
       onReady,
@@ -352,7 +361,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           borderTop: "1px solid var(--border-dim)",
           display: "flex",
           flexDirection: "column",
-          background: isDark ? DARK_THEME.background : LIGHT_THEME.background,
+          background: themeFor(themeVariant).background,
         }}
       >
         {onResizeStart && (
@@ -412,7 +421,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 shellId={shell.id}
                 projectPath={projectPath}
                 isActive={isActive && activeShellId === shell.id}
-                isDark={isDark}
+                themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
                 onReady={onReady}

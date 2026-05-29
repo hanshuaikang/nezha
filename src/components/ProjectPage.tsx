@@ -6,6 +6,7 @@ import type {
   PermissionMode,
   TaskStatus,
   ThemeMode,
+  ThemeVariant,
   TerminalFontSize,
   TaskDisplayWindow,
   FontFamily,
@@ -26,6 +27,7 @@ import { TodoTaskView } from "./TodoTaskView";
 import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTerminalPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useProjectPanels } from "../hooks/useProjectPanels";
+import { useI18n } from "../i18n";
 import s from "../styles";
 
 export function ProjectPage({
@@ -62,7 +64,7 @@ export function ProjectPage({
   onBack,
   onSwitchProject,
   onOpen,
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -75,6 +77,8 @@ export function ProjectPage({
   onUiFontFamilyChange,
   monoFontFamily,
   onMonoFontFamilyChange,
+  hubMode = false,
+  onExitSkillHub,
 }: {
   project: Project;
   visible?: boolean;
@@ -97,6 +101,7 @@ export function ProjectPage({
     agent: AgentType;
     permissionMode: PermissionMode;
     images: string[];
+    texts: string[];
     immediate: boolean;
     launchMode: "local" | "worktree";
     baseBranch: string;
@@ -123,7 +128,7 @@ export function ProjectPage({
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
   onOpen: () => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -136,7 +141,10 @@ export function ProjectPage({
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
   onMonoFontFamilyChange: (family: FontFamily) => void;
+  hubMode?: boolean;
+  onExitSkillHub?: () => void;
 }) {
+  const { t } = useI18n();
   const {
     rightPanel,
     openFiles,
@@ -257,7 +265,13 @@ export function ProjectPage({
         ...s.projectBody,
         position: "absolute",
         inset: 0,
-        visibility: visible ? "visible" : "hidden",
+        // 非激活项目用 display:none 而非 visibility:hidden——visibility:hidden
+        // 仍把元素留在 layout tree 中，macOS WKWebView 的 NSTextInputClient
+        // 在中文 IME 拖选时会扫描全部 RenderText（含非激活项目子树里的 emoji/img），
+        // 触发 hit-test 风暴。display:none 把整棵子树从 layout tree 移除，
+        // 风暴范围只剩当前可见项目。xterm buffer 在 display:none 下仍同步更新，
+        // 切回时 ResizeObserver 触发 fit 不丢数据。
+        display: visible ? "flex" : "none",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 1 : 0,
       }}
@@ -268,6 +282,7 @@ export function ProjectPage({
         activeProjectId={project.id}
         onSwitch={onSwitchProject}
         onOpen={onOpen}
+        singleProjectMode={hubMode}
       />
       <TaskPanel
         project={project}
@@ -280,8 +295,9 @@ export function ProjectPage({
         onDeleteAllTasks={onDeleteAllTasks}
         onToggleTaskStar={onToggleTaskStar}
         onRunTodo={onRunTodoTask}
-        onBack={onBack}
-        isDark={isDark}
+        onBack={hubMode ? (onExitSkillHub ?? onBack) : onBack}
+        backTitle={hubMode ? t("skill.taskView.back") : undefined}
+        themeVariant={themeVariant}
         themeMode={themeMode}
         systemPrefersDark={systemPrefersDark}
         onThemeModeChange={onThemeModeChange}
@@ -372,7 +388,7 @@ export function ProjectPage({
                 onCloseOtherTabs={handleCloseOtherFileTabs}
                 onCloseTabsToRight={handleCloseTabsToRight}
                 onCloseAllTabs={handleCloseAllFileTabs}
-                isDark={isDark}
+                themeVariant={themeVariant}
                 onRunMakeTarget={handleRunMakeTarget}
               />
             ) : isNewTask || !selectedTask ? (
@@ -425,7 +441,7 @@ export function ProjectPage({
                   getRestoreState={() => getTaskRestoreState(task.id)}
                   onRename={(name) => onRenameTask(task.id, name)}
                   onGenerateName={() => onGenerateTaskName(task.id)}
-                  isDark={isDark}
+                  themeVariant={themeVariant}
                   terminalFontSize={terminalFontSize}
                   monoFontFamily={monoFontFamily}
                 />
@@ -439,7 +455,7 @@ export function ProjectPage({
             projectId={project.id}
             isActive={visible}
             onClose={() => setShowShellTerminal(false)}
-            isDark={isDark}
+            themeVariant={themeVariant}
             terminalFontSize={terminalFontSize}
             monoFontFamily={monoFontFamily}
             onReady={handleShellReady}
@@ -469,7 +485,6 @@ export function ProjectPage({
                 projectPath={project.path}
                 projectName={project.name}
                 onFileSelect={handleFileSelect}
-                isDark={isDark}
                 active={visible}
                 width={rightPanelWidth}
               />

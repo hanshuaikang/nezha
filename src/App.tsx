@@ -10,8 +10,10 @@ import type {
   AgentType,
   PermissionMode,
   ThemeMode,
+  ThemeVariant,
   TerminalFontSize,
   TaskDisplayWindow,
+  SkillHubConfig,
 } from "./types";
 import {
   isActiveTaskStatus,
@@ -27,6 +29,7 @@ import {
 import type { FontFamily } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
+import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
 import { useToast } from "./components/Toast";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
@@ -135,7 +138,14 @@ function getSystemPrefersDark() {
 
 function getInitialThemeMode(): ThemeMode {
   const stored = localStorage.getItem("nezha:theme");
-  return stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+  return stored === "dark" || stored === "light" || stored === "system" || stored === "eyecare"
+    ? stored
+    : "system";
+}
+
+function resolveThemeVariant(mode: ThemeMode, systemPrefersDark: boolean): ThemeVariant {
+  if (mode === "system") return systemPrefersDark ? "dark" : "light";
+  return mode;
 }
 
 function getInitialTerminalFontSize(): TerminalFontSize {
@@ -161,7 +171,7 @@ function App() {
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
-  const isDark = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
+  const themeVariant: ThemeVariant = resolveThemeVariant(themeMode, systemPrefersDark);
   const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
     getInitialTerminalFontSize,
   );
@@ -180,6 +190,8 @@ function App() {
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
+  const [skillHubConfig, setSkillHubConfig] = useState<SkillHubConfig | null>(null);
+  const [hubMode, setHubMode] = useState(false);
 
   const tm = useTerminalManager();
   const pendingResumeStartsRef = useRef<Record<string, () => void>>({});
@@ -245,13 +257,19 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
+    const root = document.documentElement;
+    root.classList.toggle("dark", themeVariant === "dark");
+    root.classList.toggle("eyecare", themeVariant === "eyecare");
     localStorage.setItem("nezha:theme", themeMode);
-  }, [isDark, themeMode]);
+  }, [themeVariant, themeMode]);
 
   useEffect(() => {
+    // Tauri window theme only understands light/dark/null; map eyecare to light
+    // so the native chrome (titlebar, scrollbars) stays in the light family.
+    const nativeTheme =
+      themeMode === "system" ? null : themeMode === "dark" ? "dark" : "light";
     getCurrentWindow()
-      .setTheme(themeMode === "system" ? null : themeMode)
+      .setTheme(nativeTheme)
       .catch(console.error);
   }, [themeMode]);
 
@@ -277,9 +295,13 @@ function App() {
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
-      const currentlyDark =
-        currentMode === "system" ? systemPrefersDark : currentMode === "dark";
-      return currentlyDark ? "light" : "dark";
+      // Toggle only cycles between the two standard variants. Special themes
+      // (eyecare and any future opt-in variants) retreat to "light" so the
+      // shortcut remains a one-tap escape hatch back to the canonical pair.
+      if (currentMode === "dark") return "light";
+      if (currentMode === "light") return "dark";
+      if (currentMode === "system") return systemPrefersDark ? "light" : "dark";
+      return "light";
     });
   }, [systemPrefersDark]);
 
@@ -305,6 +327,51 @@ function App() {
     }
 
     init().catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    // 用 backend 列表作为权威，merge 进前端 state：
+    // 后端写入的版本覆盖共有项；前端独有但 backend 还未持久化的条目保留下来。
+    const mergeProjects = (authoritative: Project[]) => {
+      setProjects((prev) => {
+        const byId = new Map<string, Project>();
+        authoritative.forEach((p) => byId.set(p.id, p));
+        prev.forEach((p) => {
+          if (!byId.has(p.id)) byId.set(p.id, p);
+        });
+        return Array.from(byId.values());
+      });
+    };
+
+    const loadFromBackend = () => {
+      Promise.all([
+        invoke<SkillHubConfig>("get_skill_hub_config"),
+        invoke<Project[]>("load_projects"),
+      ])
+        .then(([cfg, loadedProjects]) => {
+          setSkillHubConfig(cfg ?? null);
+          mergeProjects(loadedProjects);
+        })
+        .catch(console.error);
+    };
+
+    const handleSkillHubChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ projects?: Project[] }>).detail;
+      if (detail?.projects && Array.isArray(detail.projects)) {
+        // 同步路径：set_skill_hub_path 已返回完整列表，直接 merge，避免竞态
+        invoke<SkillHubConfig>("get_skill_hub_config")
+          .then((cfg) => setSkillHubConfig(cfg ?? null))
+          .catch(console.error);
+        mergeProjects(detail.projects);
+        return;
+      }
+      // clear_skill_hub 等场景没有 projects payload，退回到全量 reload
+      loadFromBackend();
+    };
+
+    loadFromBackend();
+    window.addEventListener(SKILL_HUB_CHANGED_EVENT, handleSkillHubChanged);
+    return () => window.removeEventListener(SKILL_HUB_CHANGED_EVENT, handleSkillHubChanged);
   }, []);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
@@ -363,6 +430,7 @@ function App() {
       return next;
     });
     setActiveProject(updated);
+    setHubMode(false);
     mountProject(updated.id);
     invoke("init_project_config", { projectPath: project.path }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
@@ -371,9 +439,10 @@ function App() {
 
   function handleBack() {
     setActiveProject(null);
+    setHubMode(false);
   }
 
-  function invokeRunTask(task: Task, projectPath: string, images: string[]) {
+  function invokeRunTask(task: Task, projectPath: string, images: string[], texts: string[] = []) {
     invoke("run_task", {
       taskId: task.id,
       projectPath,
@@ -381,6 +450,7 @@ function App() {
       agent: task.agent,
       permissionMode: task.permissionMode,
       images,
+      texts,
       cols: tm.terminalSizeRef.current.cols,
       rows: tm.terminalSizeRef.current.rows,
       onOutput: tm.createOutputChannel(task.id),
@@ -398,6 +468,7 @@ function App() {
       agent,
       permissionMode,
       images,
+      texts,
       immediate,
       launchMode,
       baseBranch,
@@ -406,6 +477,7 @@ function App() {
       agent: AgentType;
       permissionMode: PermissionMode;
       images: string[];
+      texts: string[];
       immediate: boolean;
       launchMode: "local" | "worktree";
       baseBranch: string;
@@ -424,6 +496,7 @@ function App() {
       id: taskId,
       projectId: project.id,
       prompt,
+      name: prompt ? undefined : `task-${taskId}`,
       agent,
       permissionMode,
       status: immediate ? "pending" : "todo",
@@ -489,6 +562,7 @@ function App() {
       { ...baseTask, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch },
       worktreePath ?? project.path,
       images,
+      texts,
     );
   }
 
@@ -854,6 +928,9 @@ function App() {
     if (!ok) return;
     const projectTaskIds = tasks.filter((t) => t.projectId === projectId).map((t) => t.id);
     deleteTasks(projectTaskIds);
+    invoke<number>("cleanup_installations_for_project", { projectId }).catch((e) =>
+      console.error("cleanup_installations_for_project failed", e),
+    );
     setProjects((prev) => {
       const next = prev.filter((p) => p.id !== projectId);
       persistProjects(next, showToast, formatSaveProjectsError);
@@ -951,6 +1028,34 @@ function App() {
         .filter((project): project is Project => !!project),
     [mountedProjectIds, projects],
   );
+  const hubProjectId = skillHubConfig?.hubProjectId;
+  const visibleProjectsForWelcome = useMemo(
+    () => sortedProjects.filter((p) => p.id !== hubProjectId),
+    [sortedProjects, hubProjectId],
+  );
+
+  const handleEnterSkillHub = useCallback(() => {
+    if (!hubProjectId) return;
+    const hub = projects.find((p) => p.id === hubProjectId);
+    if (!hub) return;
+    const updated = { ...hub, lastOpenedAt: Date.now() };
+    setProjects((prev) => {
+      const next = prev.map((p) => (p.id === hub.id ? updated : p));
+      persistProjects(next, showToast, formatSaveProjectsError);
+      return next;
+    });
+    setHubMode(true);
+    setActiveProject(updated);
+    mountProject(updated.id);
+    invoke("init_project_config", { projectPath: updated.path }).catch((e: unknown) => {
+      showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
+    });
+  }, [hubProjectId, projects, mountProject, showToast, formatSaveProjectsError, t]);
+
+  const handleExitSkillHub = useCallback(() => {
+    setHubMode(false);
+    setActiveProject(null);
+  }, []);
 
   return (
     <div style={{ ...s.root, position: "relative" }}>
@@ -963,13 +1068,22 @@ function App() {
       >
         {mountedProjects.map((project) => {
           const view = getProjectView(project.id);
+          const isHubActive = hubMode && project.id === hubProjectId;
+          const railProjectsFiltered = isHubActive
+            ? [project]
+            : railProjects.filter((p) => p.id !== hubProjectId);
+          const otherProjectsFiltered = isHubActive
+            ? []
+            : sortedProjects.filter((p) => p.id !== project.id && p.id !== hubProjectId);
           return (
             <ProjectPage
               key={project.id}
               project={project}
               visible={activeProject?.id === project.id}
-              allProjects={railProjects}
-              otherProjects={sortedProjects.filter((p) => p.id !== project.id)}
+              allProjects={railProjectsFiltered}
+              otherProjects={otherProjectsFiltered}
+              hubMode={isHubActive}
+              onExitSkillHub={handleExitSkillHub}
               tasks={tasks}
               getTaskRestoreState={tm.getTaskRestoreState}
               taskRunCounts={taskRunCounts}
@@ -1003,7 +1117,7 @@ function App() {
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
               onOpen={handleOpen}
-              isDark={isDark}
+              themeVariant={themeVariant}
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={setThemeMode}
@@ -1029,12 +1143,14 @@ function App() {
           }}
         >
           <WelcomePage
-            projects={sortedProjects}
+            projects={visibleProjectsForWelcome}
             tasks={tasks}
             onOpen={handleOpen}
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
-            isDark={isDark}
+            skillHubConfig={skillHubConfig}
+            onEnterSkillHub={handleEnterSkillHub}
+            themeVariant={themeVariant}
             themeMode={themeMode}
             systemPrefersDark={systemPrefersDark}
             onThemeModeChange={setThemeMode}

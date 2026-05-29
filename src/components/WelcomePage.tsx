@@ -1,10 +1,21 @@
 import { useState, useMemo } from "react";
-import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, Clock } from "lucide-react";
-import type { Project, Task, ThemeMode, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, Clock, Blocks } from "lucide-react";
+import type {
+  Project,
+  Task,
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TaskDisplayWindow,
+  FontFamily,
+  SkillHubConfig,
+} from "../types";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
+import { OPEN_APP_SETTINGS_EVENT } from "./app-settings/types";
 import { TimelineView } from "./TimelineView";
+import { SkillHubView } from "./skill-hub/SkillHubView";
 import { useI18n, pluralKey } from "../i18n";
 import s from "../styles";
 
@@ -70,7 +81,7 @@ export function WelcomePage({
   onOpen,
   onProjectClick,
   onDeleteProject,
-  isDark,
+  themeVariant,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -83,13 +94,15 @@ export function WelcomePage({
   onUiFontFamilyChange,
   monoFontFamily,
   onMonoFontFamilyChange,
+  skillHubConfig,
+  onEnterSkillHub,
 }: {
   projects: Project[];
   tasks: Task[];
   onOpen: () => void;
   onProjectClick: (p: Project) => void;
   onDeleteProject: (projectId: string) => void;
-  isDark: boolean;
+  themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -102,12 +115,14 @@ export function WelcomePage({
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
   onMonoFontFamilyChange: (family: FontFamily) => void;
+  skillHubConfig: SkillHubConfig | null;
+  onEnterSkillHub: () => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [hov, setHov] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [view, setView] = useState<"projects" | "timeline">("projects");
+  const [view, setView] = useState<"projects" | "timeline" | "skills">("projects");
 
   const filtered = useMemo(() => {
     if (!query.trim()) return projects;
@@ -145,11 +160,17 @@ export function WelcomePage({
               active={view === "timeline"}
               onClick={() => setView("timeline")}
             />
+            <SidebarItem
+              icon={<Blocks size={15} />}
+              label={t("welcome.skillHub")}
+              active={view === "skills"}
+              onClick={() => setView("skills")}
+            />
           </nav>
 
           <div style={s.sidebarFooter}>
             <SidebarFooterActions
-              isDark={isDark}
+              themeVariant={themeVariant}
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={onThemeModeChange}
@@ -174,6 +195,15 @@ export function WelcomePage({
               const project = projects.find((p) => p.id === task.projectId);
               if (project) onProjectClick(project);
             }}
+          />
+        ) : view === "skills" ? (
+          <SkillHubView
+            config={skillHubConfig}
+            allProjects={projects}
+            onEnterSkillHub={onEnterSkillHub}
+            onOpenAppSettings={() =>
+              window.dispatchEvent(new CustomEvent(OPEN_APP_SETTINGS_EVENT))
+            }
           />
         ) : (
           <div style={s.welcomePane}>

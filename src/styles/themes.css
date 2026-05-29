@@ -137,6 +137,60 @@
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 }
 
+/* Design tokens: eye-care theme (warm sepia, low-contrast) */
+html.eyecare {
+  --bg-root: #f5ecd7;
+  --bg-shell: #f5ecd7;
+  --bg-titlebar: #f5ecd7;
+  --bg-sidebar: #f9f1dc;
+  --bg-sidebar-elevated: #f3e9cf;
+  --bg-panel: #fbf5e4;
+  --bg-card: #fdf9ec;
+  --bg-hover: #ede2c4;
+  --bg-selected: rgba(101, 84, 51, 0.12);
+  --bg-subtle: #f1e7cd;
+  --bg-input: #fdf9ec;
+
+  --border-dim: rgba(101, 84, 51, 0.12);
+  --border-medium: rgba(101, 84, 51, 0.2);
+  --border-strong: rgba(101, 84, 51, 0.32);
+  --border-focus: #5a4a30;
+
+  --text-primary: #3f3724;
+  --text-secondary: #5a4f37;
+  --text-muted: #7a6c4f;
+  --text-hint: #a89876;
+  --control-active-bg: rgba(101, 84, 51, 0.12);
+  --control-active-fg: #3f3724;
+  --control-selected-bg: #5a4a30;
+  --control-selected-fg: #fdf9ec;
+  --control-knob-bg: #fdf9ec;
+  --primary-action-bg: #5a4a30;
+  --primary-action-fg: #fdf9ec;
+  --primary-action-hover: #463822;
+
+  --accent: #b07b3e;
+  --accent-strong: #95612a;
+  --accent-soft: rgba(176, 123, 62, 0.32);
+  --accent-hover: #95612a;
+  --accent-subtle: rgba(176, 123, 62, 0.14);
+
+  --brand-mark-gradient: linear-gradient(145deg, #3d2d1a, #8a5a2e 58%, #c08a4a 100%);
+  --brand-mark-glow: rgba(138, 90, 46, 0.18);
+  --brand-mark-inner-bg: rgba(40, 28, 14, 0.82);
+
+  --badge-muted-bg: rgba(101, 84, 51, 0.16);
+
+  --diff-gutter-bg: rgba(101, 84, 51, 0.03);
+  --diff-empty-bg: rgba(101, 84, 51, 0.03);
+
+  --code-line-number: rgba(101, 84, 51, 0.4);
+  --code-line-number-hover: rgba(101, 84, 51, 0.65);
+  --code-line-divider: rgba(101, 84, 51, 0.12);
+  --code-line-hover-bg: rgba(101, 84, 51, 0.06);
+  --image-checker-bg: rgba(101, 84, 51, 0.08);
+}
+
 /* Design tokens: dark theme */
 html.dark {
   --bg-root: #1d212a;
