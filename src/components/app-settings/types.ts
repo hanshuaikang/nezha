@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { SendShortcut } from "../../shortcuts";
 
-export type NavKey = "general" | "theme" | "fonts" | "shortcuts" | "about" | "claude" | "codex";
+export type NavKey = "general" | "theme" | "fonts" | "shortcuts" | "skills" | "about" | "claude" | "codex";
 
 export interface AppSettings {
   claude_path: string;
@@ -29,3 +29,13 @@ export interface AppSettingsNavItem {
 }
 
 export const APP_SETTINGS_CHANGED_EVENT = "nezha:app-settings-changed";
+export const SKILL_HUB_CHANGED_EVENT = "nezha:skill-hub-changed";
+export const OPEN_APP_SETTINGS_EVENT = "nezha:open-app-settings";
+
+/**
+ * `SKILL_HUB_CHANGED_EVENT` 可携带 `detail.projects`（来自后端 `set_skill_hub_path` 的完整列表），
+ * App.tsx 收到后会把它作为权威列表替换前端 state，避免竞态覆盖 hub project。
+ */
+export interface SkillHubChangedDetail {
+  projects?: unknown;
+}

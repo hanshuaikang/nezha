@@ -60,7 +60,7 @@ pub struct Task {
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
-fn nezha_dir() -> Result<PathBuf, String> {
+pub(crate) fn nezha_dir() -> Result<PathBuf, String> {
     let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
@@ -77,7 +77,7 @@ fn project_dir(project_id: &str) -> Result<PathBuf, String> {
     Ok(nezha_dir()?.join("projects").join(project_id))
 }
 
-fn ensure_nezha_dirs() -> Result<(), String> {
+pub(crate) fn ensure_nezha_dirs() -> Result<(), String> {
     fs::create_dir_all(nezha_dir()?).map_err(|e| e.to_string())
 }
 

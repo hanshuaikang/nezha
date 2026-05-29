@@ -1,6 +1,20 @@
 import { Fragment, useState } from "react";
-import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type } from "lucide-react";
-import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import {
+  X,
+  Keyboard,
+  Monitor,
+  Info,
+  Settings as SettingsIcon,
+  Type,
+  Blocks,
+} from "lucide-react";
+import type {
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TaskDisplayWindow,
+  FontFamily,
+} from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -11,6 +25,7 @@ import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
 import { FontPanel } from "./app-settings/FontPanel";
+import { SkillsPanel } from "./app-settings/SkillsPanel";
 import { getAgentSettingsFilePath } from "./app-settings/shared";
 import type { AgentKey, AppSettingsNavItem, NavKey, NavSection } from "./app-settings/types";
 
@@ -19,6 +34,7 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "theme", labelKey: "appSettings.theme", section: "application", icon: Monitor },
   { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
+  { key: "skills", labelKey: "skill.settings.navLabel", section: "application", icon: Blocks },
   {
     key: "claude",
     labelKey: "Claude Code",
@@ -176,6 +192,8 @@ export function AppSettingsDialog({
             />
           ) : activeNav === "shortcuts" ? (
             <ShortcutsPanel key="shortcuts" />
+          ) : activeNav === "skills" ? (
+            <SkillsPanel key="skills" />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />
           ) : (

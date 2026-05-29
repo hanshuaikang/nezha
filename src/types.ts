@@ -166,3 +166,66 @@ export interface UsageSnapshot {
   codex: UsageSource<CodexUsageData>;
   fetchedAt: number;
 }
+
+// ── Skill Hub ────────────────────────────────────────────────────────────────
+
+export interface SkillHubConfig {
+  hubProjectId?: string;
+  hubPath?: string;
+  createdAt?: number;
+}
+
+export interface Skill {
+  /** SKILL 目录名（权威标识） */
+  name: string;
+  /** frontmatter 的 name 字段，可与目录名不同 */
+  displayName?: string;
+  /** 解析后的 description，可能包含换行 */
+  description?: string;
+  /** skill 目录绝对路径 */
+  path: string;
+  /** frontmatter 解析失败时的错误说明 */
+  hasError?: string;
+}
+
+export type SkillInstallationHealth = "ok" | "broken" | "diverged";
+
+export interface SkillInstallation {
+  skillName: string;
+  projectId: string;
+  agent: AgentType;
+  installedAt: number;
+  linkPath: string;
+  targetPath: string;
+  health?: SkillInstallationHealth;
+}
+
+export type SkillInstallStrategy = "detect" | "skip" | "overwrite" | "cancel";
+
+export interface SkillConflictInfo {
+  existingKind: "directory" | "file" | "symlink";
+  existingTarget?: string;
+  linkPath: string;
+}
+
+export interface SkillInstallResult {
+  ok: boolean;
+  conflict?: SkillConflictInfo;
+  alreadyInstalled?: boolean;
+  skipped?: boolean;
+  cancelled?: boolean;
+  installation?: SkillInstallation;
+}
+
+export interface SkillDeleteResult {
+  ok: boolean;
+  removedLinks: number;
+}
+
+export interface SetSkillHubResult {
+  config: SkillHubConfig;
+  project: Project;
+  createdNewProject: boolean;
+  /** 后端写入后的权威 projects 列表 */
+  projects: Project[];
+}
