@@ -51,26 +51,63 @@ const MAX_IMAGE_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_FILE_SEARCH_RESULTS: usize = 200;
 
 /// Validate that `target` is an absolute path within `allowed_root` (prevents directory traversal).
-fn validate_path_within(target: &str, allowed_root: &str) -> Result<std::path::PathBuf, String> {
-    let target = Path::new(target);
-    let root = Path::new(allowed_root);
+/// Validate that `target` is reachable within `allowed_root`.
+///
+/// When `allow_symlink_escape` is false, the target is fully canonicalized and
+/// must land inside the root — symlinks pointing outside the project are rejected
+/// (use this for writes, so a planted symlink can't clobber external files).
+///
+/// When true, a symlink whose *location* is inside the project but whose target
+/// is outside is also accepted (e.g. a symlinked CLAUDE.md / AGENTS.md). `../`
+/// traversal in the path itself stays rejected in both modes.
+fn validate_path_within(
+    target: &str,
+    allowed_root: &str,
+    allow_symlink_escape: bool,
+) -> Result<std::path::PathBuf, String> {
+    let target_path = Path::new(target);
 
-    if !target.is_absolute() {
+    if !target_path.is_absolute() {
         return Err("Path must be absolute".to_string());
     }
 
-    let canonical_target = target
-        .canonicalize()
-        .map_err(|e| format!("Cannot resolve path: {}", e))?;
-    let canonical_root = root
+    let canonical_root = Path::new(allowed_root)
         .canonicalize()
         .map_err(|e| format!("Cannot resolve root directory: {}", e))?;
 
-    if !canonical_target.starts_with(&canonical_root) {
+    // Fast path: fully resolve the target (following symlinks). If it still lands
+    // inside the project root, accept it as-is.
+    if let Ok(canonical_target) = target_path.canonicalize() {
+        if canonical_target.starts_with(&canonical_root) {
+            return Ok(canonical_target);
+        }
+    }
+
+    if !allow_symlink_escape {
         return Err("Path is outside the allowed directory".to_string());
     }
 
-    Ok(canonical_target)
+    // Fall back to validating the *location* of the path: canonicalize only the
+    // parent directory (which resolves intermediate symlinks and `..` segments,
+    // so directory traversal is still rejected) and keep the final component
+    // un-resolved. This lets symlinks that live inside the project but point
+    // outside it — e.g. a symlinked CLAUDE.md / AGENTS.md — remain readable.
+    let file_name = target_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    let parent = target_path
+        .parent()
+        .ok_or_else(|| "Cannot resolve parent directory".to_string())?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve path: {}", e))?;
+
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err("Path is outside the allowed directory".to_string());
+    }
+
+    Ok(canonical_parent.join(file_name))
 }
 
 fn validate_project_root(project_path: &str) -> Result<std::path::PathBuf, String> {
@@ -202,7 +239,7 @@ fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
 #[tauri::command]
 pub async fn open_in_system_file_manager(path: String, project_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let target = validate_path_within(&path, &project_path)?;
+        let target = validate_path_within(&path, &project_path, true)?;
         let is_dir = target.is_dir();
 
         #[cfg(target_os = "macos")]
@@ -251,7 +288,7 @@ pub async fn open_in_system_file_manager(path: String, project_path: String) -> 
 #[tauri::command]
 pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        validate_path_within(&path, &project_path)?;
+        validate_path_within(&path, &project_path, true)?;
         let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
         let mut result: Vec<FsEntry> = entries
             .flatten()
@@ -323,7 +360,7 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
 
 #[tauri::command]
 pub async fn read_file_content(path: String, project_path: String) -> Result<String, String> {
-    validate_path_within(&path, &project_path)?;
+    validate_path_within(&path, &project_path, true)?;
 
     use std::io::Read;
     let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
@@ -343,7 +380,7 @@ pub async fn read_file_content(path: String, project_path: String) -> Result<Str
 
 #[tauri::command]
 pub async fn read_image_preview(path: String, project_path: String) -> Result<ImagePreviewData, String> {
-    let validated_path = validate_path_within(&path, &project_path)?;
+    let validated_path = validate_path_within(&path, &project_path, true)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         use std::io::Read;
@@ -382,7 +419,7 @@ pub async fn read_image_preview(path: String, project_path: String) -> Result<Im
 #[tauri::command]
 pub async fn write_file_content(path: String, content: String, project_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        validate_path_within(&path, &project_path)?;
+        validate_path_within(&path, &project_path, false)?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
     })
     .await
