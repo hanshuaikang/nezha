@@ -37,6 +37,8 @@ const SPLIT_CELL_GRID: CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 12.5,
   lineHeight: "22px",
+  // 裁剪超长行，避免 whiteSpace:pre 的内容溢出本栏、越过中间分隔线串到另一栏
+  overflow: "hidden",
 };
 
 const SPLIT_PAIR_GRID: CSSProperties = {
