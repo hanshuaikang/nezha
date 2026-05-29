@@ -259,7 +259,13 @@ export function ProjectPage({
         ...s.projectBody,
         position: "absolute",
         inset: 0,
-        visibility: visible ? "visible" : "hidden",
+        // 非激活项目用 display:none 而非 visibility:hidden——visibility:hidden
+        // 仍把元素留在 layout tree 中，macOS WKWebView 的 NSTextInputClient
+        // 在中文 IME 拖选时会扫描全部 RenderText（含非激活项目子树里的 emoji/img），
+        // 触发 hit-test 风暴。display:none 把整棵子树从 layout tree 移除，
+        // 风暴范围只剩当前可见项目。xterm buffer 在 display:none 下仍同步更新，
+        // 切回时 ResizeObserver 触发 fit 不丢数据。
+        display: visible ? "flex" : "none",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 1 : 0,
       }}

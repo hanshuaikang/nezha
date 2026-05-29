@@ -117,7 +117,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const fit = () => {
         if (cleaned) return;
-        const s = safeFit(fitAddon, term);
+        const s = safeFit(fitAddon, term, container);
         if (!s) return;
         const last = lastSizeRef.current;
         if (last && last.cols === s.cols && last.rows === s.rows) return;
@@ -213,8 +213,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     useEffect(() => {
       if (!isActive) return;
       window.requestAnimationFrame(() => {
-        if (!fitAddonRef.current || !terminalRef.current) return;
-        const s = safeFit(fitAddonRef.current, terminalRef.current);
+        if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
+        const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
         if (s) {
           const last = lastSizeRef.current;
           if (!last || last.cols !== s.cols || last.rows !== s.rows) {
@@ -233,8 +233,13 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [themeVariant]);
 
     useEffect(() => {
-      if (!terminalRef.current || !fitAddonRef.current) return;
-      const size = applyTerminalFontSize(terminalRef.current, fitAddonRef.current, terminalFontSize);
+      if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
+      const size = applyTerminalFontSize(
+        terminalRef.current,
+        fitAddonRef.current,
+        terminalFontSize,
+        containerRef.current,
+      );
       if (!size) return;
       const last = lastSizeRef.current;
       if (last && last.cols === size.cols && last.rows === size.rows) return;
@@ -243,8 +248,13 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [terminalFontSize, shellId]);
 
     useEffect(() => {
-      if (!terminalRef.current || !fitAddonRef.current) return;
-      const size = applyTerminalFontFamily(terminalRef.current, fitAddonRef.current, monoFontFamily);
+      if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
+      const size = applyTerminalFontFamily(
+        terminalRef.current,
+        fitAddonRef.current,
+        monoFontFamily,
+        containerRef.current,
+      );
       if (!size) return;
       const last = lastSizeRef.current;
       if (last && last.cols === size.cols && last.rows === size.rows) return;

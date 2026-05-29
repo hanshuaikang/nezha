@@ -486,7 +486,15 @@ pub async fn run_task(
     let image_paths = save_task_images(&project_path, &task_id, &images.unwrap_or_default())?;
 
     // 将文本附件保存至 .nezha/attachments/ 并获取文件路径
-    let text_paths = save_task_texts(&project_path, &task_id, &texts.unwrap_or_default())?;
+    // 用 spawn_blocking 把同步文件 I/O 移出 Tokio runtime（AGENTS.md 要求）
+    let text_paths = {
+        let project_path = project_path.clone();
+        let task_id = task_id.clone();
+        let texts = texts.unwrap_or_default();
+        tokio::task::spawn_blocking(move || save_task_texts(&project_path, &task_id, &texts))
+            .await
+            .map_err(|e| e.to_string())??
+    };
 
     // 若配置了项目级 prompt_prefix，则拼接到提示词前
     let config = crate::config::read_project_config(project_path.clone()).unwrap_or_default();
@@ -814,6 +822,12 @@ pub async fn resize_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    // 兜底：拒绝畸形尺寸。FitAddon 在容器 display:none 时可能算出 cols=2，前端
+    // 三层防御漏掉的话，会把 Claude Code / Codex 这类全屏 TUI 通过 SIGWINCH
+    // 排版打散到一字一行且不可恢复。前端任何路径有 bug，这里也得挡住。
+    if cols < 2 || rows < 2 || cols > 10_000 || rows > 10_000 {
+        return Ok(());
+    }
     let masters = task_manager.pty_masters.lock();
     if let Some(master) = masters.get(&task_id) {
         master

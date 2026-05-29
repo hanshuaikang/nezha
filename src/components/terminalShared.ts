@@ -3,7 +3,6 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
-import { publishTerminalSelectionActive } from "../terminalSelection";
 import type { ThemeVariant } from "../types";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
@@ -101,58 +100,36 @@ interface TerminalSelectionGuardOptions {
   writer?: Pick<SmartWriter, "setSelectionPaused">;
 }
 
-const macWebKitInertCounts = new WeakMap<HTMLElement, number>();
-let macWebKitSelectionGuardCount = 0;
-
 function setMacWebKitTextareaAttrs(term: Terminal): void {
   if (!term.textarea) return;
   term.textarea.setAttribute("autocomplete", "off");
   term.textarea.setAttribute("autocorrect", "off");
   term.textarea.setAttribute("autocapitalize", "off");
   term.textarea.setAttribute("spellcheck", "false");
+  // hint WKWebView 不需要候选条 UI，跳过 EditorState::stringForCandidateRequest
+  // 路径上的 wordRangeFromPosition → ICU 簇分析——这条路径每帧 willCommitMainFrameData
+  // 都跑一次（即使 textarea 已 blur），是 spellcheck=false 三件套覆盖不到的独立入口。
+  term.textarea.setAttribute("inputmode", "none");
 }
 
-function acquireInert(node: HTMLElement, ownedNodes: Set<HTMLElement>): void {
-  if (ownedNodes.has(node)) return;
-  const currentCount = macWebKitInertCounts.get(node);
-  if (currentCount !== undefined) {
-    macWebKitInertCounts.set(node, currentCount + 1);
-    ownedNodes.add(node);
-    return;
-  }
-  if (node.inert) return;
-  node.inert = true;
-  macWebKitInertCounts.set(node, 1);
-  ownedNodes.add(node);
-}
-
-function releaseInert(node: HTMLElement): void {
-  const currentCount = macWebKitInertCounts.get(node);
-  if (currentCount === undefined) return;
-  if (currentCount > 1) {
-    macWebKitInertCounts.set(node, currentCount - 1);
-    return;
-  }
-  macWebKitInertCounts.delete(node);
-  node.inert = false;
-}
-
-function inertTerminalBranchSiblings(container: HTMLElement, ownedNodes: Set<HTMLElement>): void {
-  let current: HTMLElement | null = container;
-  while (current && current !== document.body) {
-    const parent: HTMLElement | null = current.parentElement;
-    if (!parent) break;
-    for (const child of Array.from(parent.children)) {
-      if (child === current || !(child instanceof HTMLElement)) continue;
-      acquireInert(child, ownedNodes);
-    }
-    current = parent;
-  }
-}
-
-// WKWebView can service macOS NSTextInputClient hit-test queries against large
-// app DOM subtrees while an xterm selection exists. Keep those sibling branches
-// out of hit-testing during terminal selection without inerting the terminal path.
+// macOS WKWebView 在 xterm 选区拖动期间会被 NSTextInputClient 持续查询
+// characterIndexForPoint，触发 LocalFrame::rangeForPoint → ICU 簇分析，
+// 主线程被打满。
+//
+// 修复：拖动期间把 textarea 设 disabled——NSTextInputContext 没有可接收 focus
+// 的 text input 就不查询，hit-test 风暴断在源头。松手 enable 后 refocus，
+// 普通字符 / IME 输入照常。社区先例：xterm.js Discussion #5227。
+//
+// 历史：
+// - 曾经基于 inert 把终端外的 sibling 子树标为不可命中（试图阻断 NSTextInput
+//   hit-test 遍历）。2026-05-25 sample 实证 inert 只改变交互语义，不改变
+//   RenderText 在 layout tree 的存在，hit-test 照样遍历，已删。
+// - 曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，印证 IME
+//   路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部回调夺回焦点），
+//   改为 disabled 是硬性禁用，更彻底。
+// - 曾叠加 user-select:none 抑制 + window.getSelection().removeAllRanges() +
+//   TERMINAL_SELECTION_ACTIVE_EVENT 广播给 RunningView/useUsageSnapshot 暂停
+//   IPC 轮询。2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
 export function attachMacWebKitTerminalGuard({
   term,
   container,
@@ -160,59 +137,63 @@ export function attachMacWebKitTerminalGuard({
 }: TerminalSelectionGuardOptions): () => void {
   if (!IS_MAC_WEBKIT) return () => {};
 
-  container.classList.add("xterm-macos-ime-guard");
   setMacWebKitTextareaAttrs(term);
 
-  const inertedNodes = new Set<HTMLElement>();
   let pointerSelecting = false;
   let terminalHasSelection = term.hasSelection();
-  let guardSelectionActive = false;
 
-  const setGuardSelectionActive = (active: boolean) => {
-    if (guardSelectionActive === active) return;
-    guardSelectionActive = active;
-    macWebKitSelectionGuardCount += active ? 1 : -1;
-    publishTerminalSelectionActive(macWebKitSelectionGuardCount > 0);
+  // 拖选期间用 disabled 切断 IME host：
+  // - blur: textarea 仍 focusable，后续 RAF / 内部回调可能把焦点夺回，IME 又能查
+  // - disabled: 硬性禁用接收 focus / input，IME 100% 无法发起 NSTextInputClient 查询
+  // 参考：xterm.js Discussion #5227（社区实战验证）。
+  const disableTextarea = () => {
+    if (term.textarea && !term.textarea.disabled) {
+      term.textarea.disabled = true;
+    }
   };
 
-  const restoreSiblings = () => {
-    for (const node of inertedNodes) {
-      releaseInert(node);
+  const enableTextarea = () => {
+    if (term.textarea && term.textarea.disabled) {
+      term.textarea.disabled = false;
     }
-    inertedNodes.clear();
   };
 
-  const syncSiblings = () => {
-    const active = pointerSelecting || terminalHasSelection;
-    setGuardSelectionActive(active);
-    if (active) {
-      inertTerminalBranchSiblings(container, inertedNodes);
-    } else {
-      restoreSiblings();
+  const refocusTextarea = () => {
+    if (term.textarea) {
+      term.textarea.focus({ preventScroll: true });
     }
+  };
+
+  const syncSelectionGuard = () => {
+    if (pointerSelecting) disableTextarea();
+    else enableTextarea();
   };
 
   const handlePointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
-    term.focus();
     pointerSelecting = true;
     writer?.setSelectionPaused(true);
-    syncSiblings();
+    syncSelectionGuard();
   };
 
   const handlePointerUp = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    // document 级监听：必须先确认是终端发起的拖选流程，否则会把别处输入框的焦点抢走。
+    if (!pointerSelecting) return;
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
     terminalHasSelection = term.hasSelection();
-    syncSiblings();
+    syncSelectionGuard();
+    refocusTextarea();
   };
 
   const handlePointerCancel = () => {
+    if (!pointerSelecting) return;
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
     terminalHasSelection = term.hasSelection();
-    syncSiblings();
+    syncSelectionGuard();
+    refocusTextarea();
   };
 
   const handleDocumentPointerDown = (e: PointerEvent) => {
@@ -222,7 +203,8 @@ export function attachMacWebKitTerminalGuard({
     terminalHasSelection = false;
     writer?.setSelectionPaused(false);
     term.clearSelection();
-    restoreSiblings();
+    syncSelectionGuard();
+    // 用户点了终端外部，焦点本来就该去那里，不强抢回 textarea。
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -231,12 +213,13 @@ export function attachMacWebKitTerminalGuard({
     terminalHasSelection = false;
     writer?.setSelectionPaused(false);
     term.clearSelection();
-    restoreSiblings();
+    syncSelectionGuard();
+    refocusTextarea();
   };
 
   const selectionDisposable = term.onSelectionChange(() => {
     terminalHasSelection = term.hasSelection();
-    syncSiblings();
+    syncSelectionGuard();
   });
 
   container.addEventListener("pointerdown", handlePointerDown);
@@ -246,16 +229,15 @@ export function attachMacWebKitTerminalGuard({
   document.addEventListener("keydown", handleKeyDown, true);
 
   return () => {
-    container.classList.remove("xterm-macos-ime-guard");
     selectionDisposable.dispose();
     container.removeEventListener("pointerdown", handlePointerDown);
     document.removeEventListener("pointerup", handlePointerUp);
     document.removeEventListener("pointercancel", handlePointerCancel);
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
+    // 兜底：若卸载时仍处于选区拖动状态，恢复 textarea，避免下次输入丢失。
+    enableTextarea();
     writer?.setSelectionPaused(false);
-    setGuardSelectionActive(false);
-    restoreSiblings();
   };
 }
 
@@ -380,13 +362,33 @@ export function loadWebglAddon(term: Terminal): void {
 }
 
 /**
- * 安全地执行 fitAddon.fit() 并返回 { cols, rows }，失败时返回 null。
+ * 安全地执行 fitAddon.fit() 并返回 { cols, rows }，失败/容器不可见时返回 null。
+ *
+ * container 传了的话会做两道防御（xterm.js issue #3029 / #4338 / #4841 的已知坑）：
+ * 1. rect 宽高任一为 0 → 容器在 display:none 子树里，跳过。多项目挂载时这是
+ *    日常状态（非激活 ProjectPage display:none）。
+ * 2. proposeDimensions 返回非有限值或 cols/rows < 2 → 退化场景，跳过。
+ *
+ * 为什么必须拦：FitAddon 在 0 尺寸容器上不返回 NaN，而是退化到 `Math.max(
+ * MINIMUM_COLS, Math.floor(0 / cell))` = MINIMUM_COLS (2)；若放过 → 调用方
+ * notifyResize → resize_pty → SIGWINCH → Claude Code / Codex 这类 TUI 按
+ * cols=2 重排，buffer 永久打散成一字一行。VS Code 的同等防线在 _resize()
+ * 里是 `if (isNaN(cols) || isNaN(rows)) return`，但 xterm.js 这条 NaN 路径
+ * 不存在，必须在 rect 层先拦。
  */
 export function safeFit(
   fitAddon: FitAddon,
   term: Terminal,
+  container?: HTMLElement,
 ): { cols: number; rows: number } | null {
+  if (container) {
+    const rect = container.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+  }
   try {
+    const dims = fitAddon.proposeDimensions();
+    if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return null;
+    if (dims.cols < 2 || dims.rows < 2) return null;
     fitAddon.fit();
     return { cols: term.cols, rows: term.rows };
   } catch {
@@ -401,18 +403,20 @@ export function applyTerminalFontSize(
   term: Terminal,
   fitAddon: FitAddon,
   fontSize: number,
+  container?: HTMLElement,
 ): { cols: number; rows: number } | null {
   if (term.options.fontSize === fontSize) return null;
   term.options.fontSize = fontSize;
-  return safeFit(fitAddon, term);
+  return safeFit(fitAddon, term, container);
 }
 
 export function applyTerminalFontFamily(
   term: Terminal,
   fitAddon: FitAddon,
   fontFamily: string,
+  container?: HTMLElement,
 ): { cols: number; rows: number } | null {
   if (term.options.fontFamily === fontFamily) return null;
   term.options.fontFamily = fontFamily;
-  return safeFit(fitAddon, term);
+  return safeFit(fitAddon, term, container);
 }
