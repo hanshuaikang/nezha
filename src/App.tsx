@@ -445,6 +445,7 @@ function App() {
       id: taskId,
       projectId: project.id,
       prompt,
+      name: prompt ? undefined : `task-${taskId}`,
       agent,
       permissionMode,
       status: immediate ? "pending" : "todo",
