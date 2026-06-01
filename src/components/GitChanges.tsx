@@ -14,6 +14,7 @@ import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import s from "../styles";
 import { getGitStatusColor, getGitStatusLabel } from "../utils";
 import { useI18n } from "../i18n";
+import { useToast } from "./Toast";
 
 interface GitFileChange {
   path: string;
@@ -43,13 +44,13 @@ export function GitChanges({
   width = 280,
 }: Props) {
   const { t } = useI18n();
+  const { showToast } = useToast();
   const [changes, setChanges] = useState<GitFileChange[]>([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"task" | "all">("all");
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [generatingMsg, setGeneratingMsg] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [commitMsgError, setCommitMsgError] = useState(false);
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [trackedCollapsed, setTrackedCollapsed] = useState(false);
@@ -57,19 +58,18 @@ export function GitChanges({
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
 
-  const refresh = useCallback(async (options?: { clearError?: boolean }) => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    if (options?.clearError !== false) setError(null);
     try {
       const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath });
       if (result === null) return; // Component unmounted
       setChanges(result);
     } catch (e) {
-      if (!isCancelled()) setError(String(e));
+      if (!isCancelled()) showToast(String(e), "error");
     } finally {
       if (!isCancelled()) setLoading(false);
     }
-  }, [projectPath, safeInvoke, isCancelled]);
+  }, [projectPath, safeInvoke, isCancelled, showToast]);
 
   useEffect(() => {
     refresh();
@@ -97,27 +97,25 @@ export function GitChanges({
       }
       refresh();
     } catch (err) {
-      setError(String(err));
+      showToast(String(err), "error");
     }
   };
 
   const handleStageAll = async () => {
     try {
-      setError(null);
       await invoke("git_stage_all", { projectPath });
       refresh();
     } catch (err) {
-      setError(String(err));
+      showToast(String(err), "error");
     }
   };
 
   const handleUnstageAll = async () => {
     try {
-      setError(null);
       await invoke("git_unstage_all", { projectPath });
       refresh();
     } catch (err) {
-      setError(String(err));
+      showToast(String(err), "error");
     }
   };
 
@@ -135,16 +133,15 @@ export function GitChanges({
     );
     if (!ok) return;
     try {
-      setError(null);
       await invoke("git_discard_file", {
         projectPath,
         filePath: c.path,
         untracked,
       });
     } catch (err) {
-      setError(t("git.discardFailed", { error: String(err) }));
+      showToast(t("git.discardFailed", { error: String(err) }), "error");
     } finally {
-      await refresh({ clearError: false });
+      await refresh();
     }
   };
 
@@ -156,25 +153,23 @@ export function GitChanges({
     });
     if (!ok) return;
     try {
-      setError(null);
       await invoke("git_discard_all", { projectPath });
     } catch (err) {
-      setError(t("git.discardFailed", { error: String(err) }));
+      showToast(t("git.discardFailed", { error: String(err) }), "error");
     } finally {
-      await refresh({ clearError: false });
+      await refresh();
     }
   };
 
   const handleGenerateMsg = async () => {
     setGeneratingMsg(true);
-    setError(null);
     try {
       const msg = await safeInvoke<string>("generate_commit_message", { projectPath });
       if (msg === null) return; // Component unmounted
       setCommitMsg(msg);
       if (commitMsgError) setCommitMsgError(false);
     } catch (err) {
-      if (!isCancelled()) setError(String(err));
+      if (!isCancelled()) showToast(String(err), "error");
     } finally {
       if (!isCancelled()) setGeneratingMsg(false);
     }
@@ -187,13 +182,12 @@ export function GitChanges({
     }
     setCommitMsgError(false);
     setCommitting(true);
-    setError(null);
     try {
       await invoke("git_commit", { projectPath, message: commitMsg.trim() });
       setCommitMsg("");
       refresh();
     } catch (err) {
-      setError(String(err));
+      showToast(String(err), "error");
     } finally {
       setCommitting(false);
     }
@@ -315,23 +309,6 @@ export function GitChanges({
           {t("git.all")} {allCount}
         </button>
       </div>
-
-      {/* Error */}
-      {error && (
-        <div
-          style={{
-            margin: "0 12px 4px",
-            padding: "6px 10px",
-            background: "var(--danger-surface)",
-            border: "1px solid var(--danger-border)",
-            borderRadius: 6,
-            fontSize: 11.5,
-            color: "var(--danger-fg)",
-          }}
-        >
-          {error}
-        </div>
-      )}
 
       {/* File list */}
       <div style={{ flex: 1, overflowY: "auto" }}>
