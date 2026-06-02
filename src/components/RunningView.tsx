@@ -9,7 +9,6 @@ import { SessionView } from "./SessionView";
 import { useToast } from "./Toast";
 import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
-import { useTerminalSelectionActive } from "../hooks/useTerminalSelectionActive";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -113,7 +112,6 @@ export function RunningView({
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
   const resumeSessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
   const restoreState = getRestoreState?.() ?? {};
-  const terminalSelectionActive = useTerminalSelectionActive();
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
 
@@ -216,34 +214,31 @@ export function RunningView({
     // 项目重新激活时这里会立即补拉一次。注意这里用的是 projectActive
     // 而不是 visible —— 后者在同项目内打开 FileViewer / GitDiff 时也会是 false，
     // 那种场景下不应该中断正在运行任务的 duration 更新。
-    if (!projectActive || terminalSelectionActive) return;
+    if (!projectActive) return;
 
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
     const load = () => {
       invoke<SessionMetrics>("read_session_metrics", { sessionPath })
         .then((nextMetrics) => {
-          if (!cancelled) {
-            setMetrics(nextMetrics);
-          }
+          if (cancelled) return;
+          setMetrics(nextMetrics);
         })
         .catch(() => {});
     };
 
     load();
-
-    if (isActive) {
-      const timer = setInterval(load, 3000);
-      return () => {
-        cancelled = true;
-        clearInterval(timer);
-      };
-    }
+    if (isActive) timer = setInterval(load, 3000);
 
     return () => {
       cancelled = true;
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
     };
-  }, [sessionPath, isActive, projectActive, terminalSelectionActive]);
+  }, [sessionPath, isActive, projectActive]);
 
   return (
     <div

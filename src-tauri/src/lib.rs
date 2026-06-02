@@ -17,6 +17,7 @@ mod notification;
 mod platform;
 mod pty;
 mod session;
+mod skills;
 mod storage;
 mod subprocess;
 mod usage;
@@ -153,6 +154,15 @@ pub fn run() {
             hooks::get_hook_status,
             hooks::install_hooks,
             hooks::uninstall_hooks,
+            skills::get_skill_hub_config,
+            skills::set_skill_hub_path,
+            skills::clear_skill_hub,
+            skills::list_skills,
+            skills::list_skill_installations,
+            skills::install_skill,
+            skills::uninstall_skill,
+            skills::cleanup_installations_for_project,
+            skills::delete_skill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

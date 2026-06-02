@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type, Zap } from "lucide-react";
+import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type, Zap, Blocks } from "lucide-react";
 import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -12,6 +12,7 @@ import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
 import { FontPanel } from "./app-settings/FontPanel";
 import { HooksPanel } from "./app-settings/HooksPanel";
+import { SkillsPanel } from "./app-settings/SkillsPanel";
 import { getAgentSettingsFilePath } from "./app-settings/shared";
 import type { AgentKey, AppSettingsNavItem, NavKey, NavSection } from "./app-settings/types";
 
@@ -21,6 +22,7 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
   { key: "hooks", labelKey: "appSettings.hooks", section: "application", icon: Zap },
+  { key: "skills", labelKey: "skill.settings.navLabel", section: "application", icon: Blocks },
   {
     key: "claude",
     labelKey: "Claude Code",
@@ -180,6 +182,8 @@ export function AppSettingsDialog({
             <ShortcutsPanel key="shortcuts" />
           ) : activeNav === "hooks" ? (
             <HooksPanel key="hooks" />
+          ) : activeNav === "skills" ? (
+            <SkillsPanel key="skills" />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />
           ) : (

@@ -6,6 +6,7 @@ import { font } from "./font";
 import { gitDiff } from "./git-diff";
 import { layout } from "./layout";
 import { panels } from "./panels";
+import { skillHub } from "./skill-hub";
 import { task } from "./task";
 import { terminal } from "./terminal";
 import { timeline } from "./timeline";
@@ -20,8 +21,9 @@ const s = {
   ...common,
   ...font,
   ...timeline,
+  ...skillHub,
 } satisfies Record<string, React.CSSProperties>;
 
 export default s;
 
-export { common, dialogs, font, gitDiff, layout, panels, task, terminal, timeline };
+export { common, dialogs, font, gitDiff, layout, panels, skillHub, task, terminal, timeline };

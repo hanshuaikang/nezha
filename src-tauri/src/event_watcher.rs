@@ -41,7 +41,9 @@ struct HookEvent {
 }
 
 pub fn start(app: AppHandle) {
-    tokio::task::spawn_blocking(move || run_loop(app));
+    // 在独立的长驻线程上跑轮询循环。不能用 tokio::spawn_blocking——
+    // setup() 闭包运行在主线程,此时尚无 Tokio runtime 上下文,会 panic。
+    thread::spawn(move || run_loop(app));
 }
 
 fn run_loop(app: AppHandle) {

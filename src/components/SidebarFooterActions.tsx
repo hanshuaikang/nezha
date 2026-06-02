@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
 import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
+import { OPEN_APP_SETTINGS_EVENT } from "./app-settings/types";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { UsagePopover } from "./UsagePopover";
@@ -40,6 +41,12 @@ export function SidebarFooterActions({
   const { t } = useI18n();
   const [showAppSettings, setShowAppSettings] = useState(false);
   const isDark = themeVariant === "dark";
+
+  useEffect(() => {
+    const open = () => setShowAppSettings(true);
+    window.addEventListener(OPEN_APP_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_APP_SETTINGS_EVENT, open);
+  }, []);
 
   return (
     <>

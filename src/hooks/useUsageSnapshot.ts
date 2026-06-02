@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import type { UsageSnapshot } from "../types";
-import { useTerminalSelectionActive } from "./useTerminalSelectionActive";
 
 // Module-level cache — shared across all hook instances in the same process
 let cachedSnapshot: UsageSnapshot | null = null;
@@ -32,8 +31,6 @@ export function useUsageSnapshot(active: boolean) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  const terminalSelectionActive = useTerminalSelectionActive();
-  const effectiveActive = active && !terminalSelectionActive;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -43,12 +40,14 @@ export function useUsageSnapshot(active: boolean) {
   }, []);
 
   useEffect(() => {
-    if (!effectiveActive || !ENABLE_USAGE_INSIGHTS) return;
+    if (!active || !ENABLE_USAGE_INSIGHTS) return;
+
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const load = async () => {
       const now = Date.now();
       if (cachedSnapshot && now - cacheUpdatedAt < 60_000) {
-        setSnapshot(cachedSnapshot);
+        if (mountedRef.current) setSnapshot(cachedSnapshot);
         return;
       }
 
@@ -56,9 +55,7 @@ export function useUsageSnapshot(active: boolean) {
       setError(null);
       try {
         await fetchSnapshot();
-        if (mountedRef.current) {
-          setSnapshot(cachedSnapshot);
-        }
+        if (mountedRef.current) setSnapshot(cachedSnapshot);
       } catch (err) {
         if (mountedRef.current) {
           setError(err instanceof Error ? err.message : String(err));
@@ -69,9 +66,15 @@ export function useUsageSnapshot(active: boolean) {
     };
 
     load();
-    const interval = setInterval(load, 60_000);
-    return () => clearInterval(interval);
-  }, [effectiveActive]);
+    interval = setInterval(load, 60_000);
+
+    return () => {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+  }, [active]);
 
   return { snapshot, loading, error };
 }

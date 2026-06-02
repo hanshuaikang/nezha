@@ -86,7 +86,7 @@ export function TerminalView({
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
     loadWebglAddon(term);
 
-    const size = safeFit(fitAddon, term);
+    const size = safeFit(fitAddon, term, container);
     if (size) notifyResize(size.cols, size.rows);
 
     const focusTerminal = () => {
@@ -106,7 +106,7 @@ export function TerminalView({
     };
 
     window.requestAnimationFrame(() => {
-      const s = safeFit(fitAddon, term);
+      const s = safeFit(fitAddon, term, container);
       if (s) notifyResize(s.cols, s.rows);
       if (initialSnapshot) {
         term.write(initialSnapshot, () => {
@@ -137,7 +137,7 @@ export function TerminalView({
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
       window.requestAnimationFrame(() => {
-        const s = safeFit(fitAddon, term);
+        const s = safeFit(fitAddon, term, container);
         if (s) notifyResize(s.cols, s.rows);
         term.focus();
       });
@@ -150,7 +150,7 @@ export function TerminalView({
     const resizeObserver = new ResizeObserver(() => {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        const s = safeFit(fitAddon, term);
+        const s = safeFit(fitAddon, term, container);
         if (s) notifyResize(s.cols, s.rows);
       }, 50);
     });
@@ -181,8 +181,8 @@ export function TerminalView({
   useEffect(() => {
     if (!isActive) return;
     window.requestAnimationFrame(() => {
-      if (!fitAddonRef.current || !terminalRef.current) return;
-      const s = safeFit(fitAddonRef.current, terminalRef.current);
+      if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
+      const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
       if (s) notifyResize(s.cols, s.rows);
       terminalRef.current.focus();
     });
@@ -201,14 +201,24 @@ export function TerminalView({
   }, [themeVariant]);
 
   useEffect(() => {
-    if (!terminalRef.current || !fitAddonRef.current) return;
-    const size = applyTerminalFontSize(terminalRef.current, fitAddonRef.current, terminalFontSize);
+    if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
+    const size = applyTerminalFontSize(
+      terminalRef.current,
+      fitAddonRef.current,
+      terminalFontSize,
+      containerRef.current,
+    );
     if (size) notifyResize(size.cols, size.rows);
   }, [terminalFontSize, notifyResize]);
 
   useEffect(() => {
-    if (!terminalRef.current || !fitAddonRef.current) return;
-    const size = applyTerminalFontFamily(terminalRef.current, fitAddonRef.current, monoFontFamily);
+    if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
+    const size = applyTerminalFontFamily(
+      terminalRef.current,
+      fitAddonRef.current,
+      monoFontFamily,
+      containerRef.current,
+    );
     if (size) notifyResize(size.cols, size.rows);
   }, [monoFontFamily, notifyResize]);
 

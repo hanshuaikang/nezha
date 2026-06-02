@@ -13,6 +13,7 @@ import type {
   ThemeVariant,
   TerminalFontSize,
   TaskDisplayWindow,
+  SkillHubConfig,
 } from "./types";
 import {
   isActiveTaskStatus,
@@ -28,6 +29,7 @@ import {
 import type { FontFamily } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
+import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
 import { useToast } from "./components/Toast";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
@@ -188,6 +190,8 @@ function App() {
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
+  const [skillHubConfig, setSkillHubConfig] = useState<SkillHubConfig | null>(null);
+  const [hubMode, setHubMode] = useState(false);
 
   const tm = useTerminalManager();
   const pendingResumeStartsRef = useRef<Record<string, () => void>>({});
@@ -325,6 +329,51 @@ function App() {
     init().catch(console.error);
   }, []);
 
+  useEffect(() => {
+    // 用 backend 列表作为权威，merge 进前端 state：
+    // 后端写入的版本覆盖共有项；前端独有但 backend 还未持久化的条目保留下来。
+    const mergeProjects = (authoritative: Project[]) => {
+      setProjects((prev) => {
+        const byId = new Map<string, Project>();
+        authoritative.forEach((p) => byId.set(p.id, p));
+        prev.forEach((p) => {
+          if (!byId.has(p.id)) byId.set(p.id, p);
+        });
+        return Array.from(byId.values());
+      });
+    };
+
+    const loadFromBackend = () => {
+      Promise.all([
+        invoke<SkillHubConfig>("get_skill_hub_config"),
+        invoke<Project[]>("load_projects"),
+      ])
+        .then(([cfg, loadedProjects]) => {
+          setSkillHubConfig(cfg ?? null);
+          mergeProjects(loadedProjects);
+        })
+        .catch(console.error);
+    };
+
+    const handleSkillHubChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ projects?: Project[] }>).detail;
+      if (detail?.projects && Array.isArray(detail.projects)) {
+        // 同步路径：set_skill_hub_path 已返回完整列表，直接 merge，避免竞态
+        invoke<SkillHubConfig>("get_skill_hub_config")
+          .then((cfg) => setSkillHubConfig(cfg ?? null))
+          .catch(console.error);
+        mergeProjects(detail.projects);
+        return;
+      }
+      // clear_skill_hub 等场景没有 projects payload，退回到全量 reload
+      loadFromBackend();
+    };
+
+    loadFromBackend();
+    window.addEventListener(SKILL_HUB_CHANGED_EVENT, handleSkillHubChanged);
+    return () => window.removeEventListener(SKILL_HUB_CHANGED_EVENT, handleSkillHubChanged);
+  }, []);
+
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
   useEffect(() => {
     const p1 = listen<{ task_id: string; status: TaskStatus; failure_reason?: string }>(
@@ -381,6 +430,7 @@ function App() {
       return next;
     });
     setActiveProject(updated);
+    setHubMode(false);
     mountProject(updated.id);
     invoke("init_project_config", { projectPath: project.path }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
@@ -389,6 +439,7 @@ function App() {
 
   function handleBack() {
     setActiveProject(null);
+    setHubMode(false);
   }
 
   function invokeRunTask(task: Task, projectPath: string, images: string[], texts: string[] = []) {
@@ -877,6 +928,9 @@ function App() {
     if (!ok) return;
     const projectTaskIds = tasks.filter((t) => t.projectId === projectId).map((t) => t.id);
     deleteTasks(projectTaskIds);
+    invoke<number>("cleanup_installations_for_project", { projectId }).catch((e) =>
+      console.error("cleanup_installations_for_project failed", e),
+    );
     setProjects((prev) => {
       const next = prev.filter((p) => p.id !== projectId);
       persistProjects(next, showToast, formatSaveProjectsError);
@@ -974,6 +1028,34 @@ function App() {
         .filter((project): project is Project => !!project),
     [mountedProjectIds, projects],
   );
+  const hubProjectId = skillHubConfig?.hubProjectId;
+  const visibleProjectsForWelcome = useMemo(
+    () => sortedProjects.filter((p) => p.id !== hubProjectId),
+    [sortedProjects, hubProjectId],
+  );
+
+  const handleEnterSkillHub = useCallback(() => {
+    if (!hubProjectId) return;
+    const hub = projects.find((p) => p.id === hubProjectId);
+    if (!hub) return;
+    const updated = { ...hub, lastOpenedAt: Date.now() };
+    setProjects((prev) => {
+      const next = prev.map((p) => (p.id === hub.id ? updated : p));
+      persistProjects(next, showToast, formatSaveProjectsError);
+      return next;
+    });
+    setHubMode(true);
+    setActiveProject(updated);
+    mountProject(updated.id);
+    invoke("init_project_config", { projectPath: updated.path }).catch((e: unknown) => {
+      showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
+    });
+  }, [hubProjectId, projects, mountProject, showToast, formatSaveProjectsError, t]);
+
+  const handleExitSkillHub = useCallback(() => {
+    setHubMode(false);
+    setActiveProject(null);
+  }, []);
 
   return (
     <div style={{ ...s.root, position: "relative" }}>
@@ -986,13 +1068,22 @@ function App() {
       >
         {mountedProjects.map((project) => {
           const view = getProjectView(project.id);
+          const isHubActive = hubMode && project.id === hubProjectId;
+          const railProjectsFiltered = isHubActive
+            ? [project]
+            : railProjects.filter((p) => p.id !== hubProjectId);
+          const otherProjectsFiltered = isHubActive
+            ? []
+            : sortedProjects.filter((p) => p.id !== project.id && p.id !== hubProjectId);
           return (
             <ProjectPage
               key={project.id}
               project={project}
               visible={activeProject?.id === project.id}
-              allProjects={railProjects}
-              otherProjects={sortedProjects.filter((p) => p.id !== project.id)}
+              allProjects={railProjectsFiltered}
+              otherProjects={otherProjectsFiltered}
+              hubMode={isHubActive}
+              onExitSkillHub={handleExitSkillHub}
               tasks={tasks}
               getTaskRestoreState={tm.getTaskRestoreState}
               taskRunCounts={taskRunCounts}
@@ -1052,11 +1143,13 @@ function App() {
           }}
         >
           <WelcomePage
-            projects={sortedProjects}
+            projects={visibleProjectsForWelcome}
             tasks={tasks}
             onOpen={handleOpen}
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
+            skillHubConfig={skillHubConfig}
+            onEnterSkillHub={handleEnterSkillHub}
             themeVariant={themeVariant}
             themeMode={themeMode}
             systemPrefersDark={systemPrefersDark}
