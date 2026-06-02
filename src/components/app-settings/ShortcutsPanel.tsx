@@ -22,6 +22,7 @@ export function ShortcutsPanel() {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    env_vars: [],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

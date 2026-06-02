@@ -6,6 +6,7 @@ import {
   Info,
   Settings as SettingsIcon,
   Type,
+  Variable,
   Blocks,
 } from "lucide-react";
 import type {
@@ -21,6 +22,7 @@ import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
 import { AboutPanel } from "./app-settings/AboutPanel";
 import { AgentConfigPanel } from "./app-settings/AgentConfigPanel";
+import { EnvVarsPanel } from "./app-settings/EnvVarsPanel";
 import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
 import { ThemePanel } from "./app-settings/ThemePanel";
@@ -34,6 +36,7 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "theme", labelKey: "appSettings.theme", section: "application", icon: Monitor },
   { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
+  { key: "env", labelKey: "appSettings.envVars", section: "application", icon: Variable },
   { key: "skills", labelKey: "skill.settings.navLabel", section: "application", icon: Blocks },
   {
     key: "claude",
@@ -192,6 +195,8 @@ export function AppSettingsDialog({
             />
           ) : activeNav === "shortcuts" ? (
             <ShortcutsPanel key="shortcuts" />
+          ) : activeNav === "env" ? (
+            <EnvVarsPanel key="env" />
           ) : activeNav === "skills" ? (
             <SkillsPanel key="skills" />
           ) : activeNav === "about" ? (

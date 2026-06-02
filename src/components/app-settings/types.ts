@@ -1,12 +1,27 @@
 import type { LucideIcon } from "lucide-react";
 import type { SendShortcut } from "../../shortcuts";
 
-export type NavKey = "general" | "theme" | "fonts" | "shortcuts" | "skills" | "about" | "claude" | "codex";
+export type NavKey =
+  | "general"
+  | "theme"
+  | "fonts"
+  | "shortcuts"
+  | "env"
+  | "skills"
+  | "about"
+  | "claude"
+  | "codex";
+
+export interface EnvVar {
+  key: string;
+  value: string;
+}
 
 export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  env_vars: EnvVar[];
 }
 
 export interface AgentVersions {

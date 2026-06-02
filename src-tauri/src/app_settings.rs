@@ -35,6 +35,12 @@ pub fn get_login_shell_path() -> &'static str {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct EnvVar {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default)]
     pub claude_path: String,
@@ -42,6 +48,8 @@ pub struct AppSettings {
     pub codex_path: String,
     #[serde(default = "default_send_shortcut")]
     pub send_shortcut: String,
+    #[serde(default)]
+    pub env_vars: Vec<EnvVar>,
 }
 
 impl Default for AppSettings {
@@ -50,8 +58,38 @@ impl Default for AppSettings {
             claude_path: String::new(),
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
+            env_vars: Vec::new(),
         }
     }
+}
+
+fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn normalize_env_vars(env_vars: Vec<EnvVar>) -> Vec<EnvVar> {
+    let mut seen = std::collections::HashSet::new();
+    env_vars
+        .into_iter()
+        .filter_map(|entry| {
+            let key = entry.key.trim().to_string();
+            if !is_valid_env_key(&key) {
+                return None;
+            }
+            if !seen.insert(key.clone()) {
+                return None;
+            }
+            Some(EnvVar {
+                key,
+                value: entry.value,
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Default)]
@@ -306,6 +344,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
+        env_vars: normalize_env_vars(settings.env_vars),
     }
 }
 
@@ -320,6 +359,7 @@ fn load_settings_unlocked() -> AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
+            env_vars: Vec::new(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -395,6 +435,38 @@ pub async fn save_agent_paths(claude_path: String, codex_path: String) -> Result
     .map_err(|e| e.to_string())??;
     clear_cached_versions();
     Ok(normalized)
+}
+
+#[tauri::command]
+pub async fn save_env_vars(env_vars: Vec<EnvVar>) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.env_vars = env_vars;
+
+        let dir = nezha_dir()?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = settings_path()?;
+        let normalized = normalize_settings(settings);
+        let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+        atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(normalized)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 一次性读盘，同时取出启动规格与用户环境变量——避免任务启动时两次 load_settings_internal()
+/// 各自加锁 + 读盘 + 反序列化。调用方需在 spawn_blocking 内使用。
+pub fn get_launch_spec_and_env(agent: &str) -> (AgentLaunchSpec, Vec<(String, String)>) {
+    let settings = load_settings_internal();
+    let spec = get_agent_launch_spec_from_settings(&settings, agent);
+    let env = settings
+        .env_vars
+        .into_iter()
+        .map(|entry| (entry.key, entry.value))
+        .collect();
+    (spec, env)
 }
 
 #[tauri::command]
