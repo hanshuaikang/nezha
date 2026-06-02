@@ -9,8 +9,10 @@ mod agent_assist;
 mod analytics;
 mod app_settings;
 mod config;
+mod event_watcher;
 mod fs;
 mod git;
+mod hooks;
 mod notification;
 mod platform;
 mod pty;
@@ -51,11 +53,17 @@ impl TaskManager {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_app| {
+        .setup(|app| {
             // 后台预热 login shell 环境，避免第一次启动任务时阻塞
             std::thread::spawn(|| {
                 crate::app_settings::get_login_shell_path();
             });
+            // 安装 hook 脚本与用户级配置注入(失败不阻塞启动,前端可查询状态)
+            std::thread::spawn(|| {
+                let _ = crate::hooks::ensure_installed();
+            });
+            // 启动 hook 事件文件 watcher
+            crate::event_watcher::start(app.handle().clone());
             Ok(())
         })
         .manage(TaskManager {
@@ -142,6 +150,9 @@ pub fn run() {
             notification::mark_notification_read,
             notification::mark_all_notifications_read,
             usage::read_usage_snapshot,
+            hooks::get_hook_status,
+            hooks::install_hooks,
+            hooks::uninstall_hooks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

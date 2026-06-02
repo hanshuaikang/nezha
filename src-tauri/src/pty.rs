@@ -106,6 +106,7 @@ fn finalize_task_exit(
     let _ = app.emit("task-status", payload);
 
     let _ = fs::remove_dir_all(task_attachments_dir(project_path, task_id));
+    crate::event_watcher::cleanup_task_events(task_id);
 }
 
 fn save_task_images(
@@ -208,6 +209,17 @@ fn setup_env(cmd: &mut CommandBuilder) {
     // 设置终端类型，使 Claude Code / Codex 输出正确的转义序列
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+}
+
+/// 注入 Nezha hook 守卫所需的环境变量。
+/// hook 脚本依靠 NEZHA_TASK_ID + NEZHA_EVENT_DIR 同时存在才工作,
+/// 用户在 Nezha 之外手动跑 agent 时这些变量缺失,脚本立即 exit 0。
+fn setup_nezha_env(cmd: &mut CommandBuilder, task_id: &str, agent: &str) {
+    if let Ok(dir) = crate::hooks::events_dir_for(task_id) {
+        cmd.env("NEZHA_TASK_ID", task_id);
+        cmd.env("NEZHA_EVENT_DIR", dir.to_string_lossy().as_ref());
+        cmd.env("NEZHA_AGENT", agent);
+    }
 }
 
 /// 将 PTY master/writer/child 注册到 TaskManager 的三个 HashMap 中。
@@ -549,6 +561,7 @@ pub async fn run_task(
     };
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
+    setup_nezha_env(&mut cmd, &task_id, &agent);
     for (key, value) in &launch.extra_env {
         cmd.env(key, value);
     }
@@ -624,6 +637,7 @@ pub async fn cancel_task(
 
     // 清理任务附件
     let _ = fs::remove_dir_all(task_attachments_dir(&project_path, &task_id));
+    crate::event_watcher::cleanup_task_events(&task_id);
 
     Ok(())
 }
@@ -664,6 +678,7 @@ pub async fn complete_task(
 
     // 清理任务附件
     let _ = fs::remove_dir_all(task_attachments_dir(&project_path, &task_id));
+    crate::event_watcher::cleanup_task_events(&task_id);
 
     Ok(())
 }
@@ -751,6 +766,7 @@ pub async fn resume_task(
     };
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
+    setup_nezha_env(&mut cmd, &task_id, &agent);
     for (key, value) in &launch.extra_env {
         cmd.env(key, value);
     }
