@@ -325,8 +325,23 @@ pub async fn git_status(project_path: String) -> Result<Vec<GitFileChange>, Stri
         "status".to_string(),
         "--porcelain=v1".to_string(),
         "-z".to_string(),
+        "--untracked-files=all".to_string(),
     ];
+
     let output = run_git_with_timeout(project_path, args, Duration::from_secs(5)).await?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let message = format!("{}{}", stderr, stdout).trim().to_string();
+
+        return Err(if message.is_empty() {
+            "Failed to get git status".to_string()
+        } else {
+            message
+        });
+    }
+
     Ok(parse_porcelain_z_status(&output.stdout))
 }
 
