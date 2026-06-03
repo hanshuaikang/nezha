@@ -585,17 +585,36 @@ pub async fn run_task(
         serde_json::json!({ "task_id": task_id, "status": "running" }),
     );
 
-    // 用于将 PTY 输出转发给 session watcher 的 channel
-    let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
-    spawn_status_session_watcher(
-        app.clone(),
-        task_id.clone(),
-        project_path.clone(),
-        is_codex,
-        session_rx,
-        pre_session_id,
-        final_prompt.is_empty(),
-    );
+    // hook 链路是否可信:可信则会话发现与状态全部由 event_watcher 驱动,
+    // 跳过 /status 轮询 watcher;不可信(无 node / 未安装 / 版本过低)则回退轮询路径。
+    let use_hooks = {
+        let agent = agent.clone();
+        let saved_version = if is_codex {
+            config.agent.codex_version.clone()
+        } else {
+            config.agent.claude_version.clone()
+        };
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent, &saved_version))
+            .await
+            .unwrap_or(false)
+    };
+
+    // hook 可信时不创建 session 转发通道,也不拉起轮询 watcher。
+    let session_tx = if use_hooks {
+        None
+    } else {
+        let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
+        spawn_status_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            is_codex,
+            session_rx,
+            pre_session_id,
+            final_prompt.is_empty(),
+        );
+        Some(session_tx)
+    };
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),
@@ -605,7 +624,7 @@ pub async fn run_task(
             max_batch_bytes: PTY_EMIT_MAX_BATCH_BYTES,
         },
         reader,
-        Some(session_tx),
+        session_tx,
         None,
     );
     spawn_exit_monitor(app, task_id, project_path, is_codex);
@@ -792,14 +811,25 @@ pub async fn resume_task(
 
     let is_codex = agent == "codex";
 
-    // resume 时 session_id 已知，直接查找文件并开始监视
-    spawn_resume_session_watcher(
-        app.clone(),
-        task_id.clone(),
-        project_path.clone(),
-        session_id,
-        is_codex,
-    );
+    // hook 可信时会话发现/状态由 event_watcher 驱动,跳过轮询 watcher;否则回退。
+    // resume 未读取项目 config,传空版本号让 usable_for 走带缓存的探测。
+    let use_hooks = {
+        let agent = agent.clone();
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent, ""))
+            .await
+            .unwrap_or(false)
+    };
+
+    // resume 时 session_id 已知，直接查找文件并开始监视(hook 可信时跳过)
+    if !use_hooks {
+        spawn_resume_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            session_id,
+            is_codex,
+        );
+    }
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),

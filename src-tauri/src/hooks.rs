@@ -13,11 +13,20 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::storage::atomic_write;
+
+/// hook 链路可信所需的 agent 最低版本。
+/// - Codex:hooks 自 0.124.0 起 `Stage::Stable` 且默认开启(无需 feature flag)。
+/// - Claude:沿用项目既有的现代会话机制门槛 2.1.87,该版本已具备
+///   SessionStart/Notification/UserPromptSubmit 等 hook 事件。
+const CODEX_HOOK_MIN_VERSION: &str = "0.124.0";
+const CLAUDE_HOOK_MIN_VERSION: &str = "2.1.87";
 
 const HOOK_SCRIPT: &str = include_str!("nezha-hook.mjs");
 
@@ -35,7 +44,13 @@ const CLAUDE_EVENTS: &[&str] = &[
     "SubagentStop",
 ];
 
-const CODEX_EVENTS: &[&str] = &["SessionStart", "UserPromptSubmit", "Stop", "SubagentStop"];
+const CODEX_EVENTS: &[&str] = &[
+    "SessionStart",
+    "UserPromptSubmit",
+    "PermissionRequest",
+    "Stop",
+    "SubagentStop",
+];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct HookInstallStatus {
@@ -355,6 +370,94 @@ fn uninject_codex_config_at(path: &Path) -> Result<(), String> {
     atomic_write(path, &updated)
 }
 
+// ── 安装状态缓存 + 信任检查 ───────────────────────────────────────────────────
+
+/// 缓存最近一次安装/查询得到的状态,供 `usable_for` 在任务启动时零阻塞读取
+/// (避免每次启动任务都跑 `which node` 子进程)。
+static CACHED_STATUS: OnceLock<Mutex<HookInstallStatus>> = OnceLock::new();
+
+fn status_cache() -> &'static Mutex<HookInstallStatus> {
+    CACHED_STATUS.get_or_init(|| Mutex::new(HookInstallStatus::default()))
+}
+
+/// 写入缓存的安装状态(启动期、install/uninstall 后调用)。
+pub fn cache_status(status: HookInstallStatus) {
+    *status_cache().lock() = status;
+}
+
+/// 单个 agent 的 hook 就绪状态(供前端任务创建页 / 设置页展示)。
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HookAgentReadiness {
+    pub agent: String,
+    pub usable: bool,
+    /// "ok" | "no_node" | "not_installed" | "version_too_low"
+    pub reason: String,
+    pub detected_version: String,
+    pub min_version: String,
+}
+
+fn readiness_for(agent: &str, status: &HookInstallStatus) -> HookAgentReadiness {
+    let (installed, min_version, detected) = if agent == "codex" {
+        (
+            status.codex_installed,
+            CODEX_HOOK_MIN_VERSION,
+            crate::app_settings::detect_codex_version().unwrap_or_default(),
+        )
+    } else {
+        (
+            status.claude_installed,
+            CLAUDE_HOOK_MIN_VERSION,
+            crate::app_settings::detect_claude_version().unwrap_or_default(),
+        )
+    };
+
+    let version_ok = !detected.is_empty()
+        && if agent == "codex" {
+            crate::app_settings::codex_version_gte(&detected, min_version)
+        } else {
+            crate::app_settings::claude_version_gte(&detected, min_version)
+        };
+
+    let reason = if status.node_path.is_empty() {
+        "no_node"
+    } else if !installed {
+        "not_installed"
+    } else if !version_ok {
+        "version_too_low"
+    } else {
+        "ok"
+    };
+
+    HookAgentReadiness {
+        agent: agent.to_string(),
+        usable: reason == "ok",
+        reason: reason.to_string(),
+        detected_version: detected,
+        min_version: min_version.to_string(),
+    }
+}
+
+/// 判断给定 agent 的 hook 链路是否可信、可替代轮询。
+/// 三条同时满足:node 可用 + 对应 agent 已安装 hook + agent 版本 ≥ 门槛。
+/// 任一不满足返回 false,调用方应回退到 `/status` 轮询路径。
+///
+/// `saved_version` 传入已落盘的版本号(来自项目 config)以避免子进程探测;
+/// 传空字符串时 `*_version_gte` 会回退到带缓存的探测。
+pub fn usable_for(agent: &str, saved_version: &str) -> bool {
+    let status = status_cache().lock().clone();
+    if status.node_path.is_empty() {
+        return false;
+    }
+    if agent == "codex" {
+        status.codex_installed
+            && crate::app_settings::codex_version_gte(saved_version, CODEX_HOOK_MIN_VERSION)
+    } else {
+        status.claude_installed
+            && crate::app_settings::claude_version_gte(saved_version, CLAUDE_HOOK_MIN_VERSION)
+    }
+}
+
 // ── 对外入口 ────────────────────────────────────────────────────────────────
 
 /// 启动期一次性安装。失败不阻塞,仅返回状态。
@@ -458,18 +561,44 @@ pub async fn get_hook_status() -> Result<HookInstallStatus, String> {
         .map_err(|e| e.to_string())
 }
 
+/// 返回 claude / codex 两个 agent 的 hook 就绪状态(node + 安装 + 版本)。
+#[tauri::command]
+pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
+    tokio::task::spawn_blocking(|| {
+        let status = current_status();
+        // 顺手刷新缓存:使任务启动时 `usable_for` 读到的 node/安装状态
+        // 与此处展示给用户的实时状态保持一致(覆盖启动后才装 node 等场景)。
+        cache_status(status.clone());
+        vec![
+            readiness_for("claude", &status),
+            readiness_for("codex", &status),
+        ]
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn install_hooks() -> Result<HookInstallStatus, String> {
-    tokio::task::spawn_blocking(ensure_installed)
-        .await
-        .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(|| {
+        let status = ensure_installed();
+        cache_status(status.clone());
+        status
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn uninstall_hooks() -> Result<(), String> {
-    tokio::task::spawn_blocking(uninstall)
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(|| {
+        let result = uninstall();
+        // 卸载后刷新缓存,使后续任务回退到轮询路径
+        cache_status(current_status());
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── 单元测试 ────────────────────────────────────────────────────────────────

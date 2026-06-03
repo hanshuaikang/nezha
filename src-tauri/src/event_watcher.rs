@@ -5,8 +5,9 @@
 //! - 每个文件维护 byte offset,只读增量行
 //! - 解析每行 JSON 后,按 event 字段 dispatch:
 //!   * SessionStart → 注册 session 到 TaskManager + emit `task-session`
-//!   * Notification(Claude) → emit `task-status` = input_required
-//!   * 其它事件保留(未来扩展用)
+//!   * Notification(Claude) / PermissionRequest(Codex) → `task-status` = input_required
+//!   * UserPromptSubmit → `task-status` = running(清除 input_required)
+//!   * Stop / SubagentStop → 不主动 emit,交给 PTY exit monitor 处理终态
 //!
 //! 轮询(而非 notify::Watcher)的取舍:实现简单、跨平台一致、200ms 间隔
 //! 对响应延迟来说足够低,且 stat 调用成本可忽略。
@@ -114,9 +115,14 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
     }
     match ev.event.as_str() {
         "SessionStart" => handle_session_start(app, ev),
-        "Notification" => handle_notification(app, ev),
-        // UserPromptSubmit / Stop / SubagentStop 暂不主动 emit,
-        // Stop 让 PTY exit monitor 处理 done/failed 状态
+        // Claude 的 Notification 与 Codex 的 PermissionRequest 都表示"等待用户输入"
+        // (Claude 工具审批/提问通知;Codex 工具审批/网络升级请求)。
+        "Notification" | "PermissionRequest" => emit_active_status(app, ev, "input_required"),
+        // 用户提交了下一条 prompt → agent 重新开始工作,清除 input_required。
+        // 已知限制:Claude/Codex 的"工具审批"被批准时不触发 UserPromptSubmit,
+        // 因此 ask 模式下工具审批型 input_required 会残留到下一次 prompt 或任务结束。
+        "UserPromptSubmit" => emit_active_status(app, ev, "running"),
+        // Stop / SubagentStop 暂不主动 emit,Stop 让 PTY exit monitor 处理 done/failed 状态
         _ => {}
     }
 }
@@ -180,15 +186,16 @@ fn handle_session_start(app: &AppHandle, ev: &HookEvent) {
     );
 }
 
-fn handle_notification(app: &AppHandle, ev: &HookEvent) {
-    // Claude 的 Notification 事件 = 等待用户输入
+/// 仅当任务进程仍存活(本进程持有子进程句柄)时才广播状态变更,
+/// 避免给已退出的任务发送 input_required/running。
+fn emit_active_status(app: &AppHandle, ev: &HookEvent, status: &str) {
     let tm = app.state::<TaskManager>();
     if !tm.child_handles.lock().contains_key(&ev.task_id) {
         return;
     }
     let _ = app.emit(
         "task-status",
-        serde_json::json!({ "task_id": ev.task_id, "status": "input_required" }),
+        serde_json::json!({ "task_id": ev.task_id, "status": status }),
     );
 }
 

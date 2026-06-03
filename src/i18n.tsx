@@ -34,6 +34,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.hooks.claudeMissing": "Claude Code hooks not installed",
     "appSettings.hooks.codexInstalled": "Codex hooks installed",
     "appSettings.hooks.codexMissing": "Codex hooks not installed",
+    "appSettings.hooks.effective": "Active — {agent} {detected} ≥ {min}",
+    "appSettings.hooks.versionLow": "Fell back to polling — {agent} {detected} < {min}",
     "appSettings.hooks.error": "Install error: {message}",
     "appSettings.hooks.reinstall": "Reinstall",
     "appSettings.hooks.installing": "Installing...",
@@ -266,6 +268,12 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "newTask.instructionsMissing": "No {file} found in this project.",
     "newTask.addInstructions":
       "Add a {file} to the project root to give {agent} context about your codebase, conventions, and preferences — it will follow them on every task.",
+    "newTask.hookVersionLow":
+      "{agent} {detected} is below {min}. Task status detection has fallen back to polling — upgrade {agent} to {min}+ to enable the more reliable hook-based detection.",
+    "newTask.hookNoNode":
+      "Node.js was not detected, so task status detection has fallen back to polling. Install Node.js to enable hook-based detection.",
+    "newTask.hookNotInstalled":
+      "{agent} hooks are not installed, so task status detection has fallen back to polling. Reinstall from Settings → Hooks.",
     "newTask.initializeButton": "Initialize",
     "newTask.initializePrompt":
       "Please initialize a standard, best-practice {file} based on the current project.",
@@ -496,6 +504,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.hooks.claudeMissing": "Claude Code hook 未安装",
     "appSettings.hooks.codexInstalled": "Codex hook 已安装",
     "appSettings.hooks.codexMissing": "Codex hook 未安装",
+    "appSettings.hooks.effective": "已生效 — {agent} {detected} ≥ {min}",
+    "appSettings.hooks.versionLow": "已回退轮询 — {agent} {detected} < {min}",
     "appSettings.hooks.error": "安装错误:{message}",
     "appSettings.hooks.reinstall": "重新安装",
     "appSettings.hooks.installing": "安装中...",
@@ -719,6 +729,12 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "newTask.instructionsMissing": "此项目中未找到 {file}。",
     "newTask.addInstructions":
       "在项目根目录添加 {file}，为 {agent} 提供代码库、约定和偏好上下文；它会在每个任务中遵循这些内容。",
+    "newTask.hookVersionLow":
+      "当前 {agent} 版本 {detected} 低于 {min}，任务状态检测已回退到轮询。升级 {agent} 到 {min}+ 可启用更可靠的 hook 状态检测。",
+    "newTask.hookNoNode":
+      "未检测到 Node.js，任务状态检测已回退到轮询。安装 Node.js 后可启用 hook 状态检测。",
+    "newTask.hookNotInstalled":
+      "{agent} 的 hook 未安装，任务状态检测已回退到轮询。可在「设置 → Hooks」中重新安装。",
     "newTask.initializeButton": "一键初始化",
     "newTask.initializePrompt": "请根据当前项目初始化一个标准的最佳 {file}。",
     "newTask.promptPlaceholder": "描述你的任务… 输入 @ 可引用文件",

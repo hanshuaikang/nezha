@@ -4,7 +4,7 @@ import { CheckCircle2, AlertCircle, XCircle, RefreshCw } from "lucide-react";
 
 import { useI18n } from "../../i18n";
 import s from "../../styles";
-import type { HookInstallStatus } from "./types";
+import type { HookAgentReadiness, HookInstallStatus } from "./types";
 
 type ActionState = "idle" | "installing" | "uninstalling";
 
@@ -55,9 +55,13 @@ function StatusIcon({ ok, color }: { ok: boolean; color?: string }) {
 export function HooksPanel() {
   const { t } = useI18n();
   const [status, setStatus] = useState<HookInstallStatus | null>(null);
+  const [readiness, setReadiness] = useState<HookAgentReadiness[]>([]);
   const [action, setAction] = useState<ActionState>("idle");
 
   const refresh = useCallback(async () => {
+    invoke<HookAgentReadiness[]>("get_hook_readiness")
+      .then(setReadiness)
+      .catch(() => setReadiness([]));
     try {
       const next = await invoke<HookInstallStatus>("get_hook_status");
       setStatus(next);
@@ -81,6 +85,9 @@ export function HooksPanel() {
     try {
       const next = await invoke<HookInstallStatus>("install_hooks");
       setStatus(next);
+      invoke<HookAgentReadiness[]>("get_hook_readiness")
+        .then(setReadiness)
+        .catch(() => setReadiness([]));
     } catch (err) {
       setStatus((prev) => ({
         node_path: prev?.node_path ?? "",
@@ -106,6 +113,34 @@ export function HooksPanel() {
 
   const nodeOk = !!status?.node_path;
   const busy = action !== "idle";
+
+  // 已安装 + 有 node 后,额外展示版本是否达到 hook 门槛(生效 / 已回退轮询)。
+  const renderVersionLine = (agentKey: "claude" | "codex", installed: boolean) => {
+    const r = readiness.find((x) => x.agent === agentKey);
+    if (!r || !installed || r.reason === "no_node" || r.reason === "not_installed") {
+      return null;
+    }
+    const agentName = agentKey === "claude" ? "Claude Code" : "Codex";
+    const ok = r.usable;
+    return (
+      <div style={{ ...rowStyle, paddingTop: 0, color: "var(--text-secondary)" }}>
+        <span style={{ width: 14, display: "inline-block" }} />
+        <span style={{ color: ok ? undefined : "var(--warning)" }}>
+          {ok
+            ? t("appSettings.hooks.effective", {
+                agent: agentName,
+                detected: r.detectedVersion,
+                min: r.minVersion,
+              })
+            : t("appSettings.hooks.versionLow", {
+                agent: agentName,
+                detected: r.detectedVersion || "—",
+                min: r.minVersion,
+              })}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -152,6 +187,7 @@ export function HooksPanel() {
               : t("appSettings.hooks.claudeMissing")}
           </span>
         </div>
+        {renderVersionLine("claude", !!status?.claude_installed)}
         <div style={rowStyle}>
           <StatusIcon ok={!!status?.codex_installed} />
           <span>
@@ -160,6 +196,7 @@ export function HooksPanel() {
               : t("appSettings.hooks.codexMissing")}
           </span>
         </div>
+        {renderVersionLine("codex", !!status?.codex_installed)}
         {status?.error ? (
           <div style={{ ...rowStyle, color: "var(--accent-danger, #d1242f)" }}>
             <AlertCircle size={14} />

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TriangleAlert, Sparkles } from "lucide-react";
 import type { Project, AgentType, PermissionMode } from "../types";
+import type { HookAgentReadiness } from "./app-settings/types";
 import { useToast } from "./Toast";
 import {
   MentionPopover,
@@ -214,6 +215,43 @@ export function NewTaskView({
       .then(() => setHasMdFile(true))
       .catch(() => setHasMdFile(false));
   }, [project.path, agent]);
+
+  // Hook 就绪状态：版本过低 / 无 node 时软提示用户(任务仍可启动,已回退轮询)。
+  const [hookReadiness, setHookReadiness] = useState<HookAgentReadiness[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<HookAgentReadiness[]>("get_hook_readiness")
+      .then((r) => {
+        if (!cancelled) setHookReadiness(r);
+      })
+      .catch(() => {
+        if (!cancelled) setHookReadiness([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const agentReadiness = hookReadiness?.find((r) => r.agent === agent) ?? null;
+  const hookBanner = (() => {
+    if (!agentReadiness || agentReadiness.usable) return null;
+    const agentName = agent === "claude" ? "Claude Code" : "Codex";
+    if (agentReadiness.reason === "version_too_low") {
+      return t("newTask.hookVersionLow", {
+        agent: agentName,
+        detected: agentReadiness.detectedVersion,
+        min: agentReadiness.minVersion,
+      });
+    }
+    if (agentReadiness.reason === "no_node") {
+      return t("newTask.hookNoNode");
+    }
+    if (agentReadiness.reason === "not_installed") {
+      return t("newTask.hookNotInstalled", { agent: agentName });
+    }
+    return null;
+  })();
 
   // Load current project file list
   useEffect(() => {
@@ -439,6 +477,14 @@ export function NewTaskView({
               {t("newTask.initializeButton")}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Hook fallback / upgrade hint (soft — does not block task start) */}
+      {hookBanner && (
+        <div style={s.agentMissingMdBanner}>
+          <TriangleAlert size={15} style={s.hookFallbackIcon} />
+          <div style={s.hookFallbackText}>{hookBanner}</div>
         </div>
       )}
 

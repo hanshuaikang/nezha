@@ -504,6 +504,18 @@ pub fn claude_version_gte(saved_version: &str, min_version: &str) -> bool {
     parse_semver(&version) >= parse_semver(min_version)
 }
 
+pub fn codex_version_gte(saved_version: &str, min_version: &str) -> bool {
+    let version = if saved_version.is_empty() {
+        match detect_codex_version() {
+            Some(v) => v,
+            None => return false,
+        }
+    } else {
+        saved_version.to_string()
+    };
+    parse_semver(&version) >= parse_semver(min_version)
+}
+
 #[tauri::command]
 pub async fn detect_agent_versions() -> Result<AgentVersions, String> {
     tokio::task::spawn_blocking(|| AgentVersions {

@@ -93,6 +93,16 @@ export const panels = {
     cursor: "pointer",
     transition: "background 120ms ease",
   },
+  hookFallbackIcon: {
+    color: "var(--warning)",
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  hookFallbackText: {
+    fontSize: 13,
+    lineHeight: 1.55,
+    color: "var(--text-secondary)",
+  },
   composeTextarea: {
     display: "block",
     width: "100%",

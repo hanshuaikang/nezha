@@ -20,6 +20,16 @@ export interface HookInstallStatus {
   error?: string;
 }
 
+export type HookReadinessReason = "ok" | "no_node" | "not_installed" | "version_too_low";
+
+export interface HookAgentReadiness {
+  agent: "claude" | "codex";
+  usable: boolean;
+  reason: HookReadinessReason;
+  detectedVersion: string;
+  minVersion: string;
+}
+
 export interface AppSettings {
   claude_path: string;
   codex_path: string;

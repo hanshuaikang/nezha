@@ -59,9 +59,10 @@ pub fn run() {
             std::thread::spawn(|| {
                 crate::app_settings::get_login_shell_path();
             });
-            // 安装 hook 脚本与用户级配置注入(失败不阻塞启动,前端可查询状态)
+            // 安装 hook 脚本与用户级配置注入(失败不阻塞启动,前端可查询状态)。
+            // 结果写入缓存,供 run_task/resume_task 的 hook 信任检查零阻塞读取。
             std::thread::spawn(|| {
-                let _ = crate::hooks::ensure_installed();
+                crate::hooks::cache_status(crate::hooks::ensure_installed());
             });
             // 启动 hook 事件文件 watcher
             crate::event_watcher::start(app.handle().clone());
@@ -152,6 +153,7 @@ pub fn run() {
             notification::mark_all_notifications_read,
             usage::read_usage_snapshot,
             hooks::get_hook_status,
+            hooks::get_hook_readiness,
             hooks::install_hooks,
             hooks::uninstall_hooks,
             skills::get_skill_hub_config,
