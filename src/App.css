@@ -432,6 +432,15 @@ body {
 }
 
 /* ── Markdown file preview ──────────────────────────────────────── */
+.md-preview-scroll {
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px;
+  background: var(--bg-panel);
+  min-width: 0;
+  min-height: 0;
+}
+
 .md-preview {
   -webkit-user-select: text;
   user-select: text;

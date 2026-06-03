@@ -472,17 +472,7 @@ function FilePreviewPane({
           ) : content !== null ? (
             isMarkdown && previewMode ? (
               <>
-                <div
-                  ref={scrollRef}
-                  style={{
-                    height: "100%",
-                    overflow: "auto",
-                    padding: "24px 32px",
-                    background: "var(--bg-panel)",
-                    minWidth: 0,
-                    minHeight: 0,
-                  }}
-                >
+                <div ref={scrollRef} className="md-preview-scroll">
                   <div
                     className="md-preview"
                     dangerouslySetInnerHTML={{ __html: markdownHtml }}
