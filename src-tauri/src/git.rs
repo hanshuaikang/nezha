@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -189,19 +190,64 @@ fn run_agent_commit_message_command(
     let launch = crate::app_settings::get_agent_launch_spec(agent);
     let mut cmd = Command::new(&launch.program);
     crate::subprocess::configure_background_command(&mut cmd);
+
     if agent == "codex" {
         cmd.args(["exec", prompt]);
+        cmd.stdin(Stdio::null());
     } else {
-        cmd.args(["-p", prompt, "--output-format", "text"]);
+        cmd.args([
+            "-p",
+            "Generate a commit message from the instructions and git diff provided on stdin. Output only the commit message, nothing else.",
+            "--output-format",
+            "text",
+        ]);
+        cmd.stdin(Stdio::piped());
     }
+
     cmd.current_dir(project_path);
-    cmd.stdin(Stdio::null());
     apply_login_shell_env(&mut cmd);
     for (key, value) in &launch.extra_env {
         cmd.env(key, value);
     }
-    cmd.output()
-        .map_err(|e| format!("Failed to run {agent}: {e}"))
+
+    if agent == "codex" {
+        return cmd
+            .output()
+            .map_err(|e| format!("Failed to run {agent}: {e}"));
+    }
+
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run {agent}: {e}"))?;
+
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| format!("Failed to open {agent} stdin"))?;
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| format!("Failed to write prompt to {agent} stdin: {e}"))?;
+    }
+
+    child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait for {agent}: {e}"))
+}
+
+fn truncate_utf8(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    format!("{}...(diff truncated)", &s[..end])
 }
 
 fn create_empty_temp_file() -> Result<PathBuf, String> {
@@ -222,12 +268,8 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         return Err("No staged changes to generate a commit message for.".to_string());
     }
 
-    // Truncate diff if too large to avoid CLI arg limits
-    let diff = if diff.len() > 50_000 {
-        format!("{}...(diff truncated)", &diff[..50_000])
-    } else {
-        diff
-    };
+    // Truncate diff safely at a UTF-8 boundary.
+    let diff = truncate_utf8(&diff, 50_000);
 
     // 2. Read project config for prompt and default agent
     let config = crate::config::read_project_config(project_path.clone())?;
