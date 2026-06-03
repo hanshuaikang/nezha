@@ -40,6 +40,9 @@ const CLAUDE_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
     "Notification",
+    // PostToolUse:工具执行成功后触发(ask 模式下即用户审批通过后),
+    // 用于把 input_required 复位回 running——UserPromptSubmit 在工具审批时不触发。
+    "PostToolUse",
     "Stop",
     "SubagentStop",
 ];
@@ -48,6 +51,8 @@ const CODEX_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
     "PermissionRequest",
+    // 见 CLAUDE_EVENTS 的 PostToolUse 说明;Codex 自 0.124 起同样支持。
+    "PostToolUse",
     "Stop",
     "SubagentStop",
 ];

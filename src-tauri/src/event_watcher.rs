@@ -6,7 +6,7 @@
 //! - 解析每行 JSON 后,按 event 字段 dispatch:
 //!   * SessionStart → 注册 session 到 TaskManager + emit `task-session`
 //!   * Notification(Claude) / PermissionRequest(Codex) → `task-status` = input_required
-//!   * UserPromptSubmit → `task-status` = running(清除 input_required)
+//!   * UserPromptSubmit / PostToolUse → `task-status` = running(清除 input_required)
 //!   * Stop / SubagentStop → 不主动 emit,交给 PTY exit monitor 处理终态
 //!
 //! 轮询(而非 notify::Watcher)的取舍:实现简单、跨平台一致、200ms 间隔
@@ -16,9 +16,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -118,10 +120,11 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
         // Claude 的 Notification 与 Codex 的 PermissionRequest 都表示"等待用户输入"
         // (Claude 工具审批/提问通知;Codex 工具审批/网络升级请求)。
         "Notification" | "PermissionRequest" => emit_active_status(app, ev, "input_required"),
-        // 用户提交了下一条 prompt → agent 重新开始工作,清除 input_required。
-        // 已知限制:Claude/Codex 的"工具审批"被批准时不触发 UserPromptSubmit,
-        // 因此 ask 模式下工具审批型 input_required 会残留到下一次 prompt 或任务结束。
-        "UserPromptSubmit" => emit_active_status(app, ev, "running"),
+        // 重新回到工作状态、清除 input_required 的两条信号:
+        // - UserPromptSubmit:用户提交了下一条 prompt。
+        // - PostToolUse:工具执行成功后触发(ask 模式下即审批通过后)。工具审批
+        //   不会触发 UserPromptSubmit,必须靠 PostToolUse 才能把 input_required 复位。
+        "UserPromptSubmit" | "PostToolUse" => emit_active_status(app, ev, "running"),
         // Stop / SubagentStop 暂不主动 emit,Stop 让 PTY exit monitor 处理 done/failed 状态
         _ => {}
     }
@@ -186,12 +189,27 @@ fn handle_session_start(app: &AppHandle, ev: &HookEvent) {
     );
 }
 
-/// 仅当任务进程仍存活(本进程持有子进程句柄)时才广播状态变更,
-/// 避免给已退出的任务发送 input_required/running。
+/// 记录每个 task 最近一次由 hook 广播的状态。PostToolUse 会按每次工具调用
+/// 高频触发,若每次都 emit `running` 会导致前端无谓的 setState/重渲染,这里做去重。
+static LAST_STATUS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn last_status() -> &'static Mutex<HashMap<String, String>> {
+    LAST_STATUS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 仅当任务进程仍存活(本进程持有子进程句柄)且状态相比上次有变化时才广播,
+/// 避免给已退出的任务发送 input_required/running,也避免高频事件刷屏。
 fn emit_active_status(app: &AppHandle, ev: &HookEvent, status: &str) {
     let tm = app.state::<TaskManager>();
     if !tm.child_handles.lock().contains_key(&ev.task_id) {
         return;
+    }
+    {
+        let mut last = last_status().lock();
+        if last.get(&ev.task_id).map(String::as_str) == Some(status) {
+            return;
+        }
+        last.insert(ev.task_id.clone(), status.to_string());
     }
     let _ = app.emit(
         "task-status",
@@ -201,6 +219,7 @@ fn emit_active_status(app: &AppHandle, ev: &HookEvent, status: &str) {
 
 /// 任务终态后清理对应目录(由 finalize_task_exit 调用)。
 pub fn cleanup_task_events(task_id: &str) {
+    last_status().lock().remove(task_id);
     if let Ok(dir) = crate::hooks::events_dir_for(task_id) {
         let _ = fs::remove_dir_all(dir);
     }
