@@ -14,10 +14,16 @@ interface ProjectConfig {
     claude_version: string;
     codex_version: string;
   };
-  git: { commit_prompt: string };
+  git: {
+    commit_prompt: string;
+    commit_message_timeout_secs?: number;
+  };
 }
 
 const PERMISSION_MODES: PermissionMode[] = ["ask", "auto_edit", "full_access"];
+const MIN_COMMIT_MESSAGE_TIMEOUT_SECS = 1;
+const MAX_COMMIT_MESSAGE_TIMEOUT_SECS = 120;
+const DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS = 15;
 
 interface AgentVersions {
   claude_version: string;
@@ -84,6 +90,9 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
   const [promptPrefix, setPromptPrefix] = useState("");
   const [commitPrompt, setCommitPrompt] = useState("");
+  const [commitMessageTimeoutSecs, setCommitMessageTimeoutSecs] = useState(
+    String(DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS),
+  );
   const [claudeVersion, setClaudeVersion] = useState("");
   const [codexVersion, setCodexVersion] = useState("");
   const [detecting, setDetecting] = useState(false);
@@ -101,6 +110,15 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         }
         setPromptPrefix(c.agent.prompt_prefix ?? "");
         setCommitPrompt(c.git.commit_prompt);
+        const timeoutSecs = c.git.commit_message_timeout_secs ?? DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS;
+        setCommitMessageTimeoutSecs(
+          String(
+            Math.min(
+              Math.max(timeoutSecs, MIN_COMMIT_MESSAGE_TIMEOUT_SECS),
+              MAX_COMMIT_MESSAGE_TIMEOUT_SECS,
+            ),
+          ),
+        );
         setClaudeVersion(c.agent.claude_version ?? "");
         setCodexVersion(c.agent.codex_version ?? "");
 
@@ -125,10 +143,47 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     }
   }
 
+  function handleCommitMessageTimeoutChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const nextValue = e.target.value.trim();
+    if (!nextValue) {
+      setCommitMessageTimeoutSecs("");
+      return;
+    }
+    if (!/^\d+$/.test(nextValue)) return;
+
+    const timeoutSecs = Number(nextValue);
+    if (!Number.isSafeInteger(timeoutSecs)) return;
+
+    setCommitMessageTimeoutSecs(
+      String(
+        Math.min(
+          Math.max(timeoutSecs, MIN_COMMIT_MESSAGE_TIMEOUT_SECS),
+          MAX_COMMIT_MESSAGE_TIMEOUT_SECS,
+        ),
+      ),
+    );
+  }
+
+  function handleCommitMessageTimeoutBlur() {
+    if (!commitMessageTimeoutSecs) {
+      setCommitMessageTimeoutSecs(String(MIN_COMMIT_MESSAGE_TIMEOUT_SECS));
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setError(null);
     try {
+      const timeoutSecs = Number(commitMessageTimeoutSecs);
+      if (
+        !Number.isInteger(timeoutSecs) ||
+        timeoutSecs < MIN_COMMIT_MESSAGE_TIMEOUT_SECS ||
+        timeoutSecs > MAX_COMMIT_MESSAGE_TIMEOUT_SECS
+      ) {
+        setError(t("settings.commitMessageTimeoutInvalid"));
+        return;
+      }
+
       await invoke("write_project_config", {
         projectPath,
         config: {
@@ -139,7 +194,10 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             claude_version: claudeVersion,
             codex_version: codexVersion,
           },
-          git: { commit_prompt: commitPrompt },
+          git: {
+            commit_prompt: commitPrompt,
+            commit_message_timeout_secs: timeoutSecs,
+          },
         },
       });
       onClose();
@@ -262,6 +320,26 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
 
             <div style={s.modalSection}>
               <div style={s.modalSectionTitle}>{t("settings.git")}</div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>
+                  {t("settings.commitMessageTimeout")}
+                  <span style={s.modalLabelHint}>
+                    {t("settings.commitMessageTimeoutHint")}
+                  </span>
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    style={{ ...s.modalInput, flex: 1 }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={commitMessageTimeoutSecs}
+                    onChange={handleCommitMessageTimeoutChange}
+                    onBlur={handleCommitMessageTimeoutBlur}
+                  />
+                  <span style={{ color: "var(--text-hint)", fontSize: 12 }}>{t("settings.secondsUnit")}</span>
+                </div>
+              </div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
                   {t("settings.commitPrompt")}
