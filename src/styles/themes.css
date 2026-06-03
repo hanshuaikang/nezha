@@ -175,9 +175,7 @@ html.eyecare {
   --accent-hover: #95612a;
   --accent-subtle: rgba(176, 123, 62, 0.14);
 
-  --brand-mark-gradient: linear-gradient(145deg, #3d2d1a, #8a5a2e 58%, #c08a4a 100%);
-  --brand-mark-glow: rgba(138, 90, 46, 0.18);
-  --brand-mark-inner-bg: rgba(40, 28, 14, 0.82);
+  /* 品牌标识保持蓝色，不随护眼主题变成米黄/棕褐色（回退到 :root 的蓝色定义） */
 
   --badge-muted-bg: rgba(101, 84, 51, 0.16);
 
