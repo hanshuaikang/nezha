@@ -160,6 +160,11 @@ function getInitialTaskDisplayWindow(): TaskDisplayWindow {
   return stored == null ? DEFAULT_TASK_DISPLAY_WINDOW : normalizeTaskDisplayWindow(stored);
 }
 
+function getInitialAttentionBadge(): boolean {
+  // 默认开启:项目栏显示待确认任务数量角标;关闭后回退为黄色小圆点
+  return localStorage.getItem("nezha:attentionBadge") !== "0";
+}
+
 function getInitialFontFamily(key: string, fallback: FontFamily): FontFamily {
   const stored = localStorage.getItem(key);
   return stored || fallback;
@@ -178,6 +183,7 @@ function App() {
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(
     getInitialTaskDisplayWindow,
   );
+  const [attentionBadge, setAttentionBadge] = useState<boolean>(getInitialAttentionBadge);
   const [uiFontFamily, setUiFontFamily] = useState<FontFamily>(() =>
     getInitialFontFamily("nezha:uiFontFamily", DEFAULT_UI_FONT),
   );
@@ -280,6 +286,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("nezha:taskDisplayWindow", String(taskDisplayWindow));
   }, [taskDisplayWindow]);
+
+  useEffect(() => {
+    localStorage.setItem("nezha:attentionBadge", attentionBadge ? "1" : "0");
+  }, [attentionBadge]);
 
   useEffect(() => {
     const value = uiFontFamily.trim() || DEFAULT_UI_FONT;
@@ -1126,6 +1136,8 @@ function App() {
               onTerminalFontSizeChange={setTerminalFontSize}
               taskDisplayWindow={taskDisplayWindow}
               onTaskDisplayWindowChange={setTaskDisplayWindow}
+              attentionBadge={attentionBadge}
+              onAttentionBadgeChange={setAttentionBadge}
               uiFontFamily={uiFontFamily}
               onUiFontFamilyChange={setUiFontFamily}
               monoFontFamily={monoFontFamily}
@@ -1159,6 +1171,8 @@ function App() {
             onTerminalFontSizeChange={setTerminalFontSize}
             taskDisplayWindow={taskDisplayWindow}
             onTaskDisplayWindowChange={setTaskDisplayWindow}
+            attentionBadge={attentionBadge}
+            onAttentionBadgeChange={setAttentionBadge}
             uiFontFamily={uiFontFamily}
             onUiFontFamilyChange={setUiFontFamily}
             monoFontFamily={monoFontFamily}

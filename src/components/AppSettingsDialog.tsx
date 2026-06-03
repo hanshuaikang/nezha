@@ -76,6 +76,8 @@ export function AppSettingsDialog({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  attentionBadge,
+  onAttentionBadgeChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -90,6 +92,8 @@ export function AppSettingsDialog({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  attentionBadge: boolean;
+  onAttentionBadgeChange: (enabled: boolean) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -160,6 +164,8 @@ export function AppSettingsDialog({
               key="general"
               taskDisplayWindow={taskDisplayWindow}
               onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+              attentionBadge={attentionBadge}
+              onAttentionBadgeChange={onAttentionBadgeChange}
             />
           ) : activeNav === "theme" ? (
             <ThemePanel

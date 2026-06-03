@@ -50,6 +50,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
       "Controls how far back regular tasks appear in the task list. Starred, todo, and attention-needed tasks are always shown.",
     "appSettings.taskDisplayRecentDays": "Recent {days} days",
     "appSettings.taskDisplayAll": "All tasks",
+    "appSettings.attentionBadge": "Attention Badge",
+    "appSettings.attentionBadgeToggle": "Show pending-confirmation count",
+    "appSettings.attentionBadgeHint":
+      "Show a yellow count badge on the project rail for tasks awaiting your confirmation. When off, a yellow dot is shown instead.",
     "appSettings.agentPaths": "Agent Installation Paths",
     "appSettings.installation": "Installation",
     "appSettings.configFile": "Configuration File",
@@ -520,6 +524,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
       "控制任务列表中普通任务的展示时间范围。收藏、待办和需要注意的任务始终显示。",
     "appSettings.taskDisplayRecentDays": "最近 {days} 天",
     "appSettings.taskDisplayAll": "所有任务",
+    "appSettings.attentionBadge": "待确认角标",
+    "appSettings.attentionBadgeToggle": "显示待确认任务数量",
+    "appSettings.attentionBadgeHint":
+      "在项目栏为等待你确认的任务显示黄色数量角标。关闭后则显示黄色小圆点。",
     "appSettings.agentPaths": "智能体安装路径",
     "appSettings.installation": "安装",
     "appSettings.configFile": "配置文件",

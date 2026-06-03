@@ -8,43 +8,6 @@ import type { HookAgentReadiness, HookInstallStatus } from "./types";
 
 type ActionState = "idle" | "installing" | "uninstalling";
 
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: "var(--text-secondary)",
-  marginBottom: 5,
-  display: "block",
-};
-
-const hintStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: "var(--text-hint)",
-  marginTop: 3,
-};
-
-const rowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  gap: 8,
-  padding: "6px 0",
-  fontSize: 12,
-  color: "var(--text-primary)",
-  lineHeight: 1.5,
-};
-
-const btnStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 12px",
-  fontSize: 12,
-  borderRadius: 6,
-  border: "1px solid var(--border-default)",
-  background: "var(--bg-surface)",
-  color: "var(--text-primary)",
-  cursor: "pointer",
-};
-
 function StatusIcon({ ok, color }: { ok: boolean; color?: string }) {
   if (ok) {
     return <CheckCircle2 size={14} color={color ?? "var(--accent-success, #2ea043)"} />;
@@ -113,6 +76,7 @@ export function HooksPanel() {
 
   const nodeOk = !!status?.node_path;
   const busy = action !== "idle";
+  const uninstallDisabled = busy || (!status?.claude_installed && !status?.codex_installed);
 
   // 已安装 + 有 node 后,额外展示版本是否达到 hook 门槛(生效 / 已回退轮询)。
   const renderVersionLine = (agentKey: "claude" | "codex", installed: boolean) => {
@@ -123,9 +87,9 @@ export function HooksPanel() {
     const agentName = agentKey === "claude" ? "Claude Code" : "Codex";
     const ok = r.usable;
     return (
-      <div style={{ ...rowStyle, paddingTop: 0, color: "var(--text-secondary)" }}>
-        <span style={{ width: 14, display: "inline-block" }} />
-        <span style={{ color: ok ? undefined : "var(--warning)" }}>
+      <div style={s.hooksPanelSubRow}>
+        <span style={s.hooksPanelRowSpacer} />
+        <span style={ok ? undefined : s.hooksPanelVersionLow}>
           {ok
             ? t("appSettings.hooks.effective", {
                 agent: agentName,
@@ -143,29 +107,14 @@ export function HooksPanel() {
   };
 
   return (
-    <div
-      style={{
-        ...s.settingsBody,
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-        padding: "20px",
-      }}
-    >
+    <div style={s.hooksPanelBody}>
       <div>
-        <label style={labelStyle}>{t("appSettings.hooks")}</label>
-        <p style={hintStyle}>{t("appSettings.hooks.description")}</p>
+        <label style={s.hooksPanelLabel}>{t("appSettings.hooks")}</label>
+        <p style={s.hooksPanelHint}>{t("appSettings.hooks.description")}</p>
       </div>
 
-      <div
-        style={{
-          border: "1px solid var(--border-default)",
-          borderRadius: 8,
-          padding: "10px 14px",
-          background: "var(--bg-elevated)",
-        }}
-      >
-        <div style={rowStyle}>
+      <div style={s.hooksPanelCard}>
+        <div style={s.hooksPanelRow}>
           <StatusIcon ok={nodeOk} />
           <span>
             {nodeOk
@@ -174,12 +123,12 @@ export function HooksPanel() {
           </span>
         </div>
         {status?.script_path ? (
-          <div style={{ ...rowStyle, color: "var(--text-secondary)" }}>
-            <span style={{ width: 14, display: "inline-block" }} />
+          <div style={s.hooksPanelSubRow}>
+            <span style={s.hooksPanelRowSpacer} />
             <span>{t("appSettings.hooks.scriptPath", { path: status.script_path })}</span>
           </div>
         ) : null}
-        <div style={rowStyle}>
+        <div style={s.hooksPanelRow}>
           <StatusIcon ok={!!status?.claude_installed} />
           <span>
             {status?.claude_installed
@@ -188,7 +137,7 @@ export function HooksPanel() {
           </span>
         </div>
         {renderVersionLine("claude", !!status?.claude_installed)}
-        <div style={rowStyle}>
+        <div style={s.hooksPanelRow}>
           <StatusIcon ok={!!status?.codex_installed} />
           <span>
             {status?.codex_installed
@@ -198,30 +147,40 @@ export function HooksPanel() {
         </div>
         {renderVersionLine("codex", !!status?.codex_installed)}
         {status?.error ? (
-          <div style={{ ...rowStyle, color: "var(--accent-danger, #d1242f)" }}>
+          <div style={s.hooksPanelErrorRow}>
             <AlertCircle size={14} />
             <span>{t("appSettings.hooks.error", { message: status.error })}</span>
           </div>
         ) : null}
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button style={btnStyle} disabled={busy} onClick={reinstall}>
+      <div style={s.hooksPanelActions}>
+        <button
+          style={busy ? { ...s.hooksPanelPrimaryBtn, ...s.hooksPanelBtnDisabled } : s.hooksPanelPrimaryBtn}
+          disabled={busy}
+          onClick={reinstall}
+        >
           <RefreshCw size={12} />
           {action === "installing"
             ? t("appSettings.hooks.installing")
             : t("appSettings.hooks.reinstall")}
         </button>
         <button
-          style={btnStyle}
-          disabled={busy || (!status?.claude_installed && !status?.codex_installed)}
+          style={
+            uninstallDisabled ? { ...s.hooksPanelDangerBtn, ...s.hooksPanelBtnDisabled } : s.hooksPanelDangerBtn
+          }
+          disabled={uninstallDisabled}
           onClick={uninstall}
         >
           {action === "uninstalling"
             ? t("appSettings.hooks.uninstalling")
             : t("appSettings.hooks.uninstall")}
         </button>
-        <button style={btnStyle} disabled={busy} onClick={refresh}>
+        <button
+          style={busy ? { ...s.hooksPanelSecondaryBtn, ...s.hooksPanelBtnDisabled } : s.hooksPanelSecondaryBtn}
+          disabled={busy}
+          onClick={refresh}
+        >
           {t("appSettings.hooks.refresh")}
         </button>
       </div>

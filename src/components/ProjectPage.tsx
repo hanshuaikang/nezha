@@ -73,6 +73,8 @@ export function ProjectPage({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  attentionBadge,
+  onAttentionBadgeChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -137,6 +139,8 @@ export function ProjectPage({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  attentionBadge: boolean;
+  onAttentionBadgeChange: (enabled: boolean) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -280,6 +284,7 @@ export function ProjectPage({
         projects={allProjects}
         allTasks={tasks}
         activeProjectId={project.id}
+        attentionBadge={attentionBadge}
         onSwitch={onSwitchProject}
         onOpen={onOpen}
         singleProjectMode={hubMode}
@@ -306,6 +311,8 @@ export function ProjectPage({
         onTerminalFontSizeChange={onTerminalFontSizeChange}
         taskDisplayWindow={taskDisplayWindow}
         onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+        attentionBadge={attentionBadge}
+        onAttentionBadgeChange={onAttentionBadgeChange}
         uiFontFamily={uiFontFamily}
         onUiFontFamilyChange={onUiFontFamilyChange}
         monoFontFamily={monoFontFamily}
