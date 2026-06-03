@@ -432,6 +432,15 @@ body {
 }
 
 /* ── Markdown file preview ──────────────────────────────────────── */
+.md-preview-scroll {
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px;
+  background: var(--bg-panel);
+  min-width: 0;
+  min-height: 0;
+}
+
 .md-preview {
   -webkit-user-select: text;
   user-select: text;
@@ -562,6 +571,101 @@ body {
 }
 .md-preview tr:nth-child(even) td {
   background: var(--bg-subtle);
+}
+
+/* ── Markdown preview outline (TOC) ─────────────────────────────── */
+.md-toc {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  z-index: 5;
+  width: 200px;
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  font-family: var(--font-ui);
+}
+
+.md-toc-collapsed {
+  width: auto;
+}
+
+.md-toc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.md-toc-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.md-toc-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 4px 6px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-dim);
+}
+
+.md-toc-item {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.md-toc-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.md-toc-item.active {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.md-toc-item[data-depth="1"] {
+  padding-left: 8px;
+}
+.md-toc-item[data-depth="2"] {
+  padding-left: 20px;
+}
+.md-toc-item[data-depth="3"] {
+  padding-left: 32px;
+}
+.md-toc-item[data-depth="4"] {
+  padding-left: 44px;
+}
+.md-toc-item[data-depth="5"] {
+  padding-left: 56px;
+}
+.md-toc-item[data-depth="6"] {
+  padding-left: 68px;
 }
 
 /* ── File Viewer (shiki syntax highlighting) ────────────────────── */
