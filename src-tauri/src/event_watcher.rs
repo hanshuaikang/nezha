@@ -7,17 +7,20 @@
 //!   * SessionStart → 注册 session 到 TaskManager + emit `task-session`
 //!   * Notification(Claude) / PermissionRequest(Codex) → `task-status` = input_required
 //!   * UserPromptSubmit / PostToolUse → `task-status` = running(清除 input_required)
-//!   * Stop(Codex)→ `task-status` = input_required(交互式 REPL 一轮结束、等待用户;
-//!     进程不退出,PTY exit monitor 不会触发,Stop 是 full_access 下唯一的轮次结束信号)
-//!   * Stop / SubagentStop(其余)→ 不主动 emit,交给 PTY exit monitor 处理终态
+//!   * Stop(Claude & Codex)→ `task-status` = input_required(交互式 REPL 一轮结束、等待
+//!     用户;进程不退出,PTY exit monitor 不会触发)。Claude 不能靠 Notification 兜底——
+//!     其"空闲等待输入" Notification 约 60s 后才触发,会让角标晚一分钟出现。
+//!   * SubagentStop → 不主动 emit,交给 PTY exit monitor 处理终态
 //!
-//! 轮询(而非 notify::Watcher)的取舍:实现简单、跨平台一致、200ms 间隔
-//! 对响应延迟来说足够低,且 stat 调用成本可忽略。
+//! 事件驱动(而非固定间隔轮询):空闲时几乎零唤醒,有写入时近乎即时响应,
+//! 把过去最坏 200ms 的轮询等待砍掉。watcher 初始化失败时回退到固定间隔
+//! 轮询(FALLBACK_INTERVAL),并以同一间隔作为兜底唤醒,防止漏事件导致状态卡住。
 
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
@@ -29,7 +32,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::session::{ClaudeSessionInfo, CodexSessionInfo};
 use crate::TaskManager;
 
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
+/// watcher 不可用(初始化失败)时的回退轮询间隔;watcher 正常时也用作兜底唤醒
+/// 间隔——即便漏掉某次文件事件,最坏也在此间隔内被重新扫描到。
+const FALLBACK_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize)]
 struct HookEvent {
@@ -52,6 +57,8 @@ pub fn start(app: AppHandle) {
 }
 
 fn run_loop(app: AppHandle) {
+    use notify::{RecursiveMode, Watcher};
+
     let events_root = match crate::hooks::events_root() {
         Ok(p) => p,
         Err(_) => return,
@@ -62,10 +69,32 @@ fn run_loop(app: AppHandle) {
     let _ = fs::remove_dir_all(&events_root);
     let _ = fs::create_dir_all(&events_root);
 
+    // 递归监听整个 events 根目录:新任务子目录与其 events.jsonl 的创建/追加都会
+    // 触发事件,驱动一次增量扫描。初始化失败时 watcher_opt 为 None,回退固定间隔轮询。
+    let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+    let mut watcher_opt = notify::RecommendedWatcher::new(tx, notify::Config::default())
+        .ok()
+        .and_then(|mut w| {
+            w.watch(&events_root, RecursiveMode::Recursive).ok()?;
+            Some(w)
+        });
+
     let mut offsets: HashMap<PathBuf, u64> = HashMap::new();
 
     loop {
-        thread::sleep(POLL_INTERVAL);
+        // 等待文件系统事件:事件驱动 → 空闲时几乎零唤醒,有写入时近乎即时唤醒;
+        // 兜底超时确保即便漏事件最坏也在 FALLBACK_INTERVAL 内重扫。watcher 不可用则轮询。
+        if watcher_opt.is_some() {
+            match rx.recv_timeout(FALLBACK_INTERVAL) {
+                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => watcher_opt = None,
+            }
+            // 合并同一批写入产生的多个事件,避免一次写入触发多轮扫描
+            while rx.try_recv().is_ok() {}
+        } else {
+            thread::sleep(FALLBACK_INTERVAL);
+        }
+
         let Ok(entries) = fs::read_dir(&events_root) else {
             continue;
         };
@@ -131,13 +160,16 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
         // - PostToolUse:工具执行成功后触发(ask 模式下即审批通过后)。工具审批
         //   不会触发 UserPromptSubmit,必须靠 PostToolUse 才能把 input_required 复位。
         "UserPromptSubmit" | "PostToolUse" => emit_active_status(app, ev, "running"),
-        // Codex 以交互式 REPL 方式启动(`codex -- "<prompt>"`),一轮结束后进程不退出,
-        // PTY exit monitor 不会触发终态;此时 Stop 表示"本轮结束、等待用户下一步",
-        // 映射为 input_required(需要关注)。尤其 full_access 模式下没有 PermissionRequest,
-        // Stop 是唯一的轮次结束信号——若继续忽略,任务会永远停留在 running。
-        // Claude 的等待态由 Notification 覆盖,真正退出仍交给 PTY exit monitor,故此处不处理。
-        "Stop" if ev.agent == "codex" => emit_active_status(app, ev, "input_required"),
-        // SubagentStop(子代理结束)主代理仍在工作,不主动 emit;Claude 的 Stop 同上。
+        // Claude 与 Codex 都以交互式 REPL 方式启动,一轮结束后进程不退出、停在等待用户
+        // 下一条输入,PTY exit monitor 不会触发终态;此时 Stop 表示"本轮结束、等待用户
+        // 下一步",映射为 input_required(需要关注)。
+        // 注意:Claude 的 Stop 必须在此处理,不能依赖 Notification 兜底——Claude Code 的
+        // "空闲等待输入" Notification 是在空闲约 60s 后才触发(实测 Stop→Notification 恰为
+        // +60s),会让角标晚整整一分钟才出现。需要工具审批时的 Notification 才是即时触发的
+        // (即 ask 模式很快的原因)。emit_active_status 的 child_handles 存活守卫确保进程
+        // 真正退出后不会误发,真正退出仍交给 PTY exit monitor。
+        "Stop" => emit_active_status(app, ev, "input_required"),
+        // SubagentStop(子代理结束)主代理仍在工作,不主动 emit。
         _ => {}
     }
 }

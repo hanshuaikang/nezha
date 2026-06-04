@@ -11,3 +11,9 @@
 | 文档 | 描述 | 标签 |
 |------|------|------|
 | [终端渲染与选区卡顿排查](./xterm/rendering-and-selection-lag.md) | WKWebView 下 `.xterm` 合成层长帧的真因与定论，含 CSS containment 禁用、WebGL 保留的实测权衡，面向后续动渲染链路前的必读校准 | `xterm`, `wkwebview`, `composite`, `webgl`, `selection`, `regression-guard` |
+
+### 外部参考
+
+| 文档 | 描述 | 标签 |
+|------|------|------|
+| [Claude Code 与 Codex 的 Hook 支持](./references/agent-hooks-support.md) | 两个 agent 当前版本的 hook 事件/payload 字段/配置方式/信任机制全量对照，以及 Nezha 订阅哪些事件、为何这样映射，面向 hook 链路开发与排查 | `hooks`, `claude-code`, `codex`, `event-watcher`, `session-discovery`, `input-required` |
