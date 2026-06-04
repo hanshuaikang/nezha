@@ -88,6 +88,7 @@ function WelcomeEmpty({ hasProjects, onOpen }: { hasProjects: boolean; onOpen: (
 
 export function WelcomePage({
   projects,
+  allProjects,
   tasks,
   onOpen,
   onProjectClick,
@@ -110,6 +111,7 @@ export function WelcomePage({
   onEnterSkillHub,
 }: {
   projects: Project[];
+  allProjects: Project[];
   tasks: Task[];
   onOpen: () => void;
   onProjectClick: (p: Project) => void;
@@ -202,10 +204,14 @@ export function WelcomePage({
 
         {view === "timeline" ? (
           <TimelineView
-            projects={projects}
+            projects={allProjects}
             tasks={tasks}
             onTaskClick={(task) => {
-              const project = projects.find((p) => p.id === task.projectId);
+              if (task.projectId === skillHubConfig?.hubProjectId) {
+                onEnterSkillHub();
+                return;
+              }
+              const project = allProjects.find((p) => p.id === task.projectId);
               if (project) onProjectClick(project);
             }}
           />
