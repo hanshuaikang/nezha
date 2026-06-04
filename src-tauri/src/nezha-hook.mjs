@@ -17,6 +17,16 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   raw += chunk;
 });
+// 不同 agent 的 payload 字段名不一致:Claude 用 hook_event_name / session_id,
+// Codex 用 event_name / conversation_id;再退到 agent 自带的环境变量。
+const pick = (payload, ...keys) => {
+  for (const k of keys) {
+    const v = payload[k];
+    if (typeof v === "string" && v) return v;
+  }
+  return "";
+};
+
 process.stdin.on("end", () => {
   try {
     const payload = raw ? JSON.parse(raw) : {};
@@ -25,12 +35,16 @@ process.stdin.on("end", () => {
         ts: Date.now(),
         task_id: taskId,
         agent: process.env.NEZHA_AGENT || "",
-        event: payload.hook_event_name || "",
-        session_id: payload.session_id || "",
-        transcript_path: payload.transcript_path || "",
-        cwd: payload.cwd || "",
-        tool_name: payload.tool_name || "",
-        permission_mode: payload.permission_mode || "",
+        event: pick(payload, "hook_event_name", "event_name", "hookEventName", "event"),
+        session_id:
+          pick(payload, "session_id", "conversation_id", "sessionId", "conversationId") ||
+          process.env.CODEX_SESSION_ID ||
+          process.env.CLAUDE_CODE_SESSION_ID ||
+          "",
+        transcript_path: pick(payload, "transcript_path", "transcriptPath", "rollout_path"),
+        cwd: pick(payload, "cwd"),
+        tool_name: pick(payload, "tool_name", "toolName"),
+        permission_mode: pick(payload, "permission_mode", "permissionMode"),
       }) + "\n";
     mkdirSync(eventDir, { recursive: true });
     appendFileSync(join(eventDir, "events.jsonl"), line);

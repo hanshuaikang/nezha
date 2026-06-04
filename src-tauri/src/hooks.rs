@@ -31,7 +31,6 @@ const CLAUDE_HOOK_MIN_VERSION: &str = "2.1.87";
 const HOOK_SCRIPT: &str = include_str!("nezha-hook.mjs");
 
 const NEZHA_MARKER_FIELD: &str = "_nezha_managed";
-const NEZHA_MARKER_VALUE: &str = "1";
 
 const CODEX_BEGIN: &str = "# >>> nezha-managed-begin (do not edit; managed by Nezha) >>>";
 const CODEX_END: &str = "# <<< nezha-managed-end <<<";
@@ -123,15 +122,45 @@ pub fn write_hook_script() -> Result<PathBuf, String> {
     Ok(path)
 }
 
-// ── Claude (JSON) 注入与卸载 ─────────────────────────────────────────────────
+// ── Claude (命令行 --settings) ───────────────────────────────────────────────
 
-fn nezha_claude_entry(node_path: &str, script_path: &str) -> Value {
-    let cmd = format!("\"{}\" \"{}\"", node_path, script_path);
-    serde_json::json!({
-        NEZHA_MARKER_FIELD: NEZHA_MARKER_VALUE,
-        "hooks": [{ "type": "command", "command": cmd }],
-    })
+/// Nezha 自有的 Claude hooks 配置文件路径(~/.nezha/hooks/claude-settings.json)。
+/// Claude 任务启动时通过 `--settings <此路径>` 传入,完全不修改用户的
+/// ~/.claude/settings.json。配置是静态的(node + 脚本路径),写一次复用。
+pub fn nezha_claude_settings_path() -> Result<PathBuf, String> {
+    Ok(hooks_dir()?.join("claude-settings.json"))
 }
+
+/// 构造仅含 Nezha hooks 的 Claude settings 值。只放 `hooks`(数组型,Claude 会
+/// 跨来源 merge + 按 command 去重),不含任何标量 key,因此不会覆盖用户配置。
+fn build_claude_settings_value(node_path: &str, script: &str) -> Value {
+    let cmd = format!("\"{}\" \"{}\"", node_path, script);
+    let entry = serde_json::json!({
+        "hooks": [{ "type": "command", "command": cmd }],
+    });
+    let mut hooks = Map::new();
+    for event in CLAUDE_EVENTS {
+        hooks.insert((*event).to_string(), Value::Array(vec![entry.clone()]));
+    }
+    serde_json::json!({ "hooks": Value::Object(hooks) })
+}
+
+/// 写入 Nezha 自有 Claude settings 文件。用 serde_json 序列化——Windows 路径里的
+/// 反斜杠会被正确转义;且传给 Claude 的是纯文件路径,不经历命令行字符串转义,
+/// 跨平台(含 Windows CreateProcess)安全。
+fn write_claude_settings(node_path: &str, script: &str) -> Result<PathBuf, String> {
+    let dir = hooks_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
+    let path = nezha_claude_settings_path()?;
+    let value = build_claude_settings_value(node_path, script);
+    let raw = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    atomic_write(&path, &raw)?;
+    Ok(path)
+}
+
+// ── Claude 旧版注入清理(迁移用)─────────────────────────────────────────────
+// 现版本走命令行 `--settings`,不再写用户 settings.json;以下函数仅用于清理
+// 旧版本曾注入用户 settings.json 的 `_nezha_managed` 条目。
 
 fn is_nezha_managed(value: &Value) -> bool {
     value
@@ -139,42 +168,6 @@ fn is_nezha_managed(value: &Value) -> bool {
         .and_then(|obj| obj.get(NEZHA_MARKER_FIELD))
         .and_then(|v| v.as_str())
         .is_some()
-}
-
-/// 在 settings JSON 对象上注入 Nezha hooks。返回更新后的 JSON。
-fn inject_claude_value(mut root: Value, node_path: &str, script: &str) -> Value {
-    let obj = root.as_object_mut();
-    let root_obj = if let Some(obj) = obj {
-        obj
-    } else {
-        // 文件存在但是不是对象,直接覆盖为对象(极端兜底)
-        root = Value::Object(Map::new());
-        root.as_object_mut().expect("just set to object")
-    };
-
-    let hooks = root_obj
-        .entry("hooks".to_string())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if !hooks.is_object() {
-        *hooks = Value::Object(Map::new());
-    }
-    let hooks_obj = hooks.as_object_mut().expect("ensured to be object");
-
-    for event in CLAUDE_EVENTS {
-        let arr = hooks_obj
-            .entry((*event).to_string())
-            .or_insert_with(|| Value::Array(Vec::new()));
-        if !arr.is_array() {
-            *arr = Value::Array(Vec::new());
-        }
-        let arr_vec = arr.as_array_mut().expect("ensured to be array");
-        // 移除旧的 nezha 条目(幂等升级)
-        arr_vec.retain(|entry| !is_nezha_managed(entry));
-        // 追加最新条目
-        arr_vec.push(nezha_claude_entry(node_path, script));
-    }
-
-    root
 }
 
 /// 从 settings JSON 对象上移除 Nezha hooks。
@@ -197,26 +190,6 @@ fn uninject_claude_value(mut root: Value) -> Value {
     }
     // 不删除空数组也不删除 hooks 对象本身,保留用户既有结构
     root
-}
-
-fn inject_claude_settings_at(path: &Path, node_path: &str, script: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {}: {}", parent.display(), e))?;
-    }
-    let root = if path.exists() {
-        let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        if raw.trim().is_empty() {
-            Value::Object(Map::new())
-        } else {
-            serde_json::from_str::<Value>(&raw)
-                .map_err(|e| format!("parse {}: {}", path.display(), e))?
-        }
-    } else {
-        Value::Object(Map::new())
-    };
-    let updated = inject_claude_value(root, node_path, script);
-    let raw = serde_json::to_string_pretty(&updated).map_err(|e| e.to_string())?;
-    atomic_write(path, &raw)
 }
 
 fn uninject_claude_settings_at(path: &Path) -> Result<(), String> {
@@ -483,9 +456,16 @@ pub fn ensure_installed() -> HookInstallStatus {
     };
     status.script_path = script.clone();
 
-    match claude_settings_path().and_then(|p| inject_claude_settings_at(&p, &node, &script)) {
+    // Claude:命令行 --settings 模式——把 hooks 写进 Nezha 自有文件,启动任务时通过
+    // `--settings <path>` 传入,完全不修改用户的 ~/.claude/settings.json。
+    match write_claude_settings(&node, &script) {
         Ok(_) => status.claude_installed = true,
         Err(e) => status.error = format!("claude settings: {}", e),
+    }
+    // 迁移清理:移除旧版本曾注入用户 ~/.claude/settings.json 的 nezha 条目(best-effort,
+    // 失败不影响命令行模式)。
+    if let Ok(p) = claude_settings_path() {
+        let _ = uninject_claude_settings_at(&p);
     }
 
     match codex_config_path().and_then(|p| inject_codex_config_at(&p, &node, &script)) {
@@ -504,6 +484,11 @@ pub fn ensure_installed() -> HookInstallStatus {
 
 /// 卸载 Nezha 注入的 hooks(不删除脚本本身)。
 pub fn uninstall() -> Result<(), String> {
+    // Claude:删除 Nezha 自有 settings 文件,并清理旧版本可能残留在用户
+    // ~/.claude/settings.json 里的注入条目。
+    if let Ok(p) = nezha_claude_settings_path() {
+        let _ = fs::remove_file(&p);
+    }
     let claude = claude_settings_path()?;
     uninject_claude_settings_at(&claude)?;
     let codex = codex_config_path()?;
@@ -522,32 +507,14 @@ pub fn current_status() -> HookInstallStatus {
             .unwrap_or_default(),
         ..Default::default()
     };
-    if let Ok(p) = claude_settings_path() {
-        status.claude_installed = claude_settings_has_nezha(&p);
+    // Claude 命令行模式:Nezha 自有 settings 文件存在即视为就绪。
+    if let Ok(p) = nezha_claude_settings_path() {
+        status.claude_installed = p.exists();
     }
     if let Ok(p) = codex_config_path() {
         status.codex_installed = codex_config_has_nezha(&p);
     }
     status
-}
-
-fn claude_settings_has_nezha(path: &Path) -> bool {
-    let Ok(raw) = fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(root) = serde_json::from_str::<Value>(&raw) else {
-        return false;
-    };
-    root.get("hooks")
-        .and_then(|h| h.as_object())
-        .map(|hooks| {
-            hooks.values().any(|arr| {
-                arr.as_array()
-                    .map(|entries| entries.iter().any(is_nezha_managed))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false)
 }
 
 fn codex_config_has_nezha(path: &Path) -> bool {
@@ -612,63 +579,50 @@ pub async fn uninstall_hooks() -> Result<(), String> {
 mod tests {
     use super::*;
 
-    // ── Claude JSON 注入 ────────────────────────────────────────────────────
+    // ── Claude settings 构造(命令行 --settings 模式)────────────────────────
 
     #[test]
-    fn claude_inject_into_empty() {
-        let v = inject_claude_value(serde_json::json!({}), "/node", "/script.mjs");
+    fn claude_settings_value_has_all_events_no_scalar_keys() {
+        let v = build_claude_settings_value("/node", "/script.mjs");
+        // 顶层只有 hooks,绝不含 model 等标量 key(否则会覆盖用户配置)
+        let root = v.as_object().expect("object");
+        assert_eq!(root.len(), 1);
+        assert!(root.contains_key("hooks"));
         for event in CLAUDE_EVENTS {
             let arr = v["hooks"][event].as_array().expect("array");
             assert_eq!(arr.len(), 1);
-            assert!(is_nezha_managed(&arr[0]));
-        }
-    }
-
-    #[test]
-    fn claude_inject_preserves_user_entries() {
-        let original = serde_json::json!({
-            "permissions": { "allow": ["Bash(ls)"] },
-            "hooks": {
-                "Stop": [{ "hooks": [{ "type": "command", "command": "user-script.sh" }] }],
-                "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "policy.sh" }] }]
-            }
-        });
-        let v = inject_claude_value(original.clone(), "/node", "/script.mjs");
-
-        // 用户的 PreToolUse 应原封不动
-        assert_eq!(v["hooks"]["PreToolUse"], original["hooks"]["PreToolUse"]);
-        // 用户的 permissions 应保留
-        assert_eq!(v["permissions"], original["permissions"]);
-        // 用户的 Stop 应保留 + 追加 Nezha 条目
-        let stop = v["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2);
-        assert!(!is_nezha_managed(&stop[0]));
-        assert!(is_nezha_managed(&stop[1]));
-    }
-
-    #[test]
-    fn claude_inject_idempotent_upgrade() {
-        let v1 = inject_claude_value(serde_json::json!({}), "/oldnode", "/oldscript.mjs");
-        let v2 = inject_claude_value(v1.clone(), "/newnode", "/newscript.mjs");
-        // 升级后每个 event 仍然只有一个 Nezha 条目
-        for event in CLAUDE_EVENTS {
-            let arr = v2["hooks"][event].as_array().unwrap();
-            let nezha_count = arr.iter().filter(|e| is_nezha_managed(e)).count();
-            assert_eq!(nezha_count, 1, "event {} should have exactly 1 nezha entry", event);
             let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
-            assert!(cmd.contains("newnode"), "should reference new node path");
-            assert!(cmd.contains("newscript"), "should reference new script path");
+            assert!(cmd.contains("/node") && cmd.contains("/script.mjs"));
         }
     }
+
+    #[test]
+    fn claude_settings_value_escapes_windows_paths() {
+        // 序列化后反斜杠必须被正确转义,保证 Windows 路径合法 JSON
+        let v = build_claude_settings_value(r"C:\node.exe", r"C:\hooks\nezha-hook.mjs");
+        let raw = serde_json::to_string(&v).unwrap();
+        assert!(raw.contains(r"C:\\node.exe"));
+        // 回环解析得到原始路径
+        let parsed: Value = serde_json::from_str(&raw).unwrap();
+        let cmd = parsed["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(cmd.contains(r"C:\node.exe"));
+    }
+
+    // ── Claude 旧版注入清理(迁移)────────────────────────────────────────────
 
     #[test]
     fn claude_uninject_removes_nezha_only() {
-        let original = serde_json::json!({
+        // 模拟旧版本注入后的 settings:用户条目 + 带 marker 的 nezha 条目
+        let injected = serde_json::json!({
             "hooks": {
-                "Stop": [{ "hooks": [{ "type": "command", "command": "user-script.sh" }] }]
+                "Stop": [
+                    { "hooks": [{ "type": "command", "command": "user-script.sh" }] },
+                    { NEZHA_MARKER_FIELD: "1", "hooks": [{ "type": "command", "command": "nezha" }] }
+                ]
             }
         });
-        let injected = inject_claude_value(original.clone(), "/node", "/script.mjs");
         let restored = uninject_claude_value(injected);
         // Stop 数组里应只剩用户的条目
         let stop = restored["hooks"]["Stop"].as_array().unwrap();
@@ -768,24 +722,6 @@ command = \"echo user-stop\"\n";
     }
 
     // ── 文件级集成 ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn claude_inject_file_round_trip() {
-        let tmp = std::env::temp_dir().join(format!("nezha-claude-{}.json", std::process::id()));
-        let _ = fs::remove_file(&tmp);
-
-        inject_claude_settings_at(&tmp, "/node", "/script.mjs").expect("inject");
-        let raw = fs::read_to_string(&tmp).unwrap();
-        let v: Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 1);
-
-        uninject_claude_settings_at(&tmp).expect("uninject");
-        let raw = fs::read_to_string(&tmp).unwrap();
-        let v: Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 0);
-
-        let _ = fs::remove_file(&tmp);
-    }
 
     #[test]
     fn codex_inject_file_round_trip() {

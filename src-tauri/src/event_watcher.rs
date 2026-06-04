@@ -7,7 +7,9 @@
 //!   * SessionStart → 注册 session 到 TaskManager + emit `task-session`
 //!   * Notification(Claude) / PermissionRequest(Codex) → `task-status` = input_required
 //!   * UserPromptSubmit / PostToolUse → `task-status` = running(清除 input_required)
-//!   * Stop / SubagentStop → 不主动 emit,交给 PTY exit monitor 处理终态
+//!   * Stop(Codex)→ `task-status` = input_required(交互式 REPL 一轮结束、等待用户;
+//!     进程不退出,PTY exit monitor 不会触发,Stop 是 full_access 下唯一的轮次结束信号)
+//!   * Stop / SubagentStop(其余)→ 不主动 emit,交给 PTY exit monitor 处理终态
 //!
 //! 轮询(而非 notify::Watcher)的取舍:实现简单、跨平台一致、200ms 间隔
 //! 对响应延迟来说足够低,且 stat 调用成本可忽略。
@@ -54,6 +56,10 @@ fn run_loop(app: AppHandle) {
         Ok(p) => p,
         Err(_) => return,
     };
+    // 启动清理:app 上次若被强杀,可能残留 events 目录;此刻尚无任务在跑,整目录清空
+    // 是安全的。否则下次启动 offset 从 0 起会重放旧的 SessionStart,为已结束的任务
+    // 重新注册 session 并 emit `task-session`。先删后建,确保从干净状态开始。
+    let _ = fs::remove_dir_all(&events_root);
     let _ = fs::create_dir_all(&events_root);
 
     let mut offsets: HashMap<PathBuf, u64> = HashMap::new();
@@ -125,7 +131,13 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
         // - PostToolUse:工具执行成功后触发(ask 模式下即审批通过后)。工具审批
         //   不会触发 UserPromptSubmit,必须靠 PostToolUse 才能把 input_required 复位。
         "UserPromptSubmit" | "PostToolUse" => emit_active_status(app, ev, "running"),
-        // Stop / SubagentStop 暂不主动 emit,Stop 让 PTY exit monitor 处理 done/failed 状态
+        // Codex 以交互式 REPL 方式启动(`codex -- "<prompt>"`),一轮结束后进程不退出,
+        // PTY exit monitor 不会触发终态;此时 Stop 表示"本轮结束、等待用户下一步",
+        // 映射为 input_required(需要关注)。尤其 full_access 模式下没有 PermissionRequest,
+        // Stop 是唯一的轮次结束信号——若继续忽略,任务会永远停留在 running。
+        // Claude 的等待态由 Notification 覆盖,真正退出仍交给 PTY exit monitor,故此处不处理。
+        "Stop" if ev.agent == "codex" => emit_active_status(app, ev, "input_required"),
+        // SubagentStop(子代理结束)主代理仍在工作,不主动 emit;Claude 的 Stop 同上。
         _ => {}
     }
 }
