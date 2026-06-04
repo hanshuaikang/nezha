@@ -407,7 +407,7 @@ function App() {
     const path = selected as string;
     const existing = projects.find((p) => p.path === path);
     const project: Project = existing
-      ? { ...existing, lastOpenedAt: Date.now() }
+      ? { ...existing, lastOpenedAt: Date.now(), hiddenFromRail: false }
       : { id: `${Date.now()}`, name: deriveProjectName(path), path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
       const next = [project, ...prev.filter((p) => p.path !== path)];
@@ -423,7 +423,7 @@ function App() {
   }
 
   function handleProjectClick(project: Project) {
-    const updated = { ...project, lastOpenedAt: Date.now() };
+    const updated = { ...project, lastOpenedAt: Date.now(), hiddenFromRail: false };
     setProjects((prev) => {
       const next = prev.map((p) => (p.id === project.id ? updated : p));
       persistProjects(next, showToast, formatSaveProjectsError);
