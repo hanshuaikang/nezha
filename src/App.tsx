@@ -956,6 +956,16 @@ function App() {
     });
   }
 
+  function handleToggleProjectHidden(projectId: string) {
+    setProjects((prev) => {
+      const next = prev.map((p) =>
+        p.id === projectId ? { ...p, hiddenFromRail: !p.hiddenFromRail } : p,
+      );
+      persistProjects(next, showToast, formatSaveProjectsError);
+      return next;
+    });
+  }
+
   function updateTaskStatus(
     taskId: string,
     status: TaskStatus,
@@ -1160,6 +1170,7 @@ function App() {
             onOpen={handleOpen}
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
+            onToggleProjectHidden={handleToggleProjectHidden}
             skillHubConfig={skillHubConfig}
             onEnterSkillHub={handleEnterSkillHub}
             themeVariant={themeVariant}
