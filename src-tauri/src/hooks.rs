@@ -105,11 +105,18 @@ pub fn detect_node() -> Option<String> {
     if raw.is_empty() {
         return None;
     }
-    // realpath 解析,绕开 nvm/asdf 这类 shim
-    match fs::canonicalize(&raw) {
-        Ok(real) => Some(real.to_string_lossy().into_owned()),
-        Err(_) => Some(raw),
+    // realpath 解析,绕开 nvm/asdf 这类 shim——仅 Unix 需要。
+    // Windows 上 fs::canonicalize 会产出带 `\\?\` 前缀的 verbatim 路径,
+    // 该前缀 cmd.exe 不识别(与 OS 版本无关,Win10+ 同样如此),会导致 hook
+    // 命令启动失败;且 Windows 用 nvm-windows 而非 symlink shim,本就无此诉求,
+    // 故直接沿用 detect_path 返回的普通路径。
+    #[cfg(unix)]
+    {
+        if let Ok(real) = fs::canonicalize(&raw) {
+            return Some(real.to_string_lossy().into_owned());
+        }
     }
+    Some(raw)
 }
 
 // ── 脚本写入 ────────────────────────────────────────────────────────────────
