@@ -1,5 +1,16 @@
 import { useState, useMemo } from "react";
-import { Search, FolderOpen, GitBranch, Layers, Plus, Trash2, Clock, Blocks } from "lucide-react";
+import {
+  Search,
+  FolderOpen,
+  GitBranch,
+  Layers,
+  Plus,
+  Trash2,
+  Clock,
+  Blocks,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import type {
   Project,
   Task,
@@ -81,6 +92,7 @@ export function WelcomePage({
   onOpen,
   onProjectClick,
   onDeleteProject,
+  onToggleProjectHidden,
   themeVariant,
   themeMode,
   systemPrefersDark,
@@ -102,6 +114,7 @@ export function WelcomePage({
   onOpen: () => void;
   onProjectClick: (p: Project) => void;
   onDeleteProject: (projectId: string) => void;
+  onToggleProjectHidden: (projectId: string) => void;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
@@ -292,6 +305,41 @@ export function WelcomePage({
                       ) : (
                         <span style={s.projectTag}>{t("welcome.local")}</span>
                       )}
+
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        style={{
+                          ...s.projectPinBtn,
+                          ...(p.hiddenFromRail
+                            ? s.projectPinBtnHidden
+                            : s.projectPinBtnPinned),
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleProjectHidden(p.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onToggleProjectHidden(p.id);
+                        }}
+                        title={
+                          p.hiddenFromRail
+                            ? t("welcome.pinToRail")
+                            : t("welcome.unpinFromRail")
+                        }
+                      >
+                        {p.hiddenFromRail ? (
+                          <PinOff size={11} strokeWidth={2} />
+                        ) : (
+                          <Pin size={11} strokeWidth={2} />
+                        )}
+                        {p.hiddenFromRail
+                          ? t("welcome.notPinnedToRail")
+                          : t("welcome.pinnedToRail")}
+                      </span>
 
                       <button
                         style={{

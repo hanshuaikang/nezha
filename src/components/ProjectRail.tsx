@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Plus, ChevronsRight, Search } from "lucide-react";
+import { Plus, ChevronsRight, Search, PinOff } from "lucide-react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { useI18n } from "../i18n";
@@ -265,6 +265,14 @@ function ProjectDrawer({
               >
                 {project.name}
               </span>
+              {project.hiddenFromRail && (
+                <PinOff
+                  size={12}
+                  strokeWidth={2}
+                  color="var(--text-hint)"
+                  style={s.railHiddenIcon}
+                />
+              )}
             </button>
           );
         })}
@@ -293,6 +301,12 @@ export function ProjectRail({
   const [expandHov, setExpandHov] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // 竖条只显示常驻项目；当前激活项目即使被设为非常驻也始终保留，避免失去当前上下文。
+  const railProjects = useMemo(
+    () => projects.filter((p) => !p.hiddenFromRail || p.id === activeProjectId),
+    [projects, activeProjectId],
+  );
+
   return (
     <div
       style={{
@@ -311,7 +325,7 @@ export function ProjectRail({
         zIndex: drawerOpen ? 50 : "auto",
       }}
     >
-      {projects.map((project) => (
+      {railProjects.map((project) => (
         <RailItem
           key={project.id}
           project={project}
