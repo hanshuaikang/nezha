@@ -1154,6 +1154,7 @@ function App() {
         >
           <WelcomePage
             projects={visibleProjectsForWelcome}
+            allProjects={sortedProjects}
             tasks={tasks}
             onOpen={handleOpen}
             onProjectClick={handleProjectClick}
