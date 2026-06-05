@@ -104,7 +104,8 @@ Codex hooks 从 0.99（AfterAgent）→ 0.114（实验引擎，含 SessionStart/
 | `SubagentStop` | 不主动 emit | — |
 
 Codex 端关键差异：
-- **Feature flag**：现在**默认开启**。`hooks` 是 canonical 键，`codex_hooks` 是 **deprecated 别名**。禁用方式 `[features] hooks = false`；企业可用 `requirements.toml` 的 `allow_managed_hooks_only` / `[features].hooks = false` 强制。**Windows 上 hooks 被禁用**。
+- **Feature flag**：现在**默认开启**。`hooks` 是 canonical 键，`codex_hooks` 是 **deprecated 别名**。禁用方式 `[features] hooks = false`；企业可用 `requirements.toml` 的 `allow_managed_hooks_only` / `[features].hooks = false` 强制。
+- **Windows 执行**：hooks **在 Windows 上启用**（0.118 前后曾短暂禁用，后经 `commandWindows` 机制恢复）。command hook 字符串经 **`cmd.exe /C`** 执行（Unix 经 `/bin/sh -lc`），**不是 PowerShell**；另有 `commandWindows`/`command_windows` 覆盖字段可单独指定 Windows 命令。`command` 只能是字符串，**无 args 数组**（不像 Claude 有 exec form）。源码核实自 `codex-rs/hooks/src/engine/command_runner.rs`。
 - **配置格式**：`hooks.json` 或 config.toml 内联 `[[hooks.X]]` 二选一（同层两者并存会 merge 并告警）。Nezha 用 config.toml 内联，marker 块 `# >>> nezha-managed-begin ... <<<` 包裹，区域外用户内容按字符串切片保留。
 - **信任机制（关键坑）**：非 managed 的 command hook **必须先 review + trust 才会运行**，Codex 按 hook hash 记录信任，新/改 hook 默认 skip。详见 §5 与 [[feat_hooks_codex_gaps]]。
 
@@ -140,6 +141,7 @@ SubagentStop | 其它                → 不处理 (交 PTY exit monitor 处理�
 | 维度 | Claude | Codex |
 |------|--------|-------|
 | 配置入口 | 命令行 `--settings <~/.nezha/hooks/claude-settings.json>` | 内联注入 `~/.codex/config.toml` marker 块 |
+| command 形态 | 裸 `node "<script>"`(单字符串,跨 shell 安全) | 裸 `node "<script>"`(单字符串;Codex `command` 仅支持字符串、无 args 数组) |
 | 是否改用户配置 | **否**（自有文件，靠 merge 语义共存） | 是（但 marker 块外用户内容完整保留 + 卸载可精确移除） |
 | 信任绕过 | 无需 | `--dangerously-bypass-hook-trust`（**必须加在 `--` / `resume` 之前**） |
 | 升级/卸载幂等 | 删自有文件 + 清理旧版残留注入 | marker 块整体替换 / 移除 |
@@ -152,7 +154,7 @@ SubagentStop | 其它                → 不处理 (交 PTY exit monitor 处理�
 
 | agent | 最低版本 | 来源 |
 |-------|---------|------|
-| Claude | `2.1.87`（`CLAUDE_HOOK_MIN_VERSION`） | 沿用现代会话机制门槛（已具备 SessionStart/Notification/UserPromptSubmit） |
+| Claude | `2.1.87`（`CLAUDE_HOOK_MIN_VERSION`） | 沿用现代会话机制门槛（已具备 SessionStart/Notification/UserPromptSubmit）。命令走裸 `node "<script>"` shell form，跨平台/跨 shell 均成立，无需更高门槛 |
 | Codex | `0.124.0`（`CODEX_HOOK_MIN_VERSION`） | hooks Stage::Stable 且默认开启的首个版本 |
 
 三条件：① `node` 可用（`detect_node()`，realpath 绕开 nvm/asdf shim）② 对应 agent 已安装 hook ③ agent 版本 ≥ 门槛。
@@ -171,6 +173,8 @@ SubagentStop | 其它                → 不处理 (交 PTY exit monitor 处理�
 | **Claude 等输入角标晚 ~60s** | 误依赖 `Notification(idle_prompt)` 兜底 | `idle_prompt` 空闲约 60s 才触发；**必须用 `Stop` 即时置 `input_required`**（实测 Stop→Notification 恰 +60s）。详见 [[hook_claude_stop_badge_delay]] |
 | 脚本无 `NEZHA_TASK_ID`/`NEZHA_EVENT_DIR` | `nezha-hook.mjs` 立即 `exit 0` | 用户手动跑 agent 时零副作用（守卫设计） |
 | 脚本内部任何异常 | catch 吞掉，`exit 0` | 绝不让 hook 失败阻塞 agent |
+| **Windows 报 `hook exited with code 1`** | Node 读管道 stdin 到 EOF 抛 `EOF: end of file, read` 的 `'error'` 事件，无监听器 → 未捕获异常 → 进程 exit 1 | Unix 干净触发 `'end'`，Windows 抛 `'error'`（agent 写完 payload 关闭管道触发）。修复：`nezha-hook.mjs` 必须给 `process.stdin.on('error', finish)` + `process.on('uncaughtException', finish)`（finish 幂等，用已收 payload 落盘并 `exit 0`）。脚本落盘逻辑全在 try/catch 内，exit 1 永远来自 stdin 流的未捕获 error，而非落盘逻辑 |
+| **Windows 报 `UnexpectedToken` / hook 启动失败** | hook command 交 shell 执行（Claude:Git Bash 不存在时兜底 PowerShell；Codex:部分版本走 PowerShell）；带引号的 node 全路径 `"<node>" "<script>"` 在 **PowerShell** 下首个 `"quoted"` token 被当成字符串字面量,第二个路径处报 UnexpectedToken（即"字符串 + 另一个字符串"） | **生效配置:Claude `~/.nezha/hooks/claude-settings.json`、Codex `~/.codex/config.toml`,均由生成器（`build_claude_settings_value` / `build_codex_block`）写出,`ensure_installed` 启动期每次重写。** 修复:命令统一改为**裸 `node "<script>"`**——首个 token 是裸命令名,cmd.exe / PowerShell / Git Bash / sh 都按「调用 PATH 上的 node」解析,一套写法修好两个 agent、无需 exec form / 版本门槛。**反模式**:带引号的 node 全路径在前;**误区**:给 PowerShell 加 `&` 只在 PowerShell 成立,bash/cmd 下反而报错。代码改完须重启 app(或调 `install_hooks`)重写磁盘旧配置 |
 
 ---
 

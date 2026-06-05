@@ -138,12 +138,27 @@ pub fn nezha_claude_settings_path() -> Result<PathBuf, String> {
     Ok(hooks_dir()?.join("claude-settings.json"))
 }
 
+/// 构造跨 shell 安全的 hook 调用命令字符串,Claude / Codex 共用。
+///
+/// 形态固定为 `node "<script>"`:**裸命令名 `node` 作为首个 token**,cmd.exe /
+/// PowerShell / Git Bash / sh 都把它解析成「调用 PATH 上的 node」;脚本路径用
+/// 双引号包裹以容纳空格。
+///
+/// **不要**改回带引号的 node 全路径(`"C:\…\node.exe" "<script>"`):那样首个
+/// token 是带引号的字符串,PowerShell(Claude 无 Git Bash 时、以及部分 Codex 版本
+/// 的兜底 shell)会把它当字符串字面量,在第二个路径处报 `UnexpectedToken`。
+/// 裸 node 也是社区注入器(claude-code-hooks 等)与 Claude/Codex 官方示例的通行写法。
+/// node 必在 PATH——`detect_node()` 本就从登录 shell 的 PATH 探测,agent 进程及其
+/// 派生的 hook 子 shell 都继承同一 PATH。
+fn hook_command(script: &str) -> String {
+    format!("node \"{}\"", script)
+}
+
 /// 构造仅含 Nezha hooks 的 Claude settings 值。只放 `hooks`(数组型,Claude 会
 /// 跨来源 merge + 按 command 去重),不含任何标量 key,因此不会覆盖用户配置。
-fn build_claude_settings_value(node_path: &str, script: &str) -> Value {
-    let cmd = format!("\"{}\" \"{}\"", node_path, script);
+fn build_claude_settings_value(_node_path: &str, script: &str) -> Value {
     let entry = serde_json::json!({
-        "hooks": [{ "type": "command", "command": cmd }],
+        "hooks": [{ "type": "command", "command": hook_command(script) }],
     });
     let mut hooks = Map::new();
     for event in CLAUDE_EVENTS {
@@ -216,7 +231,7 @@ fn uninject_claude_settings_at(path: &Path) -> Result<(), String> {
 
 // ── Codex (TOML) 注入与卸载 ──────────────────────────────────────────────────
 
-fn build_codex_block(node_path: &str, script: &str) -> String {
+fn build_codex_block(_node_path: &str, script: &str) -> String {
     let mut out = String::new();
     out.push_str(CODEX_BEGIN);
     out.push('\n');
@@ -224,10 +239,10 @@ fn build_codex_block(node_path: &str, script: &str) -> String {
         out.push_str(&format!("[[hooks.{}]]\n", event));
         out.push_str(&format!("[[hooks.{}.hooks]]\n", event));
         out.push_str("type = \"command\"\n");
-        out.push_str(&format!(
-            "command = {}\n",
-            toml_quote(&format!("\"{}\" \"{}\"", node_path, script))
-        ));
+        // Codex 的 `command` 只能是字符串(无 args 数组),在 Windows 上经
+        // `cmd.exe /C` 执行、Unix 经 `/bin/sh -lc` 执行;裸 `node "<script>"`
+        // 两边都成立。toml_quote 负责把内层的 `"` 与路径反斜杠转义成合法 TOML。
+        out.push_str(&format!("command = {}\n", toml_quote(&hook_command(script))));
         out.push('\n');
     }
     out.push_str(CODEX_END);
@@ -595,23 +610,25 @@ mod tests {
         for event in CLAUDE_EVENTS {
             let arr = v["hooks"][event].as_array().expect("array");
             assert_eq!(arr.len(), 1);
+            // 裸 node + 双引号脚本路径,跨 shell 安全(不含 node 全路径)。
             let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
-            assert!(cmd.contains("/node") && cmd.contains("/script.mjs"));
+            assert_eq!(cmd, "node \"/script.mjs\"");
         }
     }
 
     #[test]
     fn claude_settings_value_escapes_windows_paths() {
-        // 序列化后反斜杠必须被正确转义,保证 Windows 路径合法 JSON
+        // 命令是裸 node + 双引号脚本路径;序列化后脚本路径的反斜杠必须被正确转义,
+        // 保证 Windows 路径是合法 JSON。
         let v = build_claude_settings_value(r"C:\node.exe", r"C:\hooks\nezha-hook.mjs");
         let raw = serde_json::to_string(&v).unwrap();
-        assert!(raw.contains(r"C:\\node.exe"));
-        // 回环解析得到原始路径
+        assert!(raw.contains(r"C:\\hooks\\nezha-hook.mjs"));
+        // 回环解析得到原始命令
         let parsed: Value = serde_json::from_str(&raw).unwrap();
         let cmd = parsed["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
             .unwrap();
-        assert!(cmd.contains(r"C:\node.exe"));
+        assert_eq!(cmd, "node \"C:\\hooks\\nezha-hook.mjs\"");
     }
 
     // ── Claude 旧版注入清理(迁移)────────────────────────────────────────────
@@ -681,9 +698,8 @@ mod tests {
         // 只应该有一对 marker
         assert_eq!(v2.matches(CODEX_BEGIN).count(), 1);
         assert_eq!(v2.matches(CODEX_END).count(), 1);
-        assert!(v2.contains("newnode"));
+        // 命令是裸 node + 脚本路径(不含 node 全路径),升级后只剩新脚本路径。
         assert!(v2.contains("newscript"));
-        assert!(!v2.contains("oldnode"));
         assert!(!v2.contains("oldscript"));
     }
 

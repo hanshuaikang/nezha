@@ -12,11 +12,6 @@ if (!taskId || !eventDir) {
   process.exit(0);
 }
 
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  raw += chunk;
-});
 // 不同 agent 的 payload 字段名不一致:Claude 用 hook_event_name / session_id,
 // Codex 用 event_name / conversation_id;再退到 agent 自带的环境变量。
 const pick = (payload, ...keys) => {
@@ -27,7 +22,14 @@ const pick = (payload, ...keys) => {
   return "";
 };
 
-process.stdin.on("end", () => {
+let raw = "";
+let done = false;
+
+// 用已收集到的 stdin 内容落盘并退出。幂等:end / error / uncaughtException
+// 任一触发都只执行一次,且永远 exit 0——绝不让 hook 失败影响 agent。
+function finish() {
+  if (done) return;
+  done = true;
   try {
     const payload = raw ? JSON.parse(raw) : {};
     const line =
@@ -52,4 +54,18 @@ process.stdin.on("end", () => {
     // 永远不要让 hook 失败导致 agent 阻塞
   }
   process.exit(0);
+}
+
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  raw += chunk;
 });
+process.stdin.on("end", finish);
+// Windows 关键修复:agent 写完 payload 关闭 stdin 管道后,Node 读取
+// 管道 stdin 到 EOF 时会抛出 `EOF: end of file, read` 的 'error' 事件(Unix 下
+// 则干净触发 'end')。流上的 'error' 无监听器会变成未捕获异常,令进程以 exit 1
+// 退出,agent 即报 "hook exited with code 1"。此时 'data' 已收齐 payload,按
+// 正常流程落盘即可。
+process.stdin.on("error", finish);
+// 兜底:任何未预期的同步/异步异常都不得令 hook 以非 0 退出。
+process.on("uncaughtException", finish);
