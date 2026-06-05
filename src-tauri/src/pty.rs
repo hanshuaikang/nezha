@@ -534,10 +534,12 @@ pub async fn run_task(
     let agent_bin = launch.program.clone();
     let is_codex = agent == "codex";
 
-    // 读取项目配置中已保存的 Claude 版本，用于判断是否支持 --session-id
-    let saved_claude_version = config.agent.claude_version.clone();
-    let use_explicit_session =
-        !is_codex && crate::app_settings::claude_version_gte(&saved_claude_version, "2.1.87");
+    // 版本统一走全局探测（带缓存），判断是否支持 --session-id。
+    // 缓存未命中时 *_version_gte 会启子进程探测，故放进 spawn_blocking 避免阻塞 async runtime。
+    let use_explicit_session = !is_codex
+        && tokio::task::spawn_blocking(|| crate::app_settings::claude_version_gte("2.1.87"))
+            .await
+            .unwrap_or(false);
 
     // 预生成 session id（仅 Claude >= 2.1.87 使用）
     let pre_session_id = if use_explicit_session {
@@ -554,12 +556,7 @@ pub async fn run_task(
     // `--`/positional prompt 之前。
     let use_hooks = {
         let agent = agent.clone();
-        let saved_version = if is_codex {
-            config.agent.codex_version.clone()
-        } else {
-            config.agent.claude_version.clone()
-        };
-        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent, &saved_version))
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
             .await
             .unwrap_or(false)
     };
@@ -800,11 +797,11 @@ pub async fn resume_task(
     let agent_bin = launch.program.clone();
     // hook 可信时会话发现/状态由 event_watcher 驱动,跳过轮询 watcher;否则回退,
     // 且不注入 NEZHA_* 守卫变量,避免旧版但已安装 hook 的 agent 与轮询路径并行重复
-    // 上报。resume 未读取项目 config,传空版本号让 usable_for 走带缓存的探测。
+    // 上报。版本统一走全局带缓存的探测。
     // 先于 cmd 构建计算,因 Codex 的 bypass flag 需加在 `resume` 子命令之前。
     let use_hooks = {
         let agent = agent.clone();
-        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent, ""))
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
             .await
             .unwrap_or(false)
     };

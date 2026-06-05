@@ -140,14 +140,15 @@ interface Task {
 
 ```toml
 [agent]
-default = "claude"        # 新任务的默认智能体
-prompt_prefix = ""        # 拼接到每个任务提示词前面的文本
-claude_version = ""       # 自动探测并回写的 Claude Code 版本
-codex_version = ""        # 自动探测并回写的 Codex 版本
+default = "claude"               # 新任务的默认智能体
+default_permission_mode = "ask"  # 新任务的默认权限模式
+prompt_prefix = ""               # 拼接到每个任务提示词前面的文本
 
 [git]
-commit_prompt = "..."     # generate_commit_message 使用的提示词
+commit_prompt = "..."            # generate_commit_message 使用的提示词
 ```
+
+> 智能体版本号（Claude Code / Codex）统一由应用级 `app_settings`（`~/.nezha/settings.json` + 带缓存的全局探测）管理，**不再存于项目 config.toml**；hook 能力判断（`hooks::usable_for`）一律走全局探测。
 
 附加到任务的图片会保存至 `.nezha/attachments/<taskId>/`，其路径会被追加到提示词末尾，以便智能体通过文件工具读取。任务完成后附件会被自动清理。
 

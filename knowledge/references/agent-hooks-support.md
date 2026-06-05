@@ -34,7 +34,7 @@ src-tauri/src/hooks.rs
   ├─ ensure_installed()              ← 安装入口:写脚本 + Claude settings + Codex 注入
   ├─ build_claude_settings_value()  ← Claude: 仅含 hooks 的 JSON,经 --settings 传入
   ├─ build_codex_block()            ← Codex: marker 包裹的内联 [[hooks.X]] TOML
-  ├─ usable_for(agent, ver)         ← 三条满足(node+已装+版本)才信任 hook,否则回退轮询
+  ├─ usable_for(agent)              ← 三条满足(node+已装+版本)才信任 hook,否则回退轮询
   └─ CLAUDE_HOOK_MIN_VERSION / CODEX_HOOK_MIN_VERSION  ← 版本门槛
 src-tauri/src/nezha-hook.mjs
   └─ pick(payload, ...keys)         ← 跨 agent 字段名多 key 兜底
@@ -148,7 +148,7 @@ SubagentStop | 其它                → 不处理 (交 PTY exit monitor 处理�
 
 ## 4. 版本门槛（usable_for 判定）
 
-`hooks.rs::usable_for(agent, saved_version)` 三条**同时**满足才信任 hook 链路、关掉轮询兜底；任一不满足回退 `/status` 轮询。
+`hooks.rs::usable_for(agent)` 三条**同时**满足才信任 hook 链路、关掉轮询兜底；任一不满足回退 `/status` 轮询。版本号统一走 `app_settings` 的全局带缓存探测（不再读项目级 config）。
 
 | agent | 最低版本 | 来源 |
 |-------|---------|------|

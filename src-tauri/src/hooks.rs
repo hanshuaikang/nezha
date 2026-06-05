@@ -399,9 +399,9 @@ fn readiness_for(agent: &str, status: &HookInstallStatus) -> HookAgentReadiness 
 
     let version_ok = !detected.is_empty()
         && if agent == "codex" {
-            crate::app_settings::codex_version_gte(&detected, min_version)
+            crate::app_settings::codex_version_gte(min_version)
         } else {
-            crate::app_settings::claude_version_gte(&detected, min_version)
+            crate::app_settings::claude_version_gte(min_version)
         };
 
     let reason = if status.node_path.is_empty() {
@@ -427,19 +427,16 @@ fn readiness_for(agent: &str, status: &HookInstallStatus) -> HookAgentReadiness 
 /// 三条同时满足:node 可用 + 对应 agent 已安装 hook + agent 版本 ≥ 门槛。
 /// 任一不满足返回 false,调用方应回退到 `/status` 轮询路径。
 ///
-/// `saved_version` 传入已落盘的版本号(来自项目 config)以避免子进程探测;
-/// 传空字符串时 `*_version_gte` 会回退到带缓存的探测。
-pub fn usable_for(agent: &str, saved_version: &str) -> bool {
+/// 版本号统一走 `*_version_gte` 的全局带缓存探测,不再读取项目级 config 中的版本字段。
+pub fn usable_for(agent: &str) -> bool {
     let status = status_cache().lock().clone();
     if status.node_path.is_empty() {
         return false;
     }
     if agent == "codex" {
-        status.codex_installed
-            && crate::app_settings::codex_version_gte(saved_version, CODEX_HOOK_MIN_VERSION)
+        status.codex_installed && crate::app_settings::codex_version_gte(CODEX_HOOK_MIN_VERSION)
     } else {
-        status.claude_installed
-            && crate::app_settings::claude_version_gte(saved_version, CLAUDE_HOOK_MIN_VERSION)
+        status.claude_installed && crate::app_settings::claude_version_gte(CLAUDE_HOOK_MIN_VERSION)
     }
 }
 
