@@ -135,6 +135,7 @@ pub fn run() {
             app_settings::save_app_settings,
             app_settings::save_agent_paths,
             app_settings::save_send_shortcut,
+            app_settings::save_terminal_newline_shortcut,
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,

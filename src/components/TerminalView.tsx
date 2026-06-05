@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import {
+  DEFAULT_TERMINAL_NEWLINE_SHORTCUT,
+  matchesTerminalNewline,
+  normalizeTerminalNewlineShortcut,
+  TERMINAL_NEWLINE_SEQUENCE,
+  type TerminalNewlineShortcut,
+} from "../shortcuts";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
   themeFor,
@@ -55,6 +63,7 @@ export function TerminalView({
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const newlineShortcutRef = useRef<TerminalNewlineShortcut>(DEFAULT_TERMINAL_NEWLINE_SHORTCUT);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -125,7 +134,10 @@ export function TerminalView({
       completeRestore();
     });
 
-    const disposeSmartCopy = attachSmartCopy(term);
+    const disposeSmartCopy = attachSmartCopy(term, {
+      matchesNewline: (e) => matchesTerminalNewline(e, newlineShortcutRef.current),
+      onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
+    });
     const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
     const disposeOnData = { dispose: () => linuxIME.dispose() };
 
@@ -177,6 +189,25 @@ export function TerminalView({
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the configured "insert newline" combo in sync with app settings.
+  // Mirrors NewTaskView: load once, then react to the global settings event.
+  useEffect(() => {
+    function loadNewlineShortcut() {
+      invoke<{ terminal_newline_shortcut?: unknown }>("load_app_settings")
+        .then((settings) => {
+          newlineShortcutRef.current = normalizeTerminalNewlineShortcut(
+            settings.terminal_newline_shortcut,
+          );
+        })
+        .catch(() => {
+          newlineShortcutRef.current = DEFAULT_TERMINAL_NEWLINE_SHORTCUT;
+        });
+    }
+    loadNewlineShortcut();
+    window.addEventListener("nezha:app-settings-changed", loadNewlineShortcut);
+    return () => window.removeEventListener("nezha:app-settings-changed", loadNewlineShortcut);
+  }, []);
 
   useEffect(() => {
     if (!isActive) return;

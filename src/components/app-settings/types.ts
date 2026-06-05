@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { SendShortcut } from "../../shortcuts";
+import type { SendShortcut, TerminalNewlineShortcut } from "../../shortcuts";
 
 export type NavKey = "general" | "theme" | "fonts" | "shortcuts" | "skills" | "about" | "claude" | "codex";
 
@@ -7,6 +7,7 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  terminal_newline_shortcut: TerminalNewlineShortcut;
 }
 
 export interface AgentVersions {
