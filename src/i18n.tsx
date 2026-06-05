@@ -163,7 +163,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "settings.commitMessageTimeoutInvalid": "Commit message timeout must be between 1 and 120 seconds.",
     "settings.commitPrompt": "Commit Prompt",
     "settings.commitPromptHint": "System prompt used when AI generates commit messages",
-    "settings.secondsUnit": "s",
+    "settings.secondsUnit": "seconds",
     "common.loading": "Loading...",
     "common.loadingEllipsis": "Loading…",
     "common.apply": "Apply",
