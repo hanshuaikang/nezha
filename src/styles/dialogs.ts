@@ -284,4 +284,55 @@ export const dialogs = {
     cursor: "pointer",
     outline: "none",
   },
+  settingsLoadingText: {
+    color: "var(--text-hint)",
+    fontSize: 13,
+  },
+  settingsErrorText: {
+    color: "var(--danger)",
+    fontSize: 12.5,
+    marginBottom: 12,
+  },
+  settingsFlexRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  settingsFlexRowStart: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  settingsFlexItem: {
+    flex: 1,
+  },
+  settingsSmallLabel: {
+    fontSize: 11,
+    color: "var(--text-hint)",
+    marginBottom: 4,
+  },
+  settingsInputWithFlex: {
+    flex: 1,
+  },
+  settingsUnitText: {
+    color: "var(--text-hint)",
+    fontSize: 12,
+  },
+  settingsDetectBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 14px",
+    background: "var(--primary-action-bg)",
+    border: "none",
+    borderRadius: 7,
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--primary-action-fg)",
+    cursor: "pointer",
+  },
+  settingsNavItemActive: {
+    background: "var(--bg-selected)",
+    color: "var(--text-primary)",
+  },
 } satisfies Record<string, React.CSSProperties>;

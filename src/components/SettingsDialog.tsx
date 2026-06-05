@@ -212,10 +212,10 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     <>
       <div style={s.settingsBody}>
         {!config && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
+          <div style={s.settingsLoadingText}>{t("common.loading")}</div>
         )}
         {error && (
-          <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>
+          <div style={s.settingsErrorText}>{error}</div>
         )}
         {config && (
           <>
@@ -272,9 +272,9 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                     {t("settings.agentVersionsHint")}
                   </span>
                 </label>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+                <div style={s.settingsFlexRow}>
+                  <div style={s.settingsFlexItem}>
+                    <div style={s.settingsSmallLabel}>
                       Claude Code
                     </div>
                     <input
@@ -285,8 +285,8 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                       spellCheck={false}
                     />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+                  <div style={s.settingsFlexItem}>
+                    <div style={s.settingsSmallLabel}>
                       Codex
                     </div>
                     <input
@@ -299,12 +299,8 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                   </div>
                   <button
                     style={{
-                      ...s.modalCancelBtn,
-                      padding: "6px 10px",
+                      ...s.settingsDetectBtn,
                       marginTop: 16,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
                       opacity: detecting ? 0.6 : 1,
                     }}
                     onClick={autoDetectVersions}
@@ -327,9 +323,9 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                     {t("settings.commitMessageTimeoutHint")}
                   </span>
                 </label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={s.settingsFlexRow}>
                   <input
-                    style={{ ...s.modalInput, flex: 1 }}
+                    style={{ ...s.modalInput, ...s.settingsInputWithFlex }}
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
@@ -337,7 +333,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                     onChange={handleCommitMessageTimeoutChange}
                     onBlur={handleCommitMessageTimeoutBlur}
                   />
-                  <span style={{ color: "var(--text-hint)", fontSize: 12 }}>{t("settings.secondsUnit")}</span>
+                  <span style={s.settingsUnitText}>{t("settings.secondsUnit")}</span>
                 </div>
               </div>
               <div style={s.modalField}>
@@ -402,9 +398,7 @@ export function SettingsDialog({
               key={item.key}
               style={{
                 ...s.settingsNavItem,
-                background: activeNav === item.key ? "var(--bg-hover)" : "none",
-                color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
-                fontWeight: activeNav === item.key ? 600 : 500,
+                ...(activeNav === item.key ? s.settingsNavItemActive : {}),
               }}
               onClick={() => setActiveNav(item.key)}
             >
