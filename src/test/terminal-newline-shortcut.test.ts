@@ -8,7 +8,16 @@ import {
   TERMINAL_NEWLINE_SEQUENCE,
 } from "../shortcuts";
 
-const enter = (mods: Partial<{ shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }>) => ({
+const enter = (
+  mods: Partial<{
+    shiftKey: boolean;
+    altKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    isComposing: boolean;
+    keyCode: number;
+  }>,
+) => ({
   key: "Enter",
   shiftKey: false,
   altKey: false,
@@ -44,6 +53,18 @@ describe("terminal newline shortcut helpers", () => {
     expect(matchesTerminalNewline(enter({ metaKey: true, altKey: true }), "alt_enter")).toBe(false);
     expect(matchesTerminalNewline(enter({ ctrlKey: true, shiftKey: true }), "shift_enter")).toBe(false);
     expect(matchesTerminalNewline({ ...enter({ altKey: true }), key: "a" }, "alt_enter")).toBe(false);
+  });
+
+  test("never matches while an IME composition is active", () => {
+    expect(matchesTerminalNewline(enter({ shiftKey: true, isComposing: true }), "shift_enter")).toBe(
+      false,
+    );
+    expect(matchesTerminalNewline(enter({ altKey: true, isComposing: true }), "alt_enter")).toBe(
+      false,
+    );
+    expect(matchesTerminalNewline(enter({ shiftKey: true, keyCode: 229 }), "shift_enter")).toBe(
+      false,
+    );
   });
 
   test("formats shortcut labels by platform", () => {

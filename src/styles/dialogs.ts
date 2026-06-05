@@ -257,6 +257,10 @@ export const dialogs = {
     cursor: "pointer",
     outline: "none",
   },
+  shortcutSelectTriggerDisabled: {
+    cursor: "default",
+    opacity: 0.65,
+  },
   shortcutHint: {
     display: "inline-flex",
     alignItems: "center",

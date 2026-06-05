@@ -102,6 +102,10 @@ export interface TerminalKeyEventLike {
   ctrlKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
+  /** True while an IME composition is in progress (real KeyboardEvent field). */
+  isComposing?: boolean;
+  /** 229 while an IME composition is in progress (legacy field, kept for Safari). */
+  keyCode?: number;
 }
 
 export function normalizeTerminalNewlineShortcut(value: unknown): TerminalNewlineShortcut {
@@ -135,6 +139,12 @@ export function matchesTerminalNewline(
   event: TerminalKeyEventLike,
   shortcut: TerminalNewlineShortcut,
 ): boolean {
+  // Never hijack a key that is committing an IME composition (e.g. a CJK user
+  // pressing Shift+Enter to accept a candidate) — that must reach the IME, not
+  // become a newline.
+  if (event.isComposing || event.keyCode === 229) {
+    return false;
+  }
   if (event.key !== "Enter" || event.metaKey || event.ctrlKey) {
     return false;
   }

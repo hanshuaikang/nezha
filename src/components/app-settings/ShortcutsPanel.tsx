@@ -45,7 +45,14 @@ function ShortcutSelect({
     <div style={s.shortcutField}>
       <label style={s.shortcutFieldLabel}>{label}</label>
       <Select.Root value={value} onValueChange={onValueChange} disabled={disabled}>
-        <Select.Trigger aria-label={label} style={s.shortcutSelectTrigger}>
+        <Select.Trigger
+          aria-label={label}
+          style={
+            disabled
+              ? { ...s.shortcutSelectTrigger, ...s.shortcutSelectTriggerDisabled }
+              : s.shortcutSelectTrigger
+          }
+        >
           <Select.Value>{selected ? renderShortcutKeys(selected.keys) : null}</Select.Value>
           <Select.Icon>
             <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
