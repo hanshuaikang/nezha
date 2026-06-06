@@ -78,21 +78,23 @@ export function shouldSubmitPromptKey(
 //
 // Inside the embedded xterm, plain Enter is always forwarded to the agent
 // (Claude Code / Codex) as a submit. A second combo lets the user insert a
-// newline without submitting. Which combo that is can be configured here.
+// newline without submitting.
+//
+// Option/Alt + Enter is ALWAYS treated as "insert newline" — it is the
+// universal combo agents already understand, so there is nothing to configure.
+// Shift + Enter is the only configurable part: a single on/off toggle (default
+// on) for users who prefer that ergonomics.
 // ---------------------------------------------------------------------------
 
-export type TerminalNewlineShortcut = "alt_enter" | "shift_enter";
-
-export const DEFAULT_TERMINAL_NEWLINE_SHORTCUT: TerminalNewlineShortcut = "alt_enter";
+export const DEFAULT_SHIFT_ENTER_NEWLINE = true;
 
 /**
  * Esc + CR. Both Claude Code and Codex interpret this as "insert newline" — it
  * is exactly the byte sequence Option/Alt + Enter emits in the JetBrains
- * terminal fallback. We emit it ourselves for whichever combo the user picked
- * so the embedded xterm (which does not negotiate the kitty / CSI-u keyboard
- * protocol with the agent) behaves consistently across platforms. Sending raw
- * "\n" instead is avoided on purpose: it can disrupt programs that rely on the
- * kitty protocol.
+ * terminal fallback. We emit it ourselves so the embedded xterm (which does not
+ * negotiate the kitty / CSI-u keyboard protocol with the agent) behaves
+ * consistently across platforms. Sending raw "\n" instead is avoided on
+ * purpose: it can disrupt programs that rely on the kitty protocol.
  */
 export const TERMINAL_NEWLINE_SEQUENCE = "\x1b\r";
 
@@ -108,36 +110,27 @@ export interface TerminalKeyEventLike {
   keyCode?: number;
 }
 
-export function normalizeTerminalNewlineShortcut(value: unknown): TerminalNewlineShortcut {
-  return value === "shift_enter" || value === "alt_enter"
-    ? value
-    : DEFAULT_TERMINAL_NEWLINE_SHORTCUT;
+export function normalizeShiftEnterNewline(value: unknown): boolean {
+  return typeof value === "boolean" ? value : DEFAULT_SHIFT_ENTER_NEWLINE;
 }
 
-export function getTerminalNewlineShortcutKeys(
-  shortcut: TerminalNewlineShortcut,
-  platform: AppPlatform,
-): string[] {
-  if (shortcut === "shift_enter") {
-    return ["⇧", "↵"];
-  }
+export function getAltEnterNewlineKeys(platform: AppPlatform): string[] {
   return [platform === "macos" ? "⌥" : "Alt", "↵"];
 }
 
-export function getTerminalNewlineShortcutLabel(
-  shortcut: TerminalNewlineShortcut,
-  platform: AppPlatform,
-): string {
-  return getTerminalNewlineShortcutKeys(shortcut, platform).join("");
+export function getShiftEnterNewlineKeys(): string[] {
+  return ["⇧", "↵"];
 }
 
 /**
- * Whether a terminal key event matches the configured "insert newline" combo.
- * Enter on its own (and Cmd/Ctrl + Enter) is never matched — it stays a submit.
+ * Whether a terminal key event should insert a newline instead of submitting.
+ * Option/Alt + Enter always qualifies; Shift + Enter only when the user has the
+ * toggle enabled. Enter on its own (and Cmd/Ctrl + Enter) is never matched — it
+ * stays a submit.
  */
 export function matchesTerminalNewline(
   event: TerminalKeyEventLike,
-  shortcut: TerminalNewlineShortcut,
+  shiftEnterEnabled: boolean,
 ): boolean {
   // Never hijack a key that is committing an IME composition (e.g. a CJK user
   // pressing Shift+Enter to accept a candidate) — that must reach the IME, not
@@ -148,7 +141,9 @@ export function matchesTerminalNewline(
   if (event.key !== "Enter" || event.metaKey || event.ctrlKey) {
     return false;
   }
-  return shortcut === "shift_enter"
-    ? event.shiftKey && !event.altKey
-    : event.altKey && !event.shiftKey;
+  // Alt+Enter: always a newline. Shift+Enter: only when enabled.
+  if (event.altKey && !event.shiftKey) {
+    return true;
+  }
+  return shiftEnterEnabled && event.shiftKey && !event.altKey;
 }

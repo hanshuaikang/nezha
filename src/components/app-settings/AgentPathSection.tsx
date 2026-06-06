@@ -5,7 +5,7 @@ import { Check, RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n";
 import {
   DEFAULT_SEND_SHORTCUT,
-  DEFAULT_TERMINAL_NEWLINE_SHORTCUT,
+  DEFAULT_SHIFT_ENTER_NEWLINE,
   normalizeSendShortcut,
 } from "../../shortcuts";
 import s from "../../styles";
@@ -72,7 +72,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
-    terminal_newline_shortcut: DEFAULT_TERMINAL_NEWLINE_SHORTCUT,
+    terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);

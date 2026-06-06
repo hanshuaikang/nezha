@@ -5,11 +5,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
 import {
-  DEFAULT_TERMINAL_NEWLINE_SHORTCUT,
+  DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
-  normalizeTerminalNewlineShortcut,
+  normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
-  type TerminalNewlineShortcut,
 } from "../shortcuts";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
@@ -63,7 +62,7 @@ export function TerminalView({
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  const newlineShortcutRef = useRef<TerminalNewlineShortcut>(DEFAULT_TERMINAL_NEWLINE_SHORTCUT);
+  const shiftEnterNewlineRef = useRef<boolean>(DEFAULT_SHIFT_ENTER_NEWLINE);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -135,7 +134,7 @@ export function TerminalView({
     });
 
     const disposeSmartCopy = attachSmartCopy(term, {
-      matchesNewline: (e) => matchesTerminalNewline(e, newlineShortcutRef.current),
+      matchesNewline: (e) => matchesTerminalNewline(e, shiftEnterNewlineRef.current),
       onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
     });
     const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
@@ -194,14 +193,14 @@ export function TerminalView({
   // Mirrors NewTaskView: load once, then react to the global settings event.
   useEffect(() => {
     function loadNewlineShortcut() {
-      invoke<{ terminal_newline_shortcut?: unknown }>("load_app_settings")
+      invoke<{ terminal_shift_enter_newline?: unknown }>("load_app_settings")
         .then((settings) => {
-          newlineShortcutRef.current = normalizeTerminalNewlineShortcut(
-            settings.terminal_newline_shortcut,
+          shiftEnterNewlineRef.current = normalizeShiftEnterNewline(
+            settings.terminal_shift_enter_newline,
           );
         })
         .catch(() => {
-          newlineShortcutRef.current = DEFAULT_TERMINAL_NEWLINE_SHORTCUT;
+          shiftEnterNewlineRef.current = DEFAULT_SHIFT_ENTER_NEWLINE;
         });
     }
     loadNewlineShortcut();

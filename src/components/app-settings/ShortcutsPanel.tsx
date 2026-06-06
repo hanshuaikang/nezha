@@ -7,13 +7,13 @@ import { useI18n } from "../../i18n";
 import { APP_PLATFORM } from "../../platform";
 import {
   DEFAULT_SEND_SHORTCUT,
-  DEFAULT_TERMINAL_NEWLINE_SHORTCUT,
+  DEFAULT_SHIFT_ENTER_NEWLINE,
+  getAltEnterNewlineKeys,
   getNewlineShortcutKeys,
   getSendShortcutKeys,
-  getTerminalNewlineShortcutKeys,
-  getTerminalNewlineShortcutLabel,
+  getShiftEnterNewlineKeys,
   normalizeSendShortcut,
-  normalizeTerminalNewlineShortcut,
+  normalizeShiftEnterNewline,
 } from "../../shortcuts";
 import s from "../../styles";
 import { renderShortcutKeys } from "./shared";
@@ -92,7 +92,7 @@ function normalizeSettings(loaded: AppSettings): AppSettings {
   return {
     ...loaded,
     send_shortcut: normalizeSendShortcut(loaded.send_shortcut),
-    terminal_newline_shortcut: normalizeTerminalNewlineShortcut(loaded.terminal_newline_shortcut),
+    terminal_shift_enter_newline: normalizeShiftEnterNewline(loaded.terminal_shift_enter_newline),
   };
 }
 
@@ -102,7 +102,7 @@ export function ShortcutsPanel() {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
-    terminal_newline_shortcut: DEFAULT_TERMINAL_NEWLINE_SHORTCUT,
+    terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -115,7 +115,7 @@ export function ShortcutsPanel() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function persist(command: string, payload: Record<string, string>) {
+  async function persist(command: string, payload: Record<string, unknown>) {
     const previousSettings = settings;
     setSaving(true);
     setError(null);
@@ -142,10 +142,10 @@ export function ShortcutsPanel() {
     void persist("save_send_shortcut", { sendShortcut });
   }
 
-  function handleTerminalNewlineChange(value: string) {
-    const terminalNewlineShortcut = normalizeTerminalNewlineShortcut(value);
-    setSettings((prev) => ({ ...prev, terminal_newline_shortcut: terminalNewlineShortcut }));
-    void persist("save_terminal_newline_shortcut", { terminalNewlineShortcut });
+  function handleShiftEnterNewlineToggle() {
+    const enabled = !settings.terminal_shift_enter_newline;
+    setSettings((prev) => ({ ...prev, terminal_shift_enter_newline: enabled }));
+    void persist("save_shift_enter_newline", { enabled });
   }
 
   const sendShortcutOptions: ShortcutOption[] = [
@@ -160,24 +160,15 @@ export function ShortcutsPanel() {
       ariaLabel: t("appSettings.sendShortcutEnter"),
     },
   ];
-  const terminalNewlineOptions: ShortcutOption[] = [
-    {
-      value: "alt_enter",
-      keys: getTerminalNewlineShortcutKeys("alt_enter", APP_PLATFORM),
-      ariaLabel: t("appSettings.terminalNewlineAltEnter"),
-    },
-    {
-      value: "shift_enter",
-      keys: getTerminalNewlineShortcutKeys("shift_enter", APP_PLATFORM),
-      ariaLabel: t("appSettings.terminalNewlineShiftEnter"),
-    },
-  ];
-
   const sendShortcutKeys = getSendShortcutKeys(settings.send_shortcut, APP_PLATFORM);
   const newlineShortcutKeys = getNewlineShortcutKeys(settings.send_shortcut, APP_PLATFORM);
-  const terminalNewlineLabel = getTerminalNewlineShortcutLabel(
-    settings.terminal_newline_shortcut,
-    APP_PLATFORM,
+  const shiftEnterEnabled = settings.terminal_shift_enter_newline;
+
+  const terminalNewlineHint = (
+    <>
+      {renderShortcutKeys(getAltEnterNewlineKeys(APP_PLATFORM), s.shortcutHintKey)}
+      <span>{t("appSettings.terminalNewlineAltAlways")}</span>
+    </>
   );
 
   const sendHint = (
@@ -206,14 +197,26 @@ export function ShortcutsPanel() {
             disabled={saving}
             hint={sendHint}
           />
-          <ShortcutSelect
-            label={t("appSettings.terminalNewline")}
-            value={settings.terminal_newline_shortcut}
-            options={terminalNewlineOptions}
-            onValueChange={handleTerminalNewlineChange}
-            disabled={saving}
-            hint={t("appSettings.terminalNewlineHint", { shortcut: terminalNewlineLabel })}
-          />
+          <div style={s.shortcutField}>
+            <label style={s.shortcutFieldLabel}>{t("appSettings.terminalNewline")}</label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={shiftEnterEnabled}
+              aria-label={t("appSettings.terminalNewlineShiftEnter")}
+              disabled={saving}
+              onClick={handleShiftEnterNewlineToggle}
+              style={saving ? { ...s.shortcutToggle, ...s.shortcutToggleDisabled } : s.shortcutToggle}
+            >
+              <span style={s.shortcutToggleKeys}>{renderShortcutKeys(getShiftEnterNewlineKeys())}</span>
+              <span style={shiftEnterEnabled ? s.shortcutSwitchTrackOn : s.shortcutSwitchTrack}>
+                <span
+                  style={shiftEnterEnabled ? s.shortcutSwitchThumbOn : s.shortcutSwitchThumb}
+                />
+              </span>
+            </button>
+            <div style={s.shortcutHint}>{terminalNewlineHint}</div>
+          </div>
         </div>
       )}
     </div>
