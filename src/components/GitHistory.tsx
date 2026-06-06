@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { getGitStatusColor } from "../utils";
 import { useI18n } from "../i18n";
+import { useToast } from "./Toast";
 
 interface GitCommit {
   hash: string;
@@ -70,6 +71,7 @@ function fileDir(path: string): string {
 
 export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 280 }: Props) {
   const { t } = useI18n();
+  const { showToast } = useToast();
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GitRemoteCounts>({
     ahead: 0,
@@ -201,12 +203,16 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const handlePull = async () => {
     setPulling(true);
-    setError(null);
     try {
-      await safeInvoke("git_pull", { projectPath });
-      if (!isCancelled()) refresh();
+      const branch = await safeInvoke<string>("git_pull", { projectPath });
+      if (!isCancelled()) {
+        showToast(t("toast.pullSuccess", { branch: branch || remoteCounts.branch }), "success");
+        refresh();
+      }
     } catch (e) {
-      if (!isCancelled()) setError(String(e));
+      if (!isCancelled()) {
+        showToast(t("toast.pullFailed", { error: String(e) }), "error");
+      }
     } finally {
       if (!isCancelled()) setPulling(false);
     }
@@ -214,15 +220,20 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const handlePush = async () => {
     setPushing(true);
-    setError(null);
     try {
-      await safeInvoke("git_push", { projectPath, branch: selectedBranch || null });
+      const branch = await safeInvoke<string>("git_push", {
+        projectPath,
+        branch: selectedBranch || null,
+      });
       if (!isCancelled()) {
+        showToast(t("toast.pushSuccess", { branch: branch || selectedBranch }), "success");
         refresh();
         await loadBranches();
       }
     } catch (e) {
-      if (!isCancelled()) setError(String(e));
+      if (!isCancelled()) {
+        showToast(t("toast.pushFailed", { error: String(e) }), "error");
+      }
     } finally {
       if (!isCancelled()) setPushing(false);
     }
@@ -271,16 +282,23 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               alignItems: "center",
               gap: 3,
               padding: "3px 7px",
-              background: "none",
-              border: "1px solid var(--border-dim)",
+              background: pulling ? "var(--primary-action-bg)" : "none",
+              border: `1px solid ${pulling ? "var(--primary-action-bg)" : "var(--border-dim)"}`,
               borderRadius: 5,
               fontSize: 11.5,
-              color: "var(--text-muted)",
+              color: pulling ? "var(--primary-action-fg)" : "var(--text-muted)",
               cursor: pulling ? "not-allowed" : "pointer",
-              opacity: pulling ? 0.6 : 1,
+              transition: "all 0.15s",
             }}
           >
-            {t("git.pull")} ↓{remoteCounts.behind}
+            {pulling ? (
+              <>
+                <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                {t("git.pulling")}
+              </>
+            ) : (
+              <>{t("git.pull")} ↓{remoteCounts.behind}</>
+            )}
           </button>
           <button
             onClick={handlePush}
