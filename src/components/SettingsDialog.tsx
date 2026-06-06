@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as RadixSelect from "@radix-ui/react-select";
-import { X, FolderOpen, ChevronDown, Check } from "lucide-react";
+import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
 import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -11,11 +11,24 @@ interface ProjectConfig {
     default: string;
     default_permission_mode: string;
     prompt_prefix: string;
+    claude_version?: string;
+    codex_version?: string;
   };
-  git: { commit_prompt: string };
+  git: {
+    commit_prompt: string;
+    commit_message_timeout_secs?: number;
+  };
+}
+
+interface AgentVersions {
+  claude_version: string;
+  codex_version: string;
 }
 
 const PERMISSION_MODES: PermissionMode[] = ["ask", "auto_edit", "full_access"];
+const MIN_COMMIT_MESSAGE_TIMEOUT_SECS = 1;
+const MAX_COMMIT_MESSAGE_TIMEOUT_SECS = 120;
+const DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS = 15;
 
 type NavKey = "project";
 
@@ -77,6 +90,12 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
   const [promptPrefix, setPromptPrefix] = useState("");
   const [commitPrompt, setCommitPrompt] = useState("");
+  const [commitMessageTimeoutSecs, setCommitMessageTimeoutSecs] = useState(
+    String(DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS),
+  );
+  const [claudeVersion, setClaudeVersion] = useState("");
+  const [codexVersion, setCodexVersion] = useState("");
+  const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,14 +110,80 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         }
         setPromptPrefix(c.agent.prompt_prefix ?? "");
         setCommitPrompt(c.git.commit_prompt);
+        const timeoutSecs = c.git.commit_message_timeout_secs ?? DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS;
+        setCommitMessageTimeoutSecs(
+          String(
+            Math.min(
+              Math.max(timeoutSecs, MIN_COMMIT_MESSAGE_TIMEOUT_SECS),
+              MAX_COMMIT_MESSAGE_TIMEOUT_SECS,
+            ),
+          ),
+        );
+        setClaudeVersion(c.agent.claude_version ?? "");
+        setCodexVersion(c.agent.codex_version ?? "");
+
+        // 若版本为空，自动检测一次
+        if (!c.agent.claude_version && !c.agent.codex_version) {
+          autoDetectVersions();
+        }
       })
       .catch((e) => setError(String(e)));
   }, [projectPath]);
+
+  async function autoDetectVersions() {
+    setDetecting(true);
+    try {
+      const v = await invoke<AgentVersions>("detect_agent_versions");
+      if (v.claude_version) setClaudeVersion(v.claude_version);
+      if (v.codex_version) setCodexVersion(v.codex_version);
+    } catch {
+      // 检测失败不阻塞，版本字段保持空
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  function handleCommitMessageTimeoutChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const nextValue = e.target.value.trim();
+    if (!nextValue) {
+      setCommitMessageTimeoutSecs("");
+      return;
+    }
+    if (!/^\d+$/.test(nextValue)) return;
+
+    const timeoutSecs = Number(nextValue);
+    if (!Number.isSafeInteger(timeoutSecs)) return;
+
+    setCommitMessageTimeoutSecs(
+      String(
+        Math.min(
+          Math.max(timeoutSecs, MIN_COMMIT_MESSAGE_TIMEOUT_SECS),
+          MAX_COMMIT_MESSAGE_TIMEOUT_SECS,
+        ),
+      ),
+    );
+  }
+
+  function handleCommitMessageTimeoutBlur() {
+    if (!commitMessageTimeoutSecs) {
+      setCommitMessageTimeoutSecs(String(MIN_COMMIT_MESSAGE_TIMEOUT_SECS));
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
     setError(null);
     try {
+      const timeoutSecs = Number(commitMessageTimeoutSecs);
+      if (
+        !Number.isInteger(timeoutSecs) ||
+        timeoutSecs < MIN_COMMIT_MESSAGE_TIMEOUT_SECS ||
+        timeoutSecs > MAX_COMMIT_MESSAGE_TIMEOUT_SECS
+      ) {
+        setError(t("settings.commitMessageTimeoutInvalid"));
+        return;
+      }
+
       await invoke("write_project_config", {
         projectPath,
         config: {
@@ -107,7 +192,10 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             default_permission_mode: defaultPermissionMode,
             prompt_prefix: promptPrefix,
           },
-          git: { commit_prompt: commitPrompt },
+          git: {
+            commit_prompt: commitPrompt,
+            commit_message_timeout_secs: timeoutSecs,
+          },
         },
       });
       onClose();
@@ -122,10 +210,10 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     <>
       <div style={s.settingsBody}>
         {!config && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
+          <div style={s.settingsLoadingText}>{t("common.loading")}</div>
         )}
         {error && (
-          <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>
+          <div style={s.settingsErrorText}>{error}</div>
         )}
         {config && (
           <>
@@ -175,10 +263,77 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                   placeholder={t("settings.promptPrefixPlaceholder")}
                 />
               </div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>
+                  {t("settings.agentVersions")}
+                  <span style={s.modalLabelHint}>
+                    {t("settings.agentVersionsHint")}
+                  </span>
+                </label>
+                <div style={s.settingsFlexRow}>
+                  <div style={s.settingsFlexItem}>
+                    <div style={s.settingsSmallLabel}>
+                      Claude Code
+                    </div>
+                    <input
+                      style={s.modalInput}
+                      value={claudeVersion}
+                      onChange={(e) => setClaudeVersion(e.target.value)}
+                      placeholder={t("common.notDetected")}
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div style={s.settingsFlexItem}>
+                    <div style={s.settingsSmallLabel}>
+                      Codex
+                    </div>
+                    <input
+                      style={s.modalInput}
+                      value={codexVersion}
+                      onChange={(e) => setCodexVersion(e.target.value)}
+                      placeholder={t("common.notDetected")}
+                      spellCheck={false}
+                    />
+                  </div>
+                  <button
+                    style={{
+                      ...s.settingsDetectBtn,
+                      marginTop: 16,
+                      opacity: detecting ? 0.6 : 1,
+                    }}
+                    onClick={autoDetectVersions}
+                    disabled={detecting}
+                    title={t("settings.redetectVersions")}
+                  >
+                    <RefreshCw size={13} style={detecting ? { animation: "spin 1s linear infinite" } : undefined} />
+                    {detecting ? t("appSettings.detecting") : t("settings.detect")}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div style={s.modalSection}>
               <div style={s.modalSectionTitle}>{t("settings.git")}</div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>
+                  {t("settings.commitMessageTimeout")}
+                  <span style={s.modalLabelHint}>
+                    {t("settings.commitMessageTimeoutHint")}
+                  </span>
+                </label>
+                <div style={s.settingsFlexRow}>
+                  <input
+                    style={{ ...s.modalInput, ...s.settingsInputWithFlex }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={commitMessageTimeoutSecs}
+                    onChange={handleCommitMessageTimeoutChange}
+                    onBlur={handleCommitMessageTimeoutBlur}
+                  />
+                  <span style={s.settingsUnitText}>{t("settings.secondsUnit")}</span>
+                </div>
+              </div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
                   {t("settings.commitPrompt")}
@@ -241,9 +396,7 @@ export function SettingsDialog({
               key={item.key}
               style={{
                 ...s.settingsNavItem,
-                background: activeNav === item.key ? "var(--bg-hover)" : "none",
-                color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
-                fontWeight: activeNav === item.key ? 600 : 500,
+                ...(activeNav === item.key ? s.settingsNavItemActive : {}),
               }}
               onClick={() => setActiveNav(item.key)}
             >
