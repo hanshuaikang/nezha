@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -181,27 +182,79 @@ fn apply_login_shell_env(cmd: &mut Command) {
     }
 }
 
+const CLAUDE_COMMIT_MESSAGE_STDIN_PROMPT: &str = "Generate a commit message from the instructions and git diff provided on stdin. Output only the commit message, nothing else.";
+
 fn run_agent_commit_message_command(
     agent: &str,
     project_path: &str,
     prompt: &str,
 ) -> Result<Output, String> {
     let launch = crate::app_settings::get_agent_launch_spec(agent);
+
     let mut cmd = Command::new(&launch.program);
     crate::subprocess::configure_background_command(&mut cmd);
+
     if agent == "codex" {
-        cmd.args(["exec", prompt]);
+        // Codex CLI: `codex exec -` reads the full prompt from stdin.
+        cmd.args(["exec", "-"]);
     } else {
-        cmd.args(["-p", prompt, "--output-format", "text"]);
+        // Claude Code: `claude -p <query>` also accepts additional context from stdin.
+        cmd.args([
+            "-p",
+            CLAUDE_COMMIT_MESSAGE_STDIN_PROMPT,
+            "--output-format",
+            "text",
+        ]);
     }
+
     cmd.current_dir(project_path);
-    cmd.stdin(Stdio::null());
+    cmd.stdin(Stdio::piped());
     apply_login_shell_env(&mut cmd);
     for (key, value) in &launch.extra_env {
         cmd.env(key, value);
     }
-    cmd.output()
-        .map_err(|e| format!("Failed to run {agent}: {e}"))
+
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run {agent}: {e}"))?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| format!("Failed to open {agent} stdin"))?;
+    let prompt = prompt.to_string();
+    let writer = std::thread::spawn(move || stdin.write_all(prompt.as_bytes()));
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait for {agent}: {e}"))?;
+
+    let write_result = writer
+        .join()
+        .map_err(|_| format!("Failed to join {agent} stdin writer thread"))?;
+
+    if let Err(e) = write_result {
+        if output.status.success() {
+            return Err(format!("Failed to write prompt to {agent} stdin: {e}"));
+        }
+    }
+
+    Ok(output)
+}
+
+fn truncate_utf8(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    format!("{}...(diff truncated)", &s[..end])
 }
 
 fn create_empty_temp_file() -> Result<PathBuf, String> {
@@ -222,16 +275,13 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         return Err("No staged changes to generate a commit message for.".to_string());
     }
 
-    // Truncate diff if too large to avoid CLI arg limits
-    let diff = if diff.len() > 50_000 {
-        format!("{}...(diff truncated)", &diff[..50_000])
-    } else {
-        diff
-    };
+    // Truncate diff safely at a UTF-8 boundary.
+    let diff = truncate_utf8(&diff, 50_000);
 
     // 2. Read project config for prompt and default agent
     let config = crate::config::read_project_config(project_path.clone())?;
     let commit_prompt = config.git.commit_prompt;
+    let timeout_secs = config.git.commit_message_timeout_secs.max(1);
     let agent = config.agent.default;
 
     // 3. Build full prompt
@@ -240,15 +290,15 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         commit_prompt, diff
     );
 
-    // 4. Run agent in non-interactive exec mode with 15 second timeout
+    // 4. Run agent in non-interactive exec mode with configurable timeout
     let output = tokio::time::timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             run_agent_commit_message_command(&agent, &project_path, &full_prompt)
         }),
     )
     .await
-    .map_err(|_| "生成提交信息超时（15秒）".to_string())?
+    .map_err(|_| format!("生成提交信息超时（{}秒）", timeout_secs))?
     .map_err(|e| format!("生成提交信息线程错误: {}", e))??;
 
     if !output.status.success() {
@@ -1022,34 +1072,60 @@ pub async fn git_show_file_diff(
 #[tauri::command]
 pub async fn git_push(project_path: String, branch: Option<String>) -> Result<String, String> {
     let mut args = vec!["push".to_string()];
+    let push_branch = branch
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            // Resolve current branch name for the success message
+            String::new()
+        });
     if let Some(ref b) = branch.filter(|s| !s.is_empty()) {
         args.push("origin".to_string());
         args.push(b.clone());
     }
     let output = run_git(&project_path, &args)?;
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
-        return Err(combined);
+        let combined = format!("{}{}", stdout, stderr);
+        return Err(combined.trim().to_string());
     }
-    Ok(combined.trim().to_string())
+
+    // Resolve branch name for the success message
+    let branch_display = if !push_branch.is_empty() {
+        push_branch
+    } else {
+        let branch_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        match branch_out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .to_string(),
+            _ => "origin".to_string(),
+        }
+    };
+
+    Ok(branch_display)
 }
 
 #[tauri::command]
 pub async fn git_pull(project_path: String) -> Result<String, String> {
     let output = run_git(&project_path, &["pull"])?;
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
-        return Err(combined);
+        let combined = format!("{}{}", stdout, stderr);
+        return Err(combined.trim().to_string());
     }
-    Ok(combined.trim().to_string())
+
+    // Resolve current branch name for the success message
+    let branch_display = match run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"]) {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .to_string(),
+        _ => String::new(),
+    };
+
+    Ok(branch_display)
 }
 
 #[derive(serde::Serialize)]
@@ -1382,9 +1458,9 @@ fn accumulate_numstat(stdout: &[u8], additions: &mut i32, deletions: &mut i32) {
 #[cfg(test)]
 mod tests {
     use super::{
-        git_has_head, git_worktree_root, is_protected_project_relative_path, list_untracked_files,
-        parse_porcelain_z_status, path_to_string, run_git_check, untracked_files_under_directory,
-        GitFileChange,
+        git_has_head, git_status, git_worktree_root, is_protected_project_relative_path,
+        list_untracked_files, parse_porcelain_z_status, path_to_string, run_git_check,
+        untracked_files_under_directory, GitFileChange,
     };
     use std::{fs, path::PathBuf, process::Command};
 
@@ -1504,6 +1580,24 @@ mod tests {
         let resolved = git_worktree_root(nested_project.to_str().unwrap()).unwrap();
 
         assert_eq!(resolved, repo.path.canonicalize().unwrap());
+    }
+
+    #[tokio::test]
+    async fn git_status_expands_untracked_directories() {
+        let repo = TempRepo::new();
+        let repo_path = repo.path_string();
+
+        let nested_dir = repo.path.join("src/components");
+        fs::create_dir_all(&nested_dir).unwrap();
+        fs::write(nested_dir.join("Button.tsx"), "component").unwrap();
+        fs::write(repo.path.join("src/index.ts"), "index").unwrap();
+
+        let changes = git_status(repo_path).await.unwrap();
+        let paths: Vec<&str> = changes.iter().map(|change| change.path.as_str()).collect();
+
+        assert!(paths.contains(&"src/components/Button.tsx"));
+        assert!(paths.contains(&"src/index.ts"));
+        assert!(!paths.contains(&"src/"));
     }
 
     #[test]
