@@ -11,6 +11,7 @@ const notificationBodyStyle: CSSProperties = {
   fontSize: 11.5,
   color: "var(--text-muted)",
   lineHeight: 1.5,
+  whiteSpace: "pre-line",
   overflow: "hidden",
   display: "-webkit-box",
   WebkitLineClamp: 3,
