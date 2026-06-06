@@ -106,6 +106,7 @@ fn finalize_task_exit(
     let _ = app.emit("task-status", payload);
 
     let _ = fs::remove_dir_all(task_attachments_dir(project_path, task_id));
+    crate::event_watcher::cleanup_task_events(task_id);
 }
 
 fn save_task_images(
@@ -208,6 +209,17 @@ fn setup_env(cmd: &mut CommandBuilder) {
     // 设置终端类型，使 Claude Code / Codex 输出正确的转义序列
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+}
+
+/// 注入 Nezha hook 守卫所需的环境变量。
+/// hook 脚本依靠 NEZHA_TASK_ID + NEZHA_EVENT_DIR 同时存在才工作,
+/// 用户在 Nezha 之外手动跑 agent 时这些变量缺失,脚本立即 exit 0。
+fn setup_nezha_env(cmd: &mut CommandBuilder, task_id: &str, agent: &str) {
+    if let Ok(dir) = crate::hooks::events_dir_for(task_id) {
+        cmd.env("NEZHA_TASK_ID", task_id);
+        cmd.env("NEZHA_EVENT_DIR", dir.to_string_lossy().as_ref());
+        cmd.env("NEZHA_AGENT", agent);
+    }
 }
 
 /// 将 PTY master/writer/child 注册到 TaskManager 的三个 HashMap 中。
@@ -522,10 +534,12 @@ pub async fn run_task(
     let agent_bin = launch.program.clone();
     let is_codex = agent == "codex";
 
-    // 读取项目配置中已保存的 Claude 版本，用于判断是否支持 --session-id
-    let saved_claude_version = config.agent.claude_version.clone();
-    let use_explicit_session =
-        !is_codex && crate::app_settings::claude_version_gte(&saved_claude_version, "2.1.87");
+    // 版本统一走全局探测（带缓存），判断是否支持 --session-id。
+    // 缓存未命中时 *_version_gte 会启子进程探测，故放进 spawn_blocking 避免阻塞 async runtime。
+    let use_explicit_session = !is_codex
+        && tokio::task::spawn_blocking(|| crate::app_settings::claude_version_gte("2.1.87"))
+            .await
+            .unwrap_or(false);
 
     // 预生成 session id（仅 Claude >= 2.1.87 使用）
     let pre_session_id = if use_explicit_session {
@@ -534,8 +548,26 @@ pub async fn run_task(
         None
     };
 
+    // hook 链路是否可信:可信则注入 NEZHA_* 守卫变量让 hook 脚本上报事件,会话发现
+    // 与状态全部由 event_watcher 驱动、跳过 /status 轮询 watcher;不可信(无 node /
+    // 未安装 / 版本过低)则不注入 env、并回退轮询路径——否则旧版但仍支持 hook 的 agent
+    // 会同时触发已安装 hook 与轮询 watcher,导致 session 注册/状态重复上报。
+    // 先于 cmd 构建计算,因为 Codex 的 --dangerously-bypass-hook-trust 必须加在
+    // `--`/positional prompt 之前。
+    let use_hooks = {
+        let agent = agent.clone();
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
+            .await
+            .unwrap_or(false)
+    };
+
     let mut cmd = if is_codex {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
+        // Codex 对非 managed 的 command hook 默认要求 trust,Nezha 注入的是新 hash 会被
+        // skip;由 Nezha 注入、来源可信,这里免 trust 直接运行。必须在 `--`/prompt 之前。
+        if use_hooks {
+            c.arg("--dangerously-bypass-hook-trust");
+        }
         // 空 prompt 时不传 positional arg，让 CLI 进入交互式 REPL
         if !final_prompt.is_empty() {
             c.arg("--");
@@ -549,6 +581,14 @@ pub async fn run_task(
             c.arg("--session-id");
             c.arg(sid);
         }
+        // Claude:hook 可信时通过 `--settings <Nezha 自有文件>` 传入 hooks,不修改用户的
+        // ~/.claude/settings.json(Claude 对 hooks 跨源 merge,用户 hook 不受影响)。
+        if use_hooks {
+            if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
+                c.arg("--settings");
+                c.arg(p.to_string_lossy().as_ref());
+            }
+        }
         // 空 prompt 时不传 positional arg，让 Claude 进入交互式 REPL
         if !final_prompt.is_empty() {
             c.arg(&final_prompt);
@@ -557,6 +597,9 @@ pub async fn run_task(
     };
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
+    if use_hooks {
+        setup_nezha_env(&mut cmd, &task_id, &agent);
+    }
     for (key, value) in &launch.extra_env {
         cmd.env(key, value);
     }
@@ -572,17 +615,22 @@ pub async fn run_task(
         serde_json::json!({ "task_id": task_id, "status": "running" }),
     );
 
-    // 用于将 PTY 输出转发给 session watcher 的 channel
-    let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
-    spawn_status_session_watcher(
-        app.clone(),
-        task_id.clone(),
-        project_path.clone(),
-        is_codex,
-        session_rx,
-        pre_session_id,
-        final_prompt.is_empty(),
-    );
+    // hook 可信时不创建 session 转发通道,也不拉起轮询 watcher。
+    let session_tx = if use_hooks {
+        None
+    } else {
+        let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
+        spawn_status_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            is_codex,
+            session_rx,
+            pre_session_id,
+            final_prompt.is_empty(),
+        );
+        Some(session_tx)
+    };
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),
@@ -592,7 +640,7 @@ pub async fn run_task(
             max_batch_bytes: PTY_EMIT_MAX_BATCH_BYTES,
         },
         reader,
-        Some(session_tx),
+        session_tx,
         None,
     );
     spawn_exit_monitor(app, task_id, project_path, is_codex);
@@ -632,6 +680,7 @@ pub async fn cancel_task(
 
     // 清理任务附件
     let _ = fs::remove_dir_all(task_attachments_dir(&project_path, &task_id));
+    crate::event_watcher::cleanup_task_events(&task_id);
 
     Ok(())
 }
@@ -672,6 +721,7 @@ pub async fn complete_task(
 
     // 清理任务附件
     let _ = fs::remove_dir_all(task_attachments_dir(&project_path, &task_id));
+    crate::event_watcher::cleanup_task_events(&task_id);
 
     Ok(())
 }
@@ -745,8 +795,23 @@ pub async fn resume_task(
 
     let launch = crate::app_settings::get_agent_launch_spec(&agent);
     let agent_bin = launch.program.clone();
+    // hook 可信时会话发现/状态由 event_watcher 驱动,跳过轮询 watcher;否则回退,
+    // 且不注入 NEZHA_* 守卫变量,避免旧版但已安装 hook 的 agent 与轮询路径并行重复
+    // 上报。版本统一走全局带缓存的探测。
+    // 先于 cmd 构建计算,因 Codex 的 bypass flag 需加在 `resume` 子命令之前。
+    let use_hooks = {
+        let agent = agent.clone();
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
+            .await
+            .unwrap_or(false)
+    };
+
     let mut cmd = if agent == "codex" {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
+        // Nezha 注入的 hook 默认未信任会被 Codex skip;来源可信,免 trust 直接运行。
+        if use_hooks {
+            c.arg("--dangerously-bypass-hook-trust");
+        }
         c.arg("resume");
         c.arg(&session_id);
         c
@@ -755,10 +820,20 @@ pub async fn resume_task(
         let mut c = build_claude_cmd(&agent_bin, &permission_mode);
         c.arg("--resume");
         c.arg(&session_id);
+        // Claude:命令行 `--settings` 传入 Nezha 自有 hooks 文件,不改用户配置。
+        if use_hooks {
+            if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
+                c.arg("--settings");
+                c.arg(p.to_string_lossy().as_ref());
+            }
+        }
         c
     };
     cmd.cwd(&project_path);
     setup_env(&mut cmd);
+    if use_hooks {
+        setup_nezha_env(&mut cmd, &task_id, &agent);
+    }
     for (key, value) in &launch.extra_env {
         cmd.env(key, value);
     }
@@ -776,14 +851,16 @@ pub async fn resume_task(
 
     let is_codex = agent == "codex";
 
-    // resume 时 session_id 已知，直接查找文件并开始监视
-    spawn_resume_session_watcher(
-        app.clone(),
-        task_id.clone(),
-        project_path.clone(),
-        session_id,
-        is_codex,
-    );
+    // resume 时 session_id 已知，直接查找文件并开始监视(hook 可信时跳过)
+    if !use_hooks {
+        spawn_resume_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            session_id,
+            is_codex,
+        );
+    }
     spawn_pty_reader(
         app.clone(),
         task_id.clone(),

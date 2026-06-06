@@ -9,8 +9,10 @@ mod agent_assist;
 mod analytics;
 mod app_settings;
 mod config;
+mod event_watcher;
 mod fs;
 mod git;
+mod hooks;
 mod notification;
 mod platform;
 mod pty;
@@ -52,11 +54,18 @@ impl TaskManager {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_app| {
+        .setup(|app| {
             // 后台预热 login shell 环境，避免第一次启动任务时阻塞
             std::thread::spawn(|| {
                 crate::app_settings::get_login_shell_path();
             });
+            // 安装 hook 脚本与用户级配置注入(失败不阻塞启动,前端可查询状态)。
+            // 结果写入缓存,供 run_task/resume_task 的 hook 信任检查零阻塞读取。
+            std::thread::spawn(|| {
+                crate::hooks::cache_status(crate::hooks::ensure_installed());
+            });
+            // 启动 hook 事件文件 watcher
+            crate::event_watcher::start(app.handle().clone());
             Ok(())
         })
         .manage(TaskManager {
@@ -149,13 +158,16 @@ pub fn run() {
             app_settings::save_send_shortcut,
             app_settings::save_shift_enter_newline,
             app_settings::detect_agent_paths,
-            app_settings::detect_agent_versions,
             app_settings::detect_agent_versions_for_settings,
             app_settings::get_system_fonts,
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,
             usage::read_usage_snapshot,
+            hooks::get_hook_status,
+            hooks::get_hook_readiness,
+            hooks::install_hooks,
+            hooks::uninstall_hooks,
             skills::get_skill_hub_config,
             skills::set_skill_hub_path,
             skills::clear_skill_hub,

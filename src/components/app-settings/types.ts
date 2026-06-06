@@ -1,7 +1,34 @@
 import type { LucideIcon } from "lucide-react";
 import type { SendShortcut } from "../../shortcuts";
 
-export type NavKey = "general" | "theme" | "fonts" | "shortcuts" | "skills" | "about" | "claude" | "codex";
+export type NavKey =
+  | "general"
+  | "theme"
+  | "fonts"
+  | "shortcuts"
+  | "hooks"
+  | "skills"
+  | "about"
+  | "claude"
+  | "codex";
+
+export interface HookInstallStatus {
+  node_path: string;
+  script_path: string;
+  claude_installed: boolean;
+  codex_installed: boolean;
+  error?: string;
+}
+
+export type HookReadinessReason = "ok" | "no_node" | "not_installed" | "version_too_low";
+
+export interface HookAgentReadiness {
+  agent: "claude" | "codex";
+  usable: boolean;
+  reason: HookReadinessReason;
+  detectedVersion: string;
+  minVersion: string;
+}
 
 export interface AppSettings {
   claude_path: string;

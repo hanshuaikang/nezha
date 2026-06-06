@@ -14,11 +14,6 @@ default_permission_mode = "ask"
 # Text automatically prepended (followed by a newline) to every task prompt
 prompt_prefix = ""
 
-# Detected version of Claude Code (auto-populated, can be left empty)
-claude_version = ""
-# Detected version of Codex (auto-populated, can be left empty)
-codex_version = ""
-
 [git]
 # Prompt used when generating commit messages via the AI agent
 commit_prompt = "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting"
@@ -31,10 +26,6 @@ pub struct AgentConfig {
     pub default_permission_mode: String,
     #[serde(default)]
     pub prompt_prefix: String,
-    #[serde(default)]
-    pub claude_version: String,
-    #[serde(default)]
-    pub codex_version: String,
 }
 
 fn default_permission_mode() -> String {
@@ -59,8 +50,6 @@ impl Default for ProjectConfig {
                 default: "claude".to_string(),
                 default_permission_mode: "ask".to_string(),
                 prompt_prefix: String::new(),
-                claude_version: String::new(),
-                codex_version: String::new(),
             },
             git: GitConfig {
                 commit_prompt: "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting".to_string(),
@@ -85,27 +74,7 @@ pub fn init_project_config(project_path: String) -> Result<ProjectConfig, String
     }
 
     let raw = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-    let mut config: ProjectConfig = toml::from_str(&raw).unwrap_or_default();
-
-    // 首次打开或版本字段为空时，自动检测并回写
-    let mut updated = false;
-    if config.agent.claude_version.is_empty() {
-        if let Some(v) = crate::app_settings::detect_claude_version() {
-            config.agent.claude_version = v;
-            updated = true;
-        }
-    }
-    if config.agent.codex_version.is_empty() {
-        if let Some(v) = crate::app_settings::detect_codex_version() {
-            config.agent.codex_version = v;
-            updated = true;
-        }
-    }
-    if updated {
-        if let Ok(raw) = toml::to_string_pretty(&config) {
-            let _ = atomic_write(&config_path, &raw);
-        }
-    }
+    let config: ProjectConfig = toml::from_str(&raw).unwrap_or_default();
 
     Ok(config)
 }

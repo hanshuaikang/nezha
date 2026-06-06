@@ -33,21 +33,37 @@ function getProjectStatus(tasks: Task[], projectId: string): ProjectStatus {
   return null;
 }
 
-function StatusBadge({ status }: { status: ProjectStatus }) {
+// 待确认(input_required)任务数——用于黄色数量角标
+function getAttentionCount(tasks: Task[], projectId: string): number {
+  return tasks.filter((t) => t.projectId === projectId && t.status === "input_required").length;
+}
+
+// 项目状态指示:启用角标且存在待确认任务时显示数量角标,否则回退为小圆点。
+// borderColor 用于与所在容器背景描边融合(rail 与 drawer 背景不同)。
+function AttentionIndicator({
+  status,
+  count,
+  showBadge,
+  borderColor,
+}: {
+  status: ProjectStatus;
+  count: number;
+  showBadge: boolean;
+  borderColor: string;
+}) {
   if (!status) return null;
   const isAttention = status === "attention";
+  if (showBadge && isAttention && count > 0) {
+    return (
+      <span style={{ ...s.railAttentionBadge, borderColor }}>{count > 99 ? "99+" : count}</span>
+    );
+  }
   return (
     <span
       style={{
-        position: "absolute",
-        bottom: -1,
-        right: -1,
-        width: 9,
-        height: 9,
-        borderRadius: "50%",
+        ...s.railStatusDot,
         background: isAttention ? "var(--color-warning)" : "var(--color-success)",
-        border: "2px solid var(--bg-sidebar)",
-        boxSizing: "border-box" as const,
+        borderColor,
       }}
     />
   );
@@ -57,11 +73,15 @@ function RailItem({
   project,
   isActive,
   status,
+  attentionCount,
+  showBadge,
   onSwitch,
 }: {
   project: Project;
   isActive: boolean;
   status: ProjectStatus;
+  attentionCount: number;
+  showBadge: boolean;
   onSwitch: (p: Project) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -95,7 +115,12 @@ function RailItem({
       }}
     >
       <ProjectAvatar name={project.name} size={28} />
-      <StatusBadge status={status} />
+      <AttentionIndicator
+        status={status}
+        count={attentionCount}
+        showBadge={showBadge}
+        borderColor="var(--bg-sidebar)"
+      />
     </button>
   );
 }
@@ -104,12 +129,14 @@ function ProjectDrawer({
   projects,
   allTasks,
   activeProjectId,
+  showBadge,
   onSwitch,
   onClose,
 }: {
   projects: Project[];
   allTasks: Task[];
   activeProjectId: string;
+  showBadge: boolean;
   onSwitch: (p: Project) => void;
   onClose: () => void;
 }) {
@@ -205,6 +232,7 @@ function ProjectDrawer({
         )}
         {filteredProjects.map((project) => {
           const status = getProjectStatus(allTasks, project.id);
+          const attentionCount = getAttentionCount(allTasks, project.id);
           const isActive = project.id === activeProjectId;
           return (
             <button
@@ -236,22 +264,12 @@ function ProjectDrawer({
             >
               <div style={{ position: "relative", flexShrink: 0 }}>
                 <ProjectAvatar name={project.name} size={28} />
-                {status && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      bottom: -1,
-                      right: -1,
-                      width: 9,
-                      height: 9,
-                      borderRadius: "50%",
-                      background:
-                        status === "attention" ? "var(--color-warning)" : "var(--color-success)",
-                      border: "2px solid var(--bg-panel)",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                )}
+                <AttentionIndicator
+                  status={status}
+                  count={attentionCount}
+                  showBadge={showBadge}
+                  borderColor="var(--bg-panel)"
+                />
               </div>
               <span
                 style={{
@@ -285,6 +303,7 @@ export function ProjectRail({
   projects,
   allTasks,
   activeProjectId,
+  attentionBadge = true,
   onSwitch,
   onOpen,
   singleProjectMode = false,
@@ -292,6 +311,7 @@ export function ProjectRail({
   projects: Project[];
   allTasks: Task[];
   activeProjectId: string;
+  attentionBadge?: boolean;
   onSwitch: (project: Project) => void;
   onOpen: () => void;
   singleProjectMode?: boolean;
@@ -331,6 +351,8 @@ export function ProjectRail({
           project={project}
           isActive={project.id === activeProjectId}
           status={getProjectStatus(allTasks, project.id)}
+          attentionCount={getAttentionCount(allTasks, project.id)}
+          showBadge={attentionBadge}
           onSwitch={(p) => {
             onSwitch(p);
             setDrawerOpen(false);
@@ -404,6 +426,7 @@ export function ProjectRail({
           projects={projects}
           allTasks={allTasks}
           activeProjectId={activeProjectId}
+          showBadge={attentionBadge}
           onSwitch={onSwitch}
           onClose={() => setDrawerOpen(false)}
         />

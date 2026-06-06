@@ -12,9 +12,13 @@ import s from "../../styles";
 export function GeneralPanel({
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  attentionBadge,
+  onAttentionBadgeChange,
 }: {
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  attentionBadge: boolean;
+  onAttentionBadgeChange: (enabled: boolean) => void;
 }) {
   const { language, setLanguage, t } = useI18n();
 
@@ -147,6 +151,34 @@ export function GeneralPanel({
           </Select.Portal>
         </Select.Root>
         <span style={hintStyle}>{t("appSettings.taskDisplayWindowHint")}</span>
+      </div>
+
+      <div style={{ ...fieldStyle, marginTop: 18 }}>
+        <label style={labelStyle}>{t("appSettings.attentionBadge")}</label>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={attentionBadge}
+          aria-label={t("appSettings.attentionBadge")}
+          onClick={() => onAttentionBadgeChange(!attentionBadge)}
+          style={s.settingToggle}
+        >
+          <span style={s.settingToggleLabel}>{t("appSettings.attentionBadgeToggle")}</span>
+          <span
+            style={{
+              ...s.settingToggleTrack,
+              background: attentionBadge ? "var(--primary-action-bg)" : "var(--border-medium)",
+            }}
+          >
+            <span
+              style={{
+                ...s.settingToggleKnob,
+                transform: attentionBadge ? "translateX(16px)" : "translateX(0)",
+              }}
+            />
+          </span>
+        </button>
+        <span style={hintStyle}>{t("appSettings.attentionBadgeHint")}</span>
       </div>
     </div>
   );

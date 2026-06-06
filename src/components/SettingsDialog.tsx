@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as RadixSelect from "@radix-ui/react-select";
-import { X, FolderOpen, ChevronDown, Check, RefreshCw } from "lucide-react";
+import { X, FolderOpen, ChevronDown, Check } from "lucide-react";
 import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
@@ -11,18 +11,11 @@ interface ProjectConfig {
     default: string;
     default_permission_mode: string;
     prompt_prefix: string;
-    claude_version: string;
-    codex_version: string;
   };
   git: { commit_prompt: string };
 }
 
 const PERMISSION_MODES: PermissionMode[] = ["ask", "auto_edit", "full_access"];
-
-interface AgentVersions {
-  claude_version: string;
-  codex_version: string;
-}
 
 type NavKey = "project";
 
@@ -84,9 +77,6 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
   const [promptPrefix, setPromptPrefix] = useState("");
   const [commitPrompt, setCommitPrompt] = useState("");
-  const [claudeVersion, setClaudeVersion] = useState("");
-  const [codexVersion, setCodexVersion] = useState("");
-  const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,29 +91,9 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         }
         setPromptPrefix(c.agent.prompt_prefix ?? "");
         setCommitPrompt(c.git.commit_prompt);
-        setClaudeVersion(c.agent.claude_version ?? "");
-        setCodexVersion(c.agent.codex_version ?? "");
-
-        // 若版本为空，自动检测一次
-        if (!c.agent.claude_version && !c.agent.codex_version) {
-          autoDetectVersions();
-        }
       })
       .catch((e) => setError(String(e)));
   }, [projectPath]);
-
-  async function autoDetectVersions() {
-    setDetecting(true);
-    try {
-      const v = await invoke<AgentVersions>("detect_agent_versions");
-      if (v.claude_version) setClaudeVersion(v.claude_version);
-      if (v.codex_version) setCodexVersion(v.codex_version);
-    } catch {
-      // 检测失败不阻塞，版本字段保持空
-    } finally {
-      setDetecting(false);
-    }
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -136,8 +106,6 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             default: agentDefault,
             default_permission_mode: defaultPermissionMode,
             prompt_prefix: promptPrefix,
-            claude_version: claudeVersion,
-            codex_version: codexVersion,
           },
           git: { commit_prompt: commitPrompt },
         },
@@ -206,57 +174,6 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                   spellCheck={false}
                   placeholder={t("settings.promptPrefixPlaceholder")}
                 />
-              </div>
-              <div style={s.modalField}>
-                <label style={s.modalLabel}>
-                  {t("settings.agentVersions")}
-                  <span style={s.modalLabelHint}>
-                    {t("settings.agentVersionsHint")}
-                  </span>
-                </label>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
-                      Claude Code
-                    </div>
-                    <input
-                      style={s.modalInput}
-                      value={claudeVersion}
-                      onChange={(e) => setClaudeVersion(e.target.value)}
-                      placeholder={t("common.notDetected")}
-                      spellCheck={false}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
-                      Codex
-                    </div>
-                    <input
-                      style={s.modalInput}
-                      value={codexVersion}
-                      onChange={(e) => setCodexVersion(e.target.value)}
-                      placeholder={t("common.notDetected")}
-                      spellCheck={false}
-                    />
-                  </div>
-                  <button
-                    style={{
-                      ...s.modalCancelBtn,
-                      padding: "6px 10px",
-                      marginTop: 16,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      opacity: detecting ? 0.6 : 1,
-                    }}
-                    onClick={autoDetectVersions}
-                    disabled={detecting}
-                    title={t("settings.redetectVersions")}
-                  >
-                    <RefreshCw size={13} style={detecting ? { animation: "spin 1s linear infinite" } : undefined} />
-                    {detecting ? t("appSettings.detecting") : t("settings.detect")}
-                  </button>
-                </div>
               </div>
             </div>
 

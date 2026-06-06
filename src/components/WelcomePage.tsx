@@ -103,6 +103,8 @@ export function WelcomePage({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  attentionBadge,
+  onAttentionBadgeChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -126,6 +128,8 @@ export function WelcomePage({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  attentionBadge: boolean;
+  onAttentionBadgeChange: (enabled: boolean) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -194,6 +198,8 @@ export function WelcomePage({
               onTerminalFontSizeChange={onTerminalFontSizeChange}
               taskDisplayWindow={taskDisplayWindow}
               onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+              attentionBadge={attentionBadge}
+              onAttentionBadgeChange={onAttentionBadgeChange}
               uiFontFamily={uiFontFamily}
               onUiFontFamilyChange={onUiFontFamilyChange}
               monoFontFamily={monoFontFamily}

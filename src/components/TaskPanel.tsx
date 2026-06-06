@@ -39,6 +39,8 @@ export function TaskPanel({
   onTerminalFontSizeChange,
   taskDisplayWindow,
   onTaskDisplayWindowChange,
+  attentionBadge,
+  onAttentionBadgeChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -68,6 +70,8 @@ export function TaskPanel({
   onTerminalFontSizeChange: (size: TerminalFontSize) => void;
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
+  attentionBadge: boolean;
+  onAttentionBadgeChange: (enabled: boolean) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -214,6 +218,8 @@ export function TaskPanel({
           onTerminalFontSizeChange={onTerminalFontSizeChange}
           taskDisplayWindow={taskDisplayWindow}
           onTaskDisplayWindowChange={onTaskDisplayWindowChange}
+          attentionBadge={attentionBadge}
+          onAttentionBadgeChange={onAttentionBadgeChange}
           uiFontFamily={uiFontFamily}
           onUiFontFamilyChange={onUiFontFamilyChange}
           monoFontFamily={monoFontFamily}

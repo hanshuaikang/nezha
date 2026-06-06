@@ -520,26 +520,20 @@ pub fn detect_codex_version() -> Option<String> {
     detected
 }
 
-pub fn claude_version_gte(saved_version: &str, min_version: &str) -> bool {
-    let version = if saved_version.is_empty() {
-        match detect_claude_version() {
-            Some(v) => v,
-            None => return false,
-        }
-    } else {
-        saved_version.to_string()
-    };
-    parse_semver(&version) >= parse_semver(min_version)
+/// 版本号统一走全局带缓存的探测；探测失败视为不满足。
+pub fn claude_version_gte(min_version: &str) -> bool {
+    match detect_claude_version() {
+        Some(v) => parse_semver(&v) >= parse_semver(min_version),
+        None => false,
+    }
 }
 
-#[tauri::command]
-pub async fn detect_agent_versions() -> Result<AgentVersions, String> {
-    tokio::task::spawn_blocking(|| AgentVersions {
-        claude_version: detect_claude_version().unwrap_or_default(),
-        codex_version: detect_codex_version().unwrap_or_default(),
-    })
-    .await
-    .map_err(|e| e.to_string())
+/// 版本号统一走全局带缓存的探测；探测失败视为不满足。
+pub fn codex_version_gte(min_version: &str) -> bool {
+    match detect_codex_version() {
+        Some(v) => parse_semver(&v) >= parse_semver(min_version),
+        None => false,
+    }
 }
 
 #[tauri::command]
