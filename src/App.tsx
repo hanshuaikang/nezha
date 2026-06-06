@@ -31,6 +31,8 @@ import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
 import { useToast } from "./components/Toast";
+import { isHideWindowShortcut } from "./shortcuts";
+import { APP_PLATFORM } from "./platform";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
@@ -272,6 +274,20 @@ function App() {
       .setTheme(nativeTheme)
       .catch(console.error);
   }, [themeMode]);
+
+  useEffect(() => {
+    // Cmd+W 收起窗口（隐藏到 Dock），仅 macOS 启用：隐藏后点 Dock 图标可唤回
+    // （见 lib.rs Reopen）。其他平台没有 Dock/托盘唤回入口，隐藏后窗口会丢失，故不启用。
+    // 在捕获阶段拦截，先于 xterm 等组件的 keydown 处理，避免被吞掉。
+    if (APP_PLATFORM !== "macos") return;
+    function handleHideWindow(event: KeyboardEvent) {
+      if (!isHideWindowShortcut(event, APP_PLATFORM)) return;
+      event.preventDefault();
+      getCurrentWindow().hide().catch(console.error);
+    }
+    window.addEventListener("keydown", handleHideWindow, true);
+    return () => window.removeEventListener("keydown", handleHideWindow, true);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("nezha:terminalFontSize", String(terminalFontSize));

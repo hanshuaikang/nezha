@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-theme",
+    "core:window:allow-hide",
     "opener:default",
     "dialog:default"
   ]
