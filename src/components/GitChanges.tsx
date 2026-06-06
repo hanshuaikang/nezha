@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import {
@@ -12,8 +12,14 @@ import {
 } from "lucide-react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import s from "../styles";
-import { getGitStatusColor, getGitStatusLabel } from "../utils";
 import { useI18n } from "../i18n";
+import {
+  GitFileBrowser,
+  GitFileViewToggle,
+  type GitFileBrowserScrollContext,
+  type GitDirectoryActionTarget,
+  useGitFileViewMode,
+} from "./git-view/GitFileBrowser";
 
 interface GitFileChange {
   path: string;
@@ -30,10 +36,6 @@ interface Props {
 
 function fileName(path: string): string {
   return path.split("/").pop() ?? path;
-}
-function fileDir(path: string): string {
-  const parts = path.split("/");
-  return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
 }
 
 export function GitChanges({
@@ -54,46 +56,124 @@ export function GitChanges({
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [trackedCollapsed, setTrackedCollapsed] = useState(false);
   const [untrackedCollapsed, setUntrackedCollapsed] = useState(false);
+  const [fileViewMode, setFileViewMode] = useGitFileViewMode();
+  const fileListScrollRef = useRef<HTMLDivElement>(null);
+  const [fileListScrollTop, setFileListScrollTop] = useState(0);
+  const [fileListViewportHeight, setFileListViewportHeight] = useState(0);
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
 
-  const refresh = useCallback(async (options?: { clearError?: boolean }) => {
-    setLoading(true);
-    if (options?.clearError !== false) setError(null);
-    try {
-      const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath });
-      if (result === null) return; // Component unmounted
-      setChanges(result);
-    } catch (e) {
-      if (!isCancelled()) setError(String(e));
-    } finally {
-      if (!isCancelled()) setLoading(false);
-    }
-  }, [projectPath, safeInvoke, isCancelled]);
+  useEffect(() => {
+    const el = fileListScrollRef.current;
+    if (!el) return;
+
+    const updateViewport = () => {
+      setFileListScrollTop(el.scrollTop);
+      setFileListViewportHeight(el.clientHeight);
+    };
+
+    updateViewport();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const refresh = useCallback(
+    async (options?: { clearError?: boolean }) => {
+      setLoading(true);
+      if (options?.clearError !== false) setError(null);
+      try {
+        const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath });
+        if (result === null) return; // Component unmounted
+        setChanges(result);
+      } catch (e) {
+        if (!isCancelled()) setError(String(e));
+      } finally {
+        if (!isCancelled()) setLoading(false);
+      }
+    },
+    [projectPath, safeInvoke, isCancelled],
+  );
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   // "Current Task" tab: files modified after task start
-  const taskChanges = currentTaskCreatedAt
-    ? changes.filter((c) => c.staged) // staged = agent's work
-    : [];
+  const taskChanges = useMemo(
+    () => (currentTaskCreatedAt ? changes.filter((c) => c.staged) : []),
+    [changes, currentTaskCreatedAt],
+  );
   const allChanges = changes;
-  const displayed = tab === "task" ? taskChanges : allChanges;
+  const displayed = useMemo(
+    () => (tab === "task" ? taskChanges : allChanges),
+    [allChanges, tab, taskChanges],
+  );
 
-  const trackedFiles = displayed.filter((c) => c.status !== "?");
-  const untrackedFiles = displayed.filter((c) => c.status === "?");
-  const stagedFiles = trackedFiles.filter((c) => c.staged);
-  const unstagedFiles = trackedFiles.filter((c) => !c.staged);
+  const trackedFiles = useMemo(() => displayed.filter((c) => c.status !== "?"), [displayed]);
+  const untrackedFiles = useMemo(() => displayed.filter((c) => c.status === "?"), [displayed]);
+  const stagedFiles = useMemo(() => trackedFiles.filter((c) => c.staged), [trackedFiles]);
+  const unstagedFiles = useMemo(() => trackedFiles.filter((c) => !c.staged), [trackedFiles]);
+
+  const handleFileListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setFileListScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  const fileListScrollContext = useMemo<GitFileBrowserScrollContext>(
+    () => ({
+      containerRef: fileListScrollRef,
+      scrollTop: fileListScrollTop,
+      viewportHeight: fileListViewportHeight,
+      layoutKey: [
+        fileViewMode,
+        trackedCollapsed,
+        untrackedCollapsed,
+        stagedFiles.length,
+        unstagedFiles.length,
+        untrackedFiles.length,
+      ].join(":"),
+    }),
+    [
+      fileListScrollTop,
+      fileListViewportHeight,
+      fileViewMode,
+      trackedCollapsed,
+      untrackedCollapsed,
+      stagedFiles.length,
+      unstagedFiles.length,
+      untrackedFiles.length,
+    ],
+  );
 
   const handleStageToggle = async (c: GitFileChange, e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     try {
       if (c.staged) {
         await invoke("git_unstage", { projectPath, filePath: c.path });
       } else {
         await invoke("git_stage", { projectPath, filePath: c.path });
+      }
+      refresh();
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const handleDirectoryStageToggle = async (
+    directory: GitDirectoryActionTarget,
+    e: React.MouseEvent,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      setError(null);
+      if (directory.staged) {
+        await invoke("git_unstage_files", { projectPath, filePaths: directory.filePaths });
+      } else {
+        await invoke("git_stage_files", { projectPath, filePaths: directory.filePaths });
       }
       refresh();
     } catch (err) {
@@ -122,6 +202,7 @@ export function GitChanges({
   };
 
   const handleDiscardFile = async (c: GitFileChange, e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     const untracked = c.status === "?";
     const name = fileName(c.path);
@@ -140,6 +221,37 @@ export function GitChanges({
         projectPath,
         filePath: c.path,
         untracked,
+      });
+    } catch (err) {
+      setError(t("git.discardFailed", { error: String(err) }));
+    } finally {
+      await refresh({ clearError: false });
+    }
+  };
+
+  const handleDiscardDirectory = async (
+    directory: GitDirectoryActionTarget,
+    e: React.MouseEvent,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ok = await confirm(
+      t(directory.untracked ? "git.confirmDiscardUntracked" : "git.confirmDiscardTracked", {
+        name: directory.name,
+      }),
+      {
+        title: t("git.confirmDiscardTitle", { name: directory.name }),
+        kind: "warning",
+        okLabel: t("git.discard"),
+      },
+    );
+    if (!ok) return;
+    try {
+      setError(null);
+      await invoke("git_discard_files", {
+        projectPath,
+        filePaths: directory.filePaths,
+        untracked: directory.untracked,
       });
     } catch (err) {
       setError(t("git.discardFailed", { error: String(err) }));
@@ -314,6 +426,9 @@ export function GitChanges({
         >
           {t("git.all")} {allCount}
         </button>
+        <div style={{ marginLeft: "auto" }}>
+          <GitFileViewToggle mode={fileViewMode} onChange={setFileViewMode} />
+        </div>
       </div>
 
       {/* Error */}
@@ -334,7 +449,11 @@ export function GitChanges({
       )}
 
       {/* File list */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div
+        ref={fileListScrollRef}
+        onScroll={handleFileListScroll}
+        style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}
+      >
         {displayed.length === 0 && !loading && (
           <div
             style={{
@@ -368,16 +487,17 @@ export function GitChanges({
                       actionTitle={t("git.unstageAll")}
                       onAction={handleUnstageAll}
                     />
-                    {stagedFiles.map((c) => (
-                      <FileRow
-                        key={`staged-${c.path}`}
-                        change={c}
-                        onFileClick={() =>
-                          onFileSelect(c.path, true, `${fileName(c.path)} (staged)`)
-                        }
-                        onToggle={(e) => handleStageToggle(c, e)}
-                      />
-                    ))}
+                    <GitFileBrowser
+                      entries={stagedFiles}
+                      mode={fileViewMode}
+                      scrollContext={fileListScrollContext}
+                      onFileClick={(c) =>
+                        onFileSelect(c.path, true, `${fileName(c.path)} (staged)`)
+                      }
+                      onStageToggle={handleStageToggle}
+                      onDirectoryStageToggle={handleDirectoryStageToggle}
+                      autoCollapseLargeDirectories
+                    />
                   </>
                 )}
                 {unstagedFiles.length > 0 && (
@@ -389,17 +509,19 @@ export function GitChanges({
                       actionTitle={t("git.stageAll")}
                       onAction={handleStageAll}
                     />
-                    {unstagedFiles.map((c) => (
-                      <FileRow
-                        key={`unstaged-${c.path}`}
-                        change={c}
-                        onFileClick={() =>
-                          onFileSelect(c.path, false, `${fileName(c.path)} (unstaged)`)
-                        }
-                        onToggle={(e) => handleStageToggle(c, e)}
-                        onDiscard={(e) => handleDiscardFile(c, e)}
-                      />
-                    ))}
+                    <GitFileBrowser
+                      entries={unstagedFiles}
+                      mode={fileViewMode}
+                      scrollContext={fileListScrollContext}
+                      onFileClick={(c) =>
+                        onFileSelect(c.path, false, `${fileName(c.path)} (unstaged)`)
+                      }
+                      onStageToggle={handleStageToggle}
+                      onDirectoryStageToggle={handleDirectoryStageToggle}
+                      onDiscard={handleDiscardFile}
+                      onDirectoryDiscard={handleDiscardDirectory}
+                      autoCollapseLargeDirectories
+                    />
                   </>
                 )}
               </>
@@ -416,16 +538,19 @@ export function GitChanges({
               collapsed={untrackedCollapsed}
               onToggleCollapse={() => setUntrackedCollapsed((v) => !v)}
             />
-            {!untrackedCollapsed &&
-              untrackedFiles.map((c) => (
-                <FileRow
-                  key={`untracked-${c.path}`}
-                  change={c}
-                  onFileClick={() => onFileSelect(c.path, false, `${fileName(c.path)} (untracked)`)}
-                  onToggle={(e) => handleStageToggle(c, e)}
-                  onDiscard={(e) => handleDiscardFile(c, e)}
-                />
-              ))}
+            {!untrackedCollapsed && (
+              <GitFileBrowser
+                entries={untrackedFiles}
+                mode={fileViewMode}
+                scrollContext={fileListScrollContext}
+                onFileClick={(c) => onFileSelect(c.path, false, `${fileName(c.path)} (untracked)`)}
+                onStageToggle={handleStageToggle}
+                onDirectoryStageToggle={handleDirectoryStageToggle}
+                onDiscard={handleDiscardFile}
+                onDirectoryDiscard={handleDiscardDirectory}
+                autoCollapseLargeDirectories
+              />
+            )}
           </>
         )}
       </div>
@@ -642,98 +767,6 @@ function SectionHeader({
         >
           {actionIcon}
         </button>
-      )}
-    </div>
-  );
-}
-
-function FileRow({
-  change,
-  onFileClick,
-  onToggle,
-  onDiscard,
-}: {
-  change: GitFileChange;
-  onFileClick: () => void;
-  onToggle: (e: React.MouseEvent) => void;
-  onDiscard?: (e: React.MouseEvent) => void;
-}) {
-  const { t } = useI18n();
-  const [hovered, setHovered] = useState(false);
-  const name = fileName(change.path);
-  const dir = fileDir(change.path);
-  const color = getGitStatusColor(change.status);
-  const label = getGitStatusLabel(change.status);
-
-  return (
-    <div
-      onClick={onFileClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "4px 10px 4px 14px",
-        cursor: "pointer",
-        background: hovered ? "var(--bg-hover)" : "transparent",
-        transition: "background 0.1s",
-      }}
-    >
-      {/* Status dot */}
-      <span
-        style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }}
-      />
-
-      {/* Status letter */}
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color,
-          flexShrink: 0,
-          width: 12,
-          textAlign: "center",
-        }}
-      >
-        {label}
-      </span>
-
-      {/* Filename + dir */}
-      <span style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
-        <span style={{ fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500 }}>
-          {name}
-        </span>
-        {dir && (
-          <span style={{ fontSize: 11, color: "var(--text-hint)", marginLeft: 5 }}>{dir}</span>
-        )}
-      </span>
-
-      {/* Discard + stage/unstage on hover */}
-      {hovered && (
-        <>
-          {onDiscard && (
-            <button onClick={onDiscard} title={t("git.discard")} style={s.gitChangesRowDiscardBtn}>
-              <Undo2 size={11} />
-            </button>
-          )}
-          <button
-            onClick={onToggle}
-            title={change.staged ? t("git.unstage") : t("git.stage")}
-            style={{
-              flexShrink: 0,
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-dim)",
-              borderRadius: 4,
-              fontSize: 10,
-              padding: "2px 6px",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-            }}
-          >
-            {change.staged ? "−" : "+"}
-          </button>
-        </>
       )}
     </div>
   );

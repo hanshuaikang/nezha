@@ -11,8 +11,12 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { getGitStatusColor } from "../utils";
 import { useI18n } from "../i18n";
+import {
+  GitFileBrowser,
+  GitFileViewToggle,
+  useGitFileViewMode,
+} from "./git-view/GitFileBrowser";
 
 interface GitCommit {
   hash: string;
@@ -57,15 +61,6 @@ interface Props {
   onCommitSelect: (hash: string, message: string) => void;
   onFileClick?: (hash: string, filePath: string, label: string) => void;
   width?: number;
-}
-
-function fileName(path: string): string {
-  return path.split("/").pop() ?? path;
-}
-
-function fileDir(path: string): string {
-  const parts = path.split("/");
-  return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
 }
 
 export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 280 }: Props) {
@@ -714,7 +709,7 @@ function CommitDetailPanel({
   onFileClick?: (path: string) => void;
 }) {
   const { t } = useI18n();
-  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  const [fileViewMode, setFileViewMode] = useGitFileViewMode();
 
   if (loading) {
     return (
@@ -749,75 +744,25 @@ function CommitDetailPanel({
         >
           {detail.message}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-hint)" }}>
-          {t(detail.files.length === 1 ? "common.fileChanged" : "common.filesChanged", {
-            count: detail.files.length,
-          })}{" "}
-          <span style={{ color: "var(--diff-add-fg)" }}>+{detail.total_additions}</span>{" "}
-          <span style={{ color: "var(--diff-delete-fg)" }}>-{detail.total_deletions}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, fontSize: 11, color: "var(--text-hint)" }}>
+            {t(detail.files.length === 1 ? "common.fileChanged" : "common.filesChanged", {
+              count: detail.files.length,
+            })}{" "}
+            <span style={{ color: "var(--diff-add-fg)" }}>+{detail.total_additions}</span>{" "}
+            <span style={{ color: "var(--diff-delete-fg)" }}>-{detail.total_deletions}</span>
+          </div>
+          <GitFileViewToggle mode={fileViewMode} onChange={setFileViewMode} />
         </div>
       </div>
 
       {/* File list */}
-      {detail.files.map((f) => {
-        const color = getGitStatusColor(f.status);
-        const name = fileName(f.path);
-        const dir = fileDir(f.path);
-        const clickable = !!onFileClick;
-        const hovered = hoveredPath === f.path;
-        return (
-          <div
-            key={f.path}
-            onClick={clickable ? () => onFileClick(f.path) : undefined}
-            onMouseEnter={clickable ? () => setHoveredPath(f.path) : undefined}
-            onMouseLeave={clickable ? () => setHoveredPath(null) : undefined}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 12px",
-              cursor: clickable ? "pointer" : "default",
-              background: hovered ? "var(--bg-hover)" : "transparent",
-              transition: "background 0.1s",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color,
-                flexShrink: 0,
-                width: 12,
-                textAlign: "center",
-              }}
-            >
-              {f.status}
-            </span>
-            <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: hovered ? "var(--accent)" : "var(--text-primary)",
-                  transition: "color 0.1s",
-                }}
-              >
-                {name}
-              </span>
-              {dir && (
-                <span style={{ fontSize: 11, color: "var(--text-hint)", marginLeft: 5 }}>
-                  {dir}
-                </span>
-              )}
-            </span>
-            <span style={{ fontSize: 10.5, color: "var(--diff-add-fg)", flexShrink: 0 }}>
-              +{f.additions}
-            </span>
-            <span style={{ fontSize: 10.5, color: "var(--diff-delete-fg)", flexShrink: 0 }}>
-              -{f.deletions}
-            </span>
-          </div>
-        );
-      })}
+      <GitFileBrowser
+        entries={detail.files}
+        mode={fileViewMode}
+        showStats
+        onFileClick={onFileClick ? (f) => onFileClick(f.path) : undefined}
+      />
     </div>
   );
 }
