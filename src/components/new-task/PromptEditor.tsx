@@ -101,6 +101,49 @@ function createChipElement(file: FileEntry, crossProject?: CrossProjectRef): HTM
   return chip;
 }
 
+function getAdjacentChip(range: Range, key: "Backspace" | "Delete"): HTMLElement | null {
+  if (!range.collapsed) return null;
+
+  const { startContainer: node, startOffset } = range;
+  const isBackspace = key === "Backspace";
+
+  let sibling: Node | undefined | null;
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || "";
+    const adjacentText = isBackspace ? text.slice(0, startOffset) : text.slice(startOffset);
+    if (adjacentText.trim()) return null;
+    sibling = isBackspace ? node.previousSibling : node.nextSibling;
+  } else if (node.nodeType === Node.ELEMENT_NODE) {
+    sibling = node.childNodes[isBackspace ? startOffset - 1 : startOffset];
+  }
+
+  while (sibling?.nodeType === Node.TEXT_NODE && !(sibling.textContent || "").trim()) {
+    sibling = isBackspace ? sibling.previousSibling : sibling.nextSibling;
+  }
+
+  return sibling instanceof HTMLElement && sibling.dataset.filePath ? sibling : null;
+}
+
+function removeChipAtCaret(chip: HTMLElement) {
+  const parent = chip.parentNode;
+  if (!parent) return;
+  const index = Array.prototype.indexOf.call(parent.childNodes, chip);
+  const trailingSpace = chip.nextSibling;
+
+  chip.remove();
+  if (trailingSpace?.nodeType === Node.TEXT_NODE && trailingSpace.textContent === " ") {
+    trailingSpace.remove();
+  }
+
+  const range = document.createRange();
+  range.setStart(parent, Math.min(index, parent.childNodes.length));
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+
 function serializeEditor(editor: HTMLDivElement): string {
   const parts: string[] = [];
 
@@ -303,6 +346,25 @@ export function PromptEditor({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (!isComposingRef.current && (e.key === "Backspace" || e.key === "Delete")) {
+      const editor = editorRef.current;
+      const sel = window.getSelection();
+      if (editor && sel?.rangeCount) {
+        const range = sel.getRangeAt(0);
+        const chip = getAdjacentChip(range, e.key);
+        if (chip) {
+          e.preventDefault();
+          removeChipAtCaret(chip);
+          const text = editor.textContent || "";
+          const hasChips = !!editor.querySelector("[data-file-path]");
+          onSetIsEmpty(!text.trim() && !hasChips);
+          captureContent();
+          onUpdateMention();
+          return;
+        }
+      }
+    }
+
     if (mentionItems.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
