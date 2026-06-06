@@ -51,6 +51,53 @@ impl TaskManager {
     }
 }
 
+/// macOS: 把主窗口收起到 Dock(hide 而非退出)。
+///
+/// 原生全屏窗口独占一个 Space,直接 hide 会留下空 Space(黑屏),必须先退出全屏。
+/// 但退出全屏是带动画的异步过渡:动画结束前 `is_fullscreen()` 仍为 true,且刚结束
+/// 的一小段时间内 `hide()` 仍会被系统忽略。故先轮询等退出完成,再间隔多次 hide,
+/// 让稍晚的调用落在 Space 收起之后生效(对已隐藏窗口为无操作)。
+/// 见 tauri-apps/tauri#12056、electron/electron#20263。
+#[cfg(target_os = "macos")]
+fn hide_window_to_dock(window: tauri::Window) {
+    use std::time::Duration;
+    if !window.is_fullscreen().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
+    let _ = window.set_fullscreen(false);
+    std::thread::spawn(move || {
+        // 轮询等退出全屏完成(~5s 兜底)。
+        let mut exited = false;
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(50));
+            if !window.is_fullscreen().unwrap_or(false) {
+                exited = true;
+                break;
+            }
+        }
+        // 仍处于全屏(退出失败/超时)时绝不 hide,否则会重新留下黑屏的空 Space。
+        if !exited {
+            return;
+        }
+        // 退出后仍可能短暂忽略 hide,间隔多次覆盖 Space 收起的残余时间。
+        for _ in 0..8 {
+            std::thread::sleep(Duration::from_millis(120));
+            let _ = window.hide();
+        }
+    });
+}
+
+/// 前端 Cmd+W 走此命令收起窗口,复用与关闭按钮一致的全屏感知隐藏逻辑。
+/// 仅 macOS 有实际行为(其他平台前端不会触发,见 App.tsx)。
+#[tauri::command]
+fn hide_main_window(window: tauri::Window) {
+    #[cfg(target_os = "macos")]
+    hide_window_to_dock(window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -85,7 +132,7 @@ pub fn run() {
             // 其他平台没有托盘/Dock 唤回入口,保持默认退出行为,避免窗口隐藏后无法找回。
             #[cfg(target_os = "macos")]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
+                hide_window_to_dock(window.clone());
                 api.prevent_close();
             }
             #[cfg(not(target_os = "macos"))]
@@ -94,6 +141,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            hide_main_window,
             pty::run_task,
             pty::resume_task,
             pty::cancel_task,
