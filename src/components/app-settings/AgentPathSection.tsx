@@ -3,7 +3,11 @@ import type React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { DEFAULT_SEND_SHORTCUT, normalizeSendShortcut } from "../../shortcuts";
+import {
+  DEFAULT_SEND_SHORTCUT,
+  DEFAULT_SHIFT_ENTER_NEWLINE,
+  normalizeSendShortcut,
+} from "../../shortcuts";
 import s from "../../styles";
 import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings, type AgentKey } from "./types";
 import { getAgentExecutablePlaceholder } from "./shared";
@@ -68,6 +72,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
+    terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);

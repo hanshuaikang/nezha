@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import {
+  DEFAULT_SHIFT_ENTER_NEWLINE,
+  matchesTerminalNewline,
+  normalizeShiftEnterNewline,
+  TERMINAL_NEWLINE_SEQUENCE,
+} from "../shortcuts";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
   themeFor,
@@ -55,6 +62,7 @@ export function TerminalView({
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const shiftEnterNewlineRef = useRef<boolean>(DEFAULT_SHIFT_ENTER_NEWLINE);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -125,7 +133,10 @@ export function TerminalView({
       completeRestore();
     });
 
-    const disposeSmartCopy = attachSmartCopy(term);
+    const disposeSmartCopy = attachSmartCopy(term, {
+      matchesNewline: (e) => matchesTerminalNewline(e, shiftEnterNewlineRef.current),
+      onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
+    });
     const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
     const disposeOnData = { dispose: () => linuxIME.dispose() };
 
@@ -177,6 +188,25 @@ export function TerminalView({
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the configured "insert newline" combo in sync with app settings.
+  // Mirrors NewTaskView: load once, then react to the global settings event.
+  useEffect(() => {
+    function loadNewlineShortcut() {
+      invoke<{ terminal_shift_enter_newline?: unknown }>("load_app_settings")
+        .then((settings) => {
+          shiftEnterNewlineRef.current = normalizeShiftEnterNewline(
+            settings.terminal_shift_enter_newline,
+          );
+        })
+        .catch(() => {
+          shiftEnterNewlineRef.current = DEFAULT_SHIFT_ENTER_NEWLINE;
+        });
+    }
+    loadNewlineShortcut();
+    window.addEventListener("nezha:app-settings-changed", loadNewlineShortcut);
+    return () => window.removeEventListener("nezha:app-settings-changed", loadNewlineShortcut);
+  }, []);
 
   useEffect(() => {
     if (!isActive) return;

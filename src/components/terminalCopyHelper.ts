@@ -157,14 +157,38 @@ export async function smartCopy(terminal: Terminal): Promise<boolean> {
   return true;
 }
 
+export interface TerminalKeyOptions {
+  /** Whether a key event matches the configured "insert newline" combo. */
+  matchesNewline?: (e: KeyboardEvent) => boolean;
+  /** Called (instead of the default submit) when that combo is pressed. */
+  onNewline?: () => void;
+}
+
 /**
- * Attach the smart copy handler to a terminal instance.
+ * Attach the smart copy handler to a terminal instance. Optionally also
+ * intercepts the configured "insert newline" combo. xterm allows a single
+ * custom key event handler, so both behaviours share this one.
  * Returns a dispose function.
  */
-export function attachSmartCopy(terminal: Terminal): () => void {
+export function attachSmartCopy(
+  terminal: Terminal,
+  keyOptions?: TerminalKeyOptions,
+): () => void {
   let copyInProgress = false;
 
   const handleCustomKeyEvent = (e: KeyboardEvent) => {
+    // Insert-newline shortcut (e.g. Shift/Alt + Enter): emit our own sequence
+    // instead of letting xterm send a bare CR, which the agent treats as submit.
+    if (
+      e.type === "keydown" &&
+      keyOptions?.onNewline &&
+      keyOptions.matchesNewline?.(e)
+    ) {
+      e.preventDefault();
+      keyOptions.onNewline();
+      return false;
+    }
+
     const isCopy =
       (e.metaKey || e.ctrlKey) && e.key === "c" && e.type === "keydown";
 

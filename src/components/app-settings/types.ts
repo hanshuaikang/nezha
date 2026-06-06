@@ -7,6 +7,7 @@ export interface AppSettings {
   claude_path: string;
   codex_path: string;
   send_shortcut: SendShortcut;
+  terminal_shift_enter_newline: boolean;
 }
 
 export interface AgentVersions {

@@ -22,6 +22,10 @@ fn normalize_send_shortcut(value: String) -> String {
     }
 }
 
+fn default_shift_enter_newline() -> bool {
+    true
+}
+
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static CACHED_CODEX_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static SETTINGS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -42,6 +46,8 @@ pub struct AppSettings {
     pub codex_path: String,
     #[serde(default = "default_send_shortcut")]
     pub send_shortcut: String,
+    #[serde(default = "default_shift_enter_newline")]
+    pub terminal_shift_enter_newline: bool,
 }
 
 impl Default for AppSettings {
@@ -50,6 +56,7 @@ impl Default for AppSettings {
             claude_path: String::new(),
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
+            terminal_shift_enter_newline: default_shift_enter_newline(),
         }
     }
 }
@@ -306,6 +313,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
+        terminal_shift_enter_newline: settings.terminal_shift_enter_newline,
     }
 }
 
@@ -320,6 +328,7 @@ fn load_settings_unlocked() -> AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
+            terminal_shift_enter_newline: default_shift_enter_newline(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -403,6 +412,25 @@ pub async fn save_send_shortcut(send_shortcut: String) -> Result<AppSettings, St
         let _guard = settings_lock().lock();
         let mut settings = load_settings_unlocked();
         settings.send_shortcut = normalize_send_shortcut(send_shortcut);
+
+        let dir = nezha_dir()?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = settings_path()?;
+        let normalized = normalize_settings(settings);
+        let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+        atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(normalized)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_shift_enter_newline(enabled: bool) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.terminal_shift_enter_newline = enabled;
 
         let dir = nezha_dir()?;
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
