@@ -70,6 +70,18 @@ pub fn run() {
             claimed_session_paths: Mutex::new(HashSet::new()),
             codex_rpc: Arc::new(Mutex::new(None)),
         })
+        .on_window_event(|window, event| {
+            // macOS: 点关闭按钮(红灯)时隐藏窗口而非退出,与 Cmd+W 行为一致;
+            // 点 Dock 图标可唤回(见下方 Reopen 处理)。
+            // 其他平台没有托盘/Dock 唤回入口,保持默认退出行为,避免窗口隐藏后无法找回。
+            #[cfg(target_os = "macos")]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (window, event);
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -153,6 +165,20 @@ pub fn run() {
             skills::cleanup_installations_for_project,
             skills::delete_skill,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app_handle, _event| {
+            // macOS: 当窗口被 Cmd+W 隐藏（hide）后，点击 Dock 图标会触发 Reopen，
+            // 此时没有可见窗口，需要手动把主窗口重新显示并聚焦。
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                if let tauri::RunEvent::Reopen { .. } = _event {
+                    if let Some(window) = _app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        });
 }
