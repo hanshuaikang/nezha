@@ -289,7 +289,8 @@ function App() {
     function handleHideWindow(event: KeyboardEvent) {
       if (!isHideWindowShortcut(event, APP_PLATFORM)) return;
       event.preventDefault();
-      getCurrentWindow().hide().catch(console.error);
+      // 走后端命令收起窗口：全屏时需先退出全屏再隐藏，否则会留下黑屏的空 Space。
+      invoke("hide_main_window").catch(console.error);
     }
     window.addEventListener("keydown", handleHideWindow, true);
     return () => window.removeEventListener("keydown", handleHideWindow, true);
