@@ -114,6 +114,23 @@ export const panels = {
     borderStyle: "solid" as const,
     borderWidth: 2,
     boxSizing: "border-box" as const,
+    // 必须高于 railAvatarStacked(zIndex:1),否则被抬层的头像盖住
+    zIndex: 2,
+  },
+  // 招手小人:绝对定位在头像右下,z-index 低于头像,缩回时被头像遮住
+  railMascot: {
+    position: "absolute" as const,
+    left: 14,
+    bottom: -3,
+    height: 40,
+    width: "auto" as const,
+    zIndex: 0,
+    pointerEvents: "none" as const,
+  },
+  // 头像抬到小人之上,使探头/缩回有被遮挡的层次
+  railAvatarStacked: {
+    position: "relative" as const,
+    zIndex: 1,
   },
   railAttentionBadge: {
     position: "absolute" as const,
@@ -135,6 +152,8 @@ export const panels = {
     borderWidth: 2,
     boxSizing: "border-box" as const,
     pointerEvents: "none" as const,
+    // 必须高于 railAvatarStacked(zIndex:1),否则被抬层的头像盖住
+    zIndex: 2,
   },
   // 通用设置：开关(toggle switch)
   settingToggle: {

@@ -229,6 +229,32 @@ body {
   animation: spin 1s linear infinite;
 }
 
+/* 待确认任务新增时,小人从头像背后探出头招手再缩回去 */
+/* 只做 translate3d + opacity(都走合成层,不触发重排/重绘);中段保持静止,
+   纯由 gif 自己播挥手,避免 CSS 位移与 gif 逐帧重绘互相打架导致的顿挫。 */
+@keyframes rail-mascot-wave {
+  0% {
+    transform: translate3d(-18px, 0, 0);
+    opacity: 0;
+  }
+  18% {
+    transform: translate3d(20px, 0, 0);
+    opacity: 1;
+  }
+  85% {
+    transform: translate3d(20px, 0, 0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-18px, 0, 0);
+    opacity: 0;
+  }
+}
+.rail-mascot-wave {
+  animation: rail-mascot-wave 3.6s ease-in-out both;
+  will-change: transform, opacity;
+}
+
 @keyframes rail-active-breathe {
   0%,
   100% {
