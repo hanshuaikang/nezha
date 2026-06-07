@@ -452,7 +452,12 @@ fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
     match permission_mode {
         "auto_edit" => {
-            c.arg("--full-auto");
+            // 等价于已弃用的 --full-auto（codex >= 0.128 已移除该别名）：
+            // 工作区内自动写、越界命令才升级审批。
+            c.arg("--sandbox");
+            c.arg("workspace-write");
+            c.arg("-a");
+            c.arg("on-request");
         }
         "full_access" => {
             c.arg("--dangerously-bypass-approvals-and-sandbox");
