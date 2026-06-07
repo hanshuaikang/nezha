@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import { marked } from "marked";
 import { useI18n } from "../i18n";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 interface SessionContent {
   type: "text" | "tool_use" | "thinking";
@@ -19,7 +20,12 @@ interface SessionMessage {
 }
 
 function ToolUseCard({ name, input }: { name: string; input: string }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const ctxItems = useMemo<MenuItem[]>(
+    () => [{ label: t("common.copy"), onSelect: () => void navigator.clipboard.writeText(input) }],
+    [input, t],
+  );
   return (
     <div
       style={{
@@ -58,23 +64,25 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
         </span>
       </button>
       {expanded && (
-        <pre
-          style={{
-            margin: 0,
-            padding: "8px 12px",
-            fontSize: 11,
-            fontFamily: "var(--font-mono)",
-            color: "var(--text-secondary)",
-            background: "var(--bg-root)",
-            overflowX: "auto",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-            maxHeight: 280,
-            overflowY: "auto",
-          }}
-        >
-          {input}
-        </pre>
+        <ContextMenu items={ctxItems}>
+          <pre
+            style={{
+              margin: 0,
+              padding: "8px 12px",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              color: "var(--text-secondary)",
+              background: "var(--bg-root)",
+              overflowX: "auto",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+              maxHeight: 280,
+              overflowY: "auto",
+            }}
+          >
+            {input}
+          </pre>
+        </ContextMenu>
       )}
     </div>
   );
@@ -126,20 +134,27 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
 }
 
 function UserMessageBubble({ text }: { text: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
-  };
+  }, [text]);
+
+  const ctxItems = useMemo<MenuItem[]>(
+    () => [{ label: t("common.copy"), onSelect: handleCopy }],
+    [handleCopy, t],
+  );
 
   return (
     <div style={{ marginBottom: 14, display: "flex", justifyContent: "flex-end" }}>
-      <div
-        style={{ maxWidth: "72%", position: "relative" }}
-        className="user-message-bubble"
+      <ContextMenu items={ctxItems}>
+        <div
+          style={{ maxWidth: "72%", position: "relative" }}
+          className="user-message-bubble"
         onMouseEnter={(e) => {
           const btn = (e.currentTarget as HTMLElement).querySelector(
             ".copy-btn",
@@ -188,11 +203,13 @@ function UserMessageBubble({ text }: { text: string }) {
           {text}
         </div>
       </div>
+      </ContextMenu>
     </div>
   );
 }
 
 function MessageBlock({ message }: { message: SessionMessage }) {
+  const { t } = useI18n();
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -215,17 +232,28 @@ function MessageBlock({ message }: { message: SessionMessage }) {
       {thinkingParts.map((t, i) => (
         <ThinkingBlock key={i} thinking={t.thinking ?? ""} />
       ))}
-      {textParts.map((t, i) => (
-        <div
-          key={i}
-          className="session-prose"
-          dangerouslySetInnerHTML={{ __html: marked(t.text ?? "", { async: false }) as string }}
-        />
+      {textParts.map((tp, i) => (
+        <AssistantProseBlock key={i} text={tp.text ?? ""} t={t} />
       ))}
       {toolParts.map((t, i) => (
         <ToolUseCard key={i} name={t.name ?? ""} input={t.input ?? ""} />
       ))}
     </div>
+  );
+}
+
+function AssistantProseBlock({ text, t }: { text: string; t: (key: string) => string }) {
+  const ctxItems = useMemo<MenuItem[]>(
+    () => [{ label: t("common.copy"), onSelect: () => void navigator.clipboard.writeText(text) }],
+    [text, t],
+  );
+  return (
+    <ContextMenu items={ctxItems}>
+      <div
+        className="session-prose"
+        dangerouslySetInnerHTML={{ __html: marked(text, { async: false }) as string }}
+      />
+    </ContextMenu>
   );
 }
 

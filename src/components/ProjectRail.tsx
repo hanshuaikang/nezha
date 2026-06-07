@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Plus, ChevronsRight, Search, PinOff } from "lucide-react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { useI18n } from "../i18n";
+import { writeClipboardText } from "./file-explorer/clipboard";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import s from "../styles";
 
 type ProjectStatus = "attention" | "running" | null;
@@ -76,6 +79,8 @@ function RailItem({
   attentionCount,
   showBadge,
   onSwitch,
+  onDeleteProject,
+  onToggleProjectHidden,
 }: {
   project: Project;
   isActive: boolean;
@@ -83,10 +88,32 @@ function RailItem({
   attentionCount: number;
   showBadge: boolean;
   onSwitch: (p: Project) => void;
+  onDeleteProject: (projectId: string) => void;
+  onToggleProjectHidden: (projectId: string) => void;
 }) {
   const [hov, setHov] = useState(false);
+  const { t } = useI18n();
+
+  const ctxItems: MenuItem[] = [
+    {
+      label: t("file.openInSystemFolder"),
+      onSelect: () => void invoke("open_in_system_file_manager", { path: project.path, projectPath: project.path }),
+    },
+    { label: t("file.copyFullPath"), onSelect: () => void writeClipboardText(project.path) },
+    { separator: true },
+    {
+      label: project.hiddenFromRail ? t("project.showInRail") : t("project.hideFromRail"),
+      onSelect: () => onToggleProjectHidden(project.id),
+    },
+    {
+      label: t("welcome.deleteProject"),
+      onSelect: () => onDeleteProject(project.id),
+      variant: "destructive",
+    },
+  ];
 
   return (
+    <ContextMenu items={ctxItems}>
     <button
       title={project.name}
       onClick={() => onSwitch(project)}
@@ -122,6 +149,7 @@ function RailItem({
         borderColor="var(--bg-sidebar)"
       />
     </button>
+    </ContextMenu>
   );
 }
 
@@ -132,6 +160,8 @@ function ProjectDrawer({
   showBadge,
   onSwitch,
   onClose,
+  onDeleteProject,
+  onToggleProjectHidden,
 }: {
   projects: Project[];
   allTasks: Task[];
@@ -139,6 +169,8 @@ function ProjectDrawer({
   showBadge: boolean;
   onSwitch: (p: Project) => void;
   onClose: () => void;
+  onDeleteProject: (projectId: string) => void;
+  onToggleProjectHidden: (projectId: string) => void;
 }) {
   const { t } = useI18n();
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -151,6 +183,9 @@ function ProjectDrawer({
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+        // Don't close drawer if clicking inside a Radix portal (context menu)
+        const target = e.target as HTMLElement;
+        if (target.closest("[data-radix-popper-content-wrapper]")) return;
         onClose();
       }
     }
@@ -234,14 +269,31 @@ function ProjectDrawer({
           const status = getProjectStatus(allTasks, project.id);
           const attentionCount = getAttentionCount(allTasks, project.id);
           const isActive = project.id === activeProjectId;
+          const ctxItems: MenuItem[] = [
+            {
+              label: t("file.openInSystemFolder"),
+              onSelect: () => void invoke("open_in_system_file_manager", { path: project.path, projectPath: project.path }),
+            },
+            { label: t("file.copyFullPath"), onSelect: () => void writeClipboardText(project.path) },
+            { separator: true },
+            {
+              label: project.hiddenFromRail ? t("project.showInRail") : t("project.hideFromRail"),
+              onSelect: () => onToggleProjectHidden(project.id),
+            },
+            {
+              label: t("welcome.deleteProject"),
+              onSelect: () => onDeleteProject(project.id),
+              variant: "destructive",
+            },
+          ];
           return (
-            <button
-              key={project.id}
-              onClick={() => {
-                onSwitch(project);
-                onClose();
-              }}
-              style={{
+            <ContextMenu key={project.id} items={ctxItems}>
+              <button
+                onClick={() => {
+                  onSwitch(project);
+                  onClose();
+                }}
+                style={{
                 width: "100%",
                 display: "flex",
                 alignItems: "center",
@@ -292,6 +344,7 @@ function ProjectDrawer({
                 />
               )}
             </button>
+            </ContextMenu>
           );
         })}
       </div>
@@ -307,6 +360,8 @@ export function ProjectRail({
   onSwitch,
   onOpen,
   singleProjectMode = false,
+  onDeleteProject,
+  onToggleProjectHidden,
 }: {
   projects: Project[];
   allTasks: Task[];
@@ -315,6 +370,8 @@ export function ProjectRail({
   onSwitch: (project: Project) => void;
   onOpen: () => void;
   singleProjectMode?: boolean;
+  onDeleteProject: (projectId: string) => void;
+  onToggleProjectHidden: (projectId: string) => void;
 }) {
   const { t } = useI18n();
   const [addHov, setAddHov] = useState(false);
@@ -357,6 +414,8 @@ export function ProjectRail({
             onSwitch(p);
             setDrawerOpen(false);
           }}
+          onDeleteProject={onDeleteProject}
+          onToggleProjectHidden={onToggleProjectHidden}
         />
       ))}
 
@@ -429,6 +488,8 @@ export function ProjectRail({
           showBadge={attentionBadge}
           onSwitch={onSwitch}
           onClose={() => setDrawerOpen(false)}
+          onDeleteProject={onDeleteProject}
+          onToggleProjectHidden={onToggleProjectHidden}
         />
       )}
     </div>

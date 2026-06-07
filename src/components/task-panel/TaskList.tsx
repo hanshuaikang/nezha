@@ -39,6 +39,13 @@ export function TaskList({
   onSelectTask,
   onDeleteTask,
   onToggleTaskStar,
+  onResumeTask,
+  onCancelTask,
+  onMarkTaskDone,
+  onRenameTask,
+  onMergeWorktree,
+  onDiscardWorktree,
+  onReconnectTask,
   onRunTodo,
 }: {
   tasks: Task[];
@@ -49,6 +56,13 @@ export function TaskList({
   onSelectTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
   onToggleTaskStar: (id: string) => void;
+  onResumeTask: (id: string) => void;
+  onCancelTask: (id: string) => void;
+  onMarkTaskDone: (id: string) => void;
+  onRenameTask: (id: string, name: string) => void;
+  onMergeWorktree: (id: string) => Promise<void>;
+  onDiscardWorktree: (id: string) => Promise<void>;
+  onReconnectTask: (id: string) => void;
   onRunTodo: (task: Task) => void;
 }) {
   const { t } = useI18n();
@@ -211,6 +225,13 @@ export function TaskList({
                   onClick={() => onSelectTask(row.task.id)}
                   onDelete={() => onDeleteTask(row.task.id)}
                   onToggleStar={() => onToggleTaskStar(row.task.id)}
+                  onResume={() => onResumeTask(row.task.id)}
+                  onCancel={() => onCancelTask(row.task.id)}
+                  onMarkDone={() => onMarkTaskDone(row.task.id)}
+                  onRename={(name) => onRenameTask(row.task.id, name)}
+                  onMergeWorktree={() => onMergeWorktree(row.task.id)}
+                  onDiscardWorktree={() => onDiscardWorktree(row.task.id)}
+                  onReconnect={() => onReconnectTask(row.task.id)}
                   onRunTodo={row.showRunTodo ? () => onRunTodo(row.task) : undefined}
                 />
               )}

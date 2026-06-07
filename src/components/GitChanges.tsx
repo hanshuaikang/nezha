@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import {
@@ -14,6 +14,8 @@ import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import s from "../styles";
 import { getGitStatusColor, getGitStatusLabel } from "../utils";
 import { useI18n } from "../i18n";
+import { writeClipboardText } from "./file-explorer/clipboard";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 interface GitFileChange {
   path: string;
@@ -121,8 +123,7 @@ export function GitChanges({
     }
   };
 
-  const handleDiscardFile = async (c: GitFileChange, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const doDiscardFile = async (c: GitFileChange) => {
     const untracked = c.status === "?";
     const name = fileName(c.path);
     const ok = await confirm(
@@ -147,6 +148,7 @@ export function GitChanges({
       await refresh({ clearError: false });
     }
   };
+
 
   const handleDiscardAll = async () => {
     const ok = await confirm(t("git.confirmDiscardAll"), {
@@ -397,7 +399,7 @@ export function GitChanges({
                           onFileSelect(c.path, false, `${fileName(c.path)} (unstaged)`)
                         }
                         onToggle={(e) => handleStageToggle(c, e)}
-                        onDiscard={(e) => handleDiscardFile(c, e)}
+                        onDiscard={() => doDiscardFile(c)}
                       />
                     ))}
                   </>
@@ -423,7 +425,7 @@ export function GitChanges({
                   change={c}
                   onFileClick={() => onFileSelect(c.path, false, `${fileName(c.path)} (untracked)`)}
                   onToggle={(e) => handleStageToggle(c, e)}
-                  onDiscard={(e) => handleDiscardFile(c, e)}
+                  onDiscard={() => doDiscardFile(c)}
                 />
               ))}
           </>
@@ -656,7 +658,7 @@ function FileRow({
   change: GitFileChange;
   onFileClick: () => void;
   onToggle: (e: React.MouseEvent) => void;
-  onDiscard?: (e: React.MouseEvent) => void;
+  onDiscard?: () => void;
 }) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
@@ -665,76 +667,102 @@ function FileRow({
   const color = getGitStatusColor(change.status);
   const label = getGitStatusLabel(change.status);
 
-  return (
-    <div
-      onClick={onFileClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "4px 10px 4px 14px",
-        cursor: "pointer",
-        background: hovered ? "var(--bg-hover)" : "transparent",
-        transition: "background 0.1s",
-      }}
-    >
-      {/* Status dot */}
-      <span
-        style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }}
-      />
+  const ctxItems = useMemo<MenuItem[]>(
+    () => [
+      {
+        label: change.staged ? t("git.unstage") : t("git.stage"),
+        onSelect: () => {
+          onToggle({ stopPropagation: () => {}, preventDefault: () => {} } as React.MouseEvent);
+        },
+      },
+      ...(onDiscard
+        ? [
+            {
+              label: t("git.discard"),
+              onSelect: () => onDiscard(),
+              variant: "destructive" as const,
+            },
+          ]
+        : []),
+      { separator: true },
+      { label: t("file.openFile"), onSelect: onFileClick },
+      { label: t("file.copyFullPath"), onSelect: () => void writeClipboardText(change.path) },
+    ],
+    [change.staged, change.path, onFileClick, onToggle, onDiscard, t],
+  );
 
-      {/* Status letter */}
-      <span
+  return (
+    <ContextMenu items={ctxItems}>
+      <div
+        onClick={onFileClick}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color,
-          flexShrink: 0,
-          width: 12,
-          textAlign: "center",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "4px 10px 4px 14px",
+          cursor: "pointer",
+          background: hovered ? "var(--bg-hover)" : "transparent",
+          transition: "background 0.1s",
         }}
       >
-        {label}
-      </span>
+        {/* Status dot */}
+        <span
+          style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }}
+        />
 
-      {/* Filename + dir */}
-      <span style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
-        <span style={{ fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500 }}>
-          {name}
+        {/* Status letter */}
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color,
+            flexShrink: 0,
+            width: 12,
+            textAlign: "center",
+          }}
+        >
+          {label}
         </span>
-        {dir && (
-          <span style={{ fontSize: 11, color: "var(--text-hint)", marginLeft: 5 }}>{dir}</span>
-        )}
-      </span>
 
-      {/* Discard + stage/unstage on hover */}
-      {hovered && (
-        <>
-          {onDiscard && (
-            <button onClick={onDiscard} title={t("git.discard")} style={s.gitChangesRowDiscardBtn}>
-              <Undo2 size={11} />
-            </button>
+        {/* Filename + dir */}
+        <span style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
+          <span style={{ fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500 }}>
+            {name}
+          </span>
+          {dir && (
+            <span style={{ fontSize: 11, color: "var(--text-hint)", marginLeft: 5 }}>{dir}</span>
           )}
-          <button
-            onClick={onToggle}
-            title={change.staged ? t("git.unstage") : t("git.stage")}
-            style={{
-              flexShrink: 0,
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-dim)",
-              borderRadius: 4,
-              fontSize: 10,
-              padding: "2px 6px",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-            }}
-          >
-            {change.staged ? "−" : "+"}
-          </button>
-        </>
-      )}
-    </div>
+        </span>
+
+        {/* Discard + stage/unstage on hover */}
+        {hovered && (
+          <>
+            {onDiscard && (
+              <button onClick={(e) => { e.stopPropagation(); onDiscard(); }} title={t("git.discard")} style={s.gitChangesRowDiscardBtn}>
+                <Undo2 size={11} />
+              </button>
+            )}
+            <button
+              onClick={onToggle}
+              title={change.staged ? t("git.unstage") : t("git.stage")}
+              style={{
+                flexShrink: 0,
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-dim)",
+                borderRadius: 4,
+                fontSize: 10,
+                padding: "2px 6px",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              {change.staged ? "−" : "+"}
+            </button>
+          </>
+        )}
+      </div>
+    </ContextMenu>
   );
 }

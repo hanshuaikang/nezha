@@ -24,14 +24,6 @@ export type FlatRow =
   | { kind: "node"; node: TreeNode; depth: number }
   | { kind: "input"; parentPath: string; depth: number; createKind: CreateKind };
 
-export interface ContextMenuState {
-  x: number;
-  y: number;
-  path: string;
-  isDir: boolean;
-  isRoot: boolean;
-}
-
 export const ROW_HEIGHT = 22;
 export const AUTO_REFRESH_MS = 2500;
 export const GITIGNORED_COLOR = "var(--icon-file-ignored)";

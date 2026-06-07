@@ -35,6 +35,8 @@ import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
 import type { OpenFileTab } from "../hooks/useProjectPanels";
 import type { ThemeVariant } from "../types";
 import { useI18n } from "../i18n";
+import { writeClipboardText } from "./file-explorer/clipboard";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 function isMarkdownFile(fileName: string): boolean {
   const ext = fileName.split(".").pop()?.toLowerCase();
@@ -626,71 +628,94 @@ export function FileViewer({
           {tabs.map((tab) => {
             const isActive = tab.path === activeTab.path;
             const fileColor = getFileColor(tab.name);
+            const tabIndex = tabs.indexOf(tab);
+            const ctxItems: MenuItem[] = [
+              { label: t("file.closeTab", { name: tab.name }), onSelect: () => onCloseTab(tab.path) },
+              {
+                label: t("file.closeOtherTabs"),
+                onSelect: () => tabs.filter((t2) => t2.path !== tab.path).forEach((t2) => onCloseTab(t2.path)),
+                disabled: tabs.length <= 1,
+              },
+              {
+                label: t("file.closeTabsToRight"),
+                onSelect: () => tabs.slice(tabIndex + 1).forEach((t2) => onCloseTab(t2.path)),
+                disabled: tabIndex >= tabs.length - 1,
+              },
+              { separator: true },
+              { label: t("file.copyFullPath"), onSelect: () => void writeClipboardText(tab.path) },
+            ];
             return (
-              <button
-                key={tab.path}
-                onClick={() => onSelectTab(tab.path)}
-                title={tab.path}
-                style={{
-                  height: "100%",
-                  minWidth: 0,
-                  maxWidth: 220,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "0 10px 0 12px",
-                  border: "none",
-                  borderRight: "1px solid var(--border-dim)",
-                  borderTop: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: isActive ? "var(--bg-panel)" : "transparent",
-                  fontSize: 12.5,
-                  fontWeight: isActive ? 500 : 400,
-                  color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    width: 5,
-                    height: 14,
-                    borderRadius: 2,
-                    background: fileColor,
-                    flexShrink: 0,
-                    display: "inline-block",
+              <ContextMenu key={tab.path} items={ctxItems}>
+                <button
+                  onClick={() => onSelectTab(tab.path)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      onCloseTab(tab.path);
+                    }
                   }}
-                />
-                <span
+                  title={tab.path}
                   style={{
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {tab.name}
-                </span>
-                <span
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onCloseTab(tab.path);
-                  }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "2px",
-                    borderRadius: 3,
+                    height: "100%",
+                    minWidth: 0,
+                    maxWidth: 220,
                     display: "flex",
                     alignItems: "center",
-                    color: "var(--text-hint)",
-                    marginLeft: 2,
+                    gap: 6,
+                    padding: "0 10px 0 12px",
+                    border: "none",
+                    borderRight: "1px solid var(--border-dim)",
+                    borderTop: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                    background: isActive ? "var(--bg-panel)" : "transparent",
+                    fontSize: 12.5,
+                    fontWeight: isActive ? 500 : 400,
+                    color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                    cursor: "pointer",
+                    flexShrink: 0,
                   }}
-                  role="button"
-                  aria-label={t("file.closeTab", { name: tab.name })}
                 >
-                  <X size={12} />
-                </span>
-              </button>
+                  <span
+                    style={{
+                      width: 5,
+                      height: 14,
+                      borderRadius: 2,
+                      background: fileColor,
+                      flexShrink: 0,
+                      display: "inline-block",
+                    }}
+                  />
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {tab.name}
+                  </span>
+                  <span
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCloseTab(tab.path);
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "2px",
+                      borderRadius: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      color: "var(--text-hint)",
+                      marginLeft: 2,
+                    }}
+                    role="button"
+                    aria-label={t("file.closeTab", { name: tab.name })}
+                  >
+                    <X size={12} />
+                  </span>
+                </button>
+              </ContextMenu>
             );
           })}
         </div>

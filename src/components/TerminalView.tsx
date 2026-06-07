@@ -32,6 +32,7 @@ interface TerminalViewProps {
   ) => number;
   onReady?: (generation: number) => void;
   themeVariant: ThemeVariant;
+  onRegisterTermInstance?: (term: Terminal | null) => void;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   isActive?: boolean;
@@ -46,6 +47,7 @@ export function TerminalView({
   onRegisterTerminal,
   onReady,
   themeVariant,
+  onRegisterTermInstance,
   terminalFontSize,
   monoFontFamily,
   isActive = true,
@@ -61,10 +63,12 @@ export function TerminalView({
   const onRegisterRef = useRef(onRegisterTerminal);
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
+  const onRegisterTermInstanceRef = useRef(onRegisterTermInstance);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const shiftEnterNewlineRef = useRef<boolean>(DEFAULT_SHIFT_ENTER_NEWLINE);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
+  onRegisterTermInstanceRef.current = onRegisterTermInstance;
 
   // Keep refs current on every render
   onInputRef.current = onInput;
@@ -87,6 +91,8 @@ export function TerminalView({
     const { term, fitAddon } = initTerminal(themeVariant, 1000, terminalFontSize, monoFontFamily);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    term.options.rightClickSelectsWord = false;
+    onRegisterTermInstanceRef.current?.(term);
 
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
@@ -175,6 +181,7 @@ export function TerminalView({
         /* ignore */
       }
       onRegisterRef.current(null);
+      onRegisterTermInstanceRef.current?.(null);
       fitAddonRef.current = null;
       disposeMacWebKitGuard();
       disposeInputFix();

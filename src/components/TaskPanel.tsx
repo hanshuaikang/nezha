@@ -27,6 +27,13 @@ export function TaskPanel({
   onDeleteTask,
   onDeleteAllTasks,
   onToggleTaskStar,
+  onResumeTask,
+  onCancelTask,
+  onMarkTaskDone,
+  onRenameTask,
+  onMergeWorktree,
+  onDiscardWorktree,
+  onReconnectTask,
   onRunTodo,
   onBack,
   backTitle,
@@ -58,6 +65,13 @@ export function TaskPanel({
   onDeleteTask: (id: string) => void;
   onDeleteAllTasks: () => void;
   onToggleTaskStar: (id: string) => void;
+  onResumeTask: (id: string) => void;
+  onCancelTask: (id: string) => void;
+  onMarkTaskDone: (id: string) => void;
+  onRenameTask: (id: string, name: string) => void;
+  onMergeWorktree: (id: string) => Promise<void>;
+  onDiscardWorktree: (id: string) => Promise<void>;
+  onReconnectTask: (id: string) => void;
   onRunTodo: (task: Task) => void;
   onBack: () => void;
   backTitle?: string;
@@ -205,6 +219,13 @@ export function TaskPanel({
         onSelectTask={onSelectTask}
         onDeleteTask={onDeleteTask}
         onToggleTaskStar={onToggleTaskStar}
+        onResumeTask={onResumeTask}
+        onCancelTask={onCancelTask}
+        onMarkTaskDone={onMarkTaskDone}
+        onRenameTask={onRenameTask}
+        onMergeWorktree={onMergeWorktree}
+        onDiscardWorktree={onDiscardWorktree}
+        onReconnectTask={onReconnectTask}
         onRunTodo={onRunTodo}
       />
       <div style={s.taskPanelFooter}>

@@ -841,7 +841,8 @@ function App() {
   async function handleDeleteTask(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
-    const promptPreview = `${task.prompt.slice(0, 100)}${task.prompt.length > 100 ? "..." : ""}`;
+    const display = (task.name || task.prompt).slice(0, 100);
+    const promptPreview = display.length < (task.name || task.prompt).length ? `${display}...` : display;
     const ok = await confirm(t("task.deletePrompt", { prompt: promptPreview }), {
       title: t("task.deleteTitle"),
       kind: "warning",
@@ -1095,7 +1096,10 @@ function App() {
   }, []);
 
   return (
-    <div style={{ ...s.root, position: "relative" }}>
+    <div
+      style={{ ...s.root, position: "relative" }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <div
         style={{
           position: "absolute",
@@ -1155,6 +1159,8 @@ function App() {
               onSwitchProject={handleProjectClick}
               onOpen={handleOpen}
               themeVariant={themeVariant}
+              onDeleteProject={handleDeleteProject}
+              onToggleProjectHidden={handleToggleProjectHidden}
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
               onThemeModeChange={setThemeMode}

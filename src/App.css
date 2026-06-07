@@ -205,6 +205,83 @@ body {
   color: var(--text-hint);
 }
 
+/* ── Context Menu (Radix) ─────────────────────────────────────────── */
+.ctx-menu {
+  min-width: 160px;
+  padding: 3px 0;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  box-shadow: var(--shadow-popover);
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+  animation: ctx-menu-fade-in 0.1s ease;
+  z-index: 2000;
+}
+
+.ctx-menu-item {
+  display: block;
+  width: calc(100% - 8px);
+  height: 26px;
+  padding: 0 10px;
+  margin: 2px 4px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+  line-height: 26px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  outline: none;
+  transition: background 0.1s;
+}
+
+.ctx-menu-item:hover,
+.ctx-menu-item[data-highlighted] {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.ctx-menu-item--destructive {
+  color: var(--danger-action-bg, #d23f3f);
+}
+
+.ctx-menu-item--destructive:hover,
+.ctx-menu-item--destructive[data-highlighted] {
+  background: var(--danger-action-bg, #d23f3f);
+  color: var(--danger-action-fg, #ffffff);
+}
+
+.ctx-menu-item--success {
+  color: var(--success);
+}
+
+.ctx-menu-item--success:hover,
+.ctx-menu-item--success[data-highlighted] {
+  background: rgba(46, 160, 67, 0.12);
+  color: var(--success);
+}
+
+.ctx-menu-item[data-disabled] {
+  color: var(--text-hint);
+  cursor: default;
+  pointer-events: none;
+}
+
+.ctx-menu-separator {
+  height: 1px;
+  background: var(--border-dim);
+  margin: 4px 6px;
+}
+
+@keyframes ctx-menu-fade-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* ── Animations ─────────────────────────────────────────────────── */
 @keyframes toast-in {
   from {

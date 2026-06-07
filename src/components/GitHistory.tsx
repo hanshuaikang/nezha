@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { getGitStatusColor } from "../utils";
 import { useI18n } from "../i18n";
+import { writeClipboardText } from "./file-explorer/clipboard";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 interface GitCommit {
   hash: string;
@@ -560,13 +562,25 @@ function CommitRow({
   isSelected: boolean;
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const hasBranch = commit.refs.some((r) => !r.startsWith("tag:") && !r.includes("HEAD"));
   const branchNames = commit.refs
     .filter((r) => !r.startsWith("tag:") && !r.includes("HEAD ->"))
     .map((r) => r.trim());
 
+  const ctxItems = useMemo<MenuItem[]>(
+    () => [
+      {
+        label: t("git.copyCommitHash"),
+        onSelect: () => void writeClipboardText(commit.hash),
+      },
+    ],
+    [commit.hash, t],
+  );
+
   return (
+    <ContextMenu items={ctxItems}>
     <div
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
@@ -648,6 +662,7 @@ function CommitRow({
         </div>
       </div>
     </div>
+    </ContextMenu>
   );
 }
 

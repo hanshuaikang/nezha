@@ -65,6 +65,8 @@ export function ProjectPage({
   onSwitchProject,
   onOpen,
   themeVariant,
+  onDeleteProject,
+  onToggleProjectHidden,
   themeMode,
   systemPrefersDark,
   onThemeModeChange,
@@ -131,6 +133,8 @@ export function ProjectPage({
   onSwitchProject: (project: Project) => void;
   onOpen: () => void;
   themeVariant: ThemeVariant;
+  onDeleteProject: (projectId: string) => void;
+  onToggleProjectHidden: (projectId: string) => void;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -288,6 +292,8 @@ export function ProjectPage({
         onSwitch={onSwitchProject}
         onOpen={onOpen}
         singleProjectMode={hubMode}
+        onDeleteProject={onDeleteProject}
+        onToggleProjectHidden={onToggleProjectHidden}
       />
       <TaskPanel
         project={project}
@@ -299,6 +305,13 @@ export function ProjectPage({
         onDeleteTask={onDeleteTask}
         onDeleteAllTasks={onDeleteAllTasks}
         onToggleTaskStar={onToggleTaskStar}
+        onResumeTask={onResumeTask}
+        onCancelTask={onCancelTask}
+        onMarkTaskDone={onMarkTaskDone}
+        onRenameTask={onRenameTask}
+        onMergeWorktree={(id) => onMergeWorktree(id)}
+        onDiscardWorktree={(id) => onDiscardWorktree(id)}
+        onReconnectTask={onReconnectTask}
         onRunTodo={onRunTodoTask}
         onBack={hubMode ? (onExitSkillHub ?? onBack) : onBack}
         backTitle={hubMode ? t("skill.taskView.back") : undefined}

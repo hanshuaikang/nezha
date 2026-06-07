@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import type { Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { Task, UsageWindow, TerminalFontSize, FontFamily, ThemeVariant } from "../types";
@@ -11,6 +12,8 @@ import { shortenPath, getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
+import { smartCopy } from "./terminalCopyHelper";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import s from "../styles";
 import {
   X,
@@ -43,6 +46,64 @@ function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`;
+}
+
+function TerminalContextMenu({
+  termRef,
+  onInput,
+  status,
+  onCancel,
+  onReconnect,
+  t,
+  children,
+}: {
+  termRef: React.RefObject<Terminal | null>;
+  onInput: (data: string) => void;
+  status: string;
+  onCancel: () => void;
+  onReconnect: () => void;
+  t: (key: string) => string;
+  children: React.ReactNode;
+}) {
+  const items = useMemo<MenuItem[]>(
+    () => [
+      {
+        label: t("terminal.copy"),
+        onSelect: () => {
+          const term = termRef.current;
+          if (term) void smartCopy(term);
+        },
+      },
+      {
+        label: t("terminal.paste"),
+        onSelect: () => {
+          void navigator.clipboard.readText().then((text) => {
+            if (text) onInput(text);
+          });
+        },
+      },
+      {
+        label: t("terminal.clear"),
+        onSelect: () => {
+          termRef.current?.clear();
+        },
+      },
+      {
+        label: t("terminal.selectAll"),
+        onSelect: () => {
+          termRef.current?.selectAll();
+        },
+      },
+      ...(status === "running" || status === "input_required" || status === "idle"
+        ? ([{ separator: true }, { label: t("running.cancel"), onSelect: onCancel, variant: "destructive" as const }] as MenuItem[])
+        : status === "detached"
+          ? ([{ separator: true }, { label: t("running.reconnect"), onSelect: onReconnect }] as MenuItem[])
+          : []),
+    ],
+    [termRef, onInput, status, onCancel, onReconnect, t],
+  );
+
+  return <ContextMenu items={items}>{children}</ContextMenu>;
 }
 
 function InlineWindow({ label, window }: { label: string; window: UsageWindow }) {
@@ -105,6 +166,7 @@ export function RunningView({
 }) {
   const { t } = useI18n();
   const { showToast } = useToast();
+  const termRef = useRef<Terminal | null>(null);
   const isActive =
     task.status === "pending" || task.status === "running" || task.status === "input_required";
   const isDetached = task.status === "detached";
@@ -124,6 +186,7 @@ export function RunningView({
   const [exporting, setExporting] = useState(false);
   const [bannerCompact, setBannerCompact] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleCancelRef = useRef(false);
   const interruptedBannerRef = useRef<HTMLDivElement>(null);
 
   const generateTooltip = generatingName
@@ -287,10 +350,15 @@ export function RunningView({
                   setEditingTitle(false);
                 }
                 if (e.key === "Escape") {
+                  titleCancelRef.current = true;
                   setEditingTitle(false);
                 }
               }}
               onBlur={() => {
+                if (titleCancelRef.current) {
+                  titleCancelRef.current = false;
+                  return;
+                }
                 onRename(editValue.trim());
                 setEditingTitle(false);
               }}
@@ -599,22 +667,25 @@ export function RunningView({
           )}
         </div>
       ) : isActive || !sessionPath ? (
-        <div style={s.terminalContainer}>
-          <TerminalView
-            key={`${task.id}-${runCount}`}
-            onInput={onInput}
-            onResize={onResize}
-            onRegisterTerminal={onRegisterTerminal}
-            onReady={onTerminalReady}
-            onSnapshot={onSnapshot}
-            themeVariant={themeVariant}
-            terminalFontSize={terminalFontSize}
-            monoFontFamily={monoFontFamily}
-            isActive={visible}
-            initialData={restoreState.initialData}
-            initialSnapshot={restoreState.initialSnapshot}
-          />
-        </div>
+        <TerminalContextMenu termRef={termRef} onInput={onInput} status={task.status} onCancel={onCancel} onReconnect={onReconnect} t={t}>
+          <div style={s.terminalContainer}>
+            <TerminalView
+              key={`${task.id}-${runCount}`}
+              onInput={onInput}
+              onResize={onResize}
+              onRegisterTerminal={onRegisterTerminal}
+              onReady={onTerminalReady}
+              onRegisterTermInstance={(term) => { termRef.current = term; }}
+              onSnapshot={onSnapshot}
+              themeVariant={themeVariant}
+              terminalFontSize={terminalFontSize}
+              monoFontFamily={monoFontFamily}
+              isActive={visible}
+              initialData={restoreState.initialData}
+              initialSnapshot={restoreState.initialSnapshot}
+            />
+          </div>
+        </TerminalContextMenu>
       ) : (
         <SessionView sessionPath={sessionPath} />
       )}
