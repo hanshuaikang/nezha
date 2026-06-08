@@ -16,6 +16,7 @@ mod hooks;
 mod notification;
 mod platform;
 mod pty;
+mod runtime;
 mod session;
 mod skills;
 mod storage;
@@ -211,6 +212,12 @@ pub fn run() {
             notification::get_notifications,
             notification::mark_notification_read,
             notification::mark_all_notifications_read,
+            runtime::wsl_to_unc_path,
+            runtime::unc_to_wsl_path,
+            runtime::wsl_list_distros,
+            runtime::wsl_check_distro,
+            runtime::wsl_detect_agent_versions,
+            runtime::wsl_validate_project_path,
             usage::read_usage_snapshot,
             hooks::get_hook_status,
             hooks::get_hook_readiness,

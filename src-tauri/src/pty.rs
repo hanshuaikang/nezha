@@ -1,12 +1,13 @@
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::runtime::ProjectRuntime;
 use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher};
 use crate::TaskManager;
 
@@ -24,6 +25,50 @@ fn task_attachments_dir(project_path: &str, task_id: &str) -> std::path::PathBuf
         .join(".nezha")
         .join("attachments")
         .join(task_id)
+}
+
+fn wsl_runtime(runtime: &Option<ProjectRuntime>) -> Option<(&str, &str, Option<&str>)> {
+    match runtime {
+        Some(ProjectRuntime::Wsl {
+            distro,
+            linux_path,
+            shell,
+            ..
+        }) => Some((distro.as_str(), linux_path.as_str(), shell.as_deref())),
+        _ => None,
+    }
+}
+
+fn wsl_prompt_paths(paths: Vec<String>, project_path: &str, linux_path: &str) -> Vec<String> {
+    let project_root = Path::new(project_path);
+    let linux_root = linux_path.trim_end_matches('/');
+    paths
+        .into_iter()
+        .map(|path| {
+            let path_ref = Path::new(&path);
+            let Ok(relative) = path_ref.strip_prefix(project_root) else {
+                return path;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            if relative.is_empty() {
+                linux_root.to_string()
+            } else {
+                format!("{}/{}", linux_root, relative)
+            }
+        })
+        .collect()
+}
+
+fn runtime_prompt_paths(
+    paths: Vec<String>,
+    project_path: &str,
+    runtime: &Option<ProjectRuntime>,
+) -> Vec<String> {
+    if let Some((_, linux_path, _)) = wsl_runtime(runtime) {
+        wsl_prompt_paths(paths, project_path, linux_path)
+    } else {
+        paths
+    }
 }
 
 fn has_task_session(app: &AppHandle, task_id: &str, is_codex: bool) -> bool {
@@ -58,7 +103,10 @@ fn finalize_task_exit(
         let tm = app.state::<TaskManager>();
         let mut cancelled = tm.cancelled_tasks.lock();
         let mut manually_completed = tm.manually_completed_tasks.lock();
-        (cancelled.remove(task_id), manually_completed.remove(task_id))
+        (
+            cancelled.remove(task_id),
+            manually_completed.remove(task_id),
+        )
     };
 
     let had_agent_session;
@@ -93,7 +141,11 @@ fn finalize_task_exit(
         return;
     }
 
-    let status = if exit_ok || had_agent_session { "done" } else { "failed" };
+    let status = if exit_ok || had_agent_session {
+        "done"
+    } else {
+        "failed"
+    };
     let payload = if status == "failed" {
         let reason = match exit_code {
             Some(code) => format!("Process exited with code {}", code),
@@ -269,7 +321,10 @@ fn send_pty_chunk(app: &AppHandle, id: &str, sink: &OutputSink, data: String) {
     match sink {
         OutputSink::Event { event_name, id_key } => {
             let mut payload = serde_json::Map::new();
-            payload.insert((*id_key).to_string(), serde_json::Value::String(id.to_string()));
+            payload.insert(
+                (*id_key).to_string(),
+                serde_json::Value::String(id.to_string()),
+            );
             payload.insert("data".to_string(), serde_json::Value::String(data));
             let _ = app.emit(event_name, serde_json::Value::Object(payload));
         }
@@ -322,29 +377,14 @@ fn spawn_pty_reader(
                             Ok(chunk) => {
                                 batch.push_str(&chunk);
                                 if batch.len() >= max_batch_bytes {
-                                    flush_pty_batch(
-                                        &emit_app,
-                                        &emit_id,
-                                        &worker_sink,
-                                        &mut batch,
-                                    );
+                                    flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                                 }
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                flush_pty_batch(
-                                    &emit_app,
-                                    &emit_id,
-                                    &worker_sink,
-                                    &mut batch,
-                                );
+                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                                flush_pty_batch(
-                                    &emit_app,
-                                    &emit_id,
-                                    &worker_sink,
-                                    &mut batch,
-                                );
+                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                                 break;
                             }
                         }
@@ -416,7 +456,11 @@ fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_
 
         if let Some(status) = exit_status {
             let exit_ok = status.success();
-            let exit_code = if exit_ok { None } else { Some(status.exit_code()) };
+            let exit_code = if exit_ok {
+                None
+            } else {
+                Some(status.exit_code())
+            };
             // 等待会话注册完成
             wait_for_session(&app, &task_id, is_codex);
             finalize_task_exit(&app, &task_id, &project_path, is_codex, exit_ok, exit_code);
@@ -430,6 +474,11 @@ fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_
 /// 为 Claude 命令构建 CommandBuilder，并根据 permission_mode 添加权限标志。
 fn build_claude_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
+    add_claude_permission_args(&mut c, permission_mode);
+    c
+}
+
+fn add_claude_permission_args(c: &mut CommandBuilder, permission_mode: &str) {
     match permission_mode {
         "ask" => {
             c.arg("--permission-mode");
@@ -444,12 +493,16 @@ fn build_claude_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
         }
         _ => {}
     }
-    c
 }
 
 /// 为 Codex 命令构建 CommandBuilder，并根据 permission_mode 添加全局执行标志。
 fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
+    add_codex_permission_args(&mut c, permission_mode);
+    c
+}
+
+fn add_codex_permission_args(c: &mut CommandBuilder, permission_mode: &str) {
     match permission_mode {
         "auto_edit" => {
             c.arg("--full-auto");
@@ -458,6 +511,32 @@ fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
             c.arg("--dangerously-bypass-approvals-and-sandbox");
         }
         _ => {}
+    }
+}
+
+fn build_wsl_agent_cmd(
+    distro: &str,
+    linux_path: &str,
+    agent: &str,
+    shell: Option<&str>,
+    permission_mode: &str,
+) -> CommandBuilder {
+    let mut c = CommandBuilder::new("wsl.exe");
+    let shell = crate::runtime::default_wsl_shell(shell);
+    let agent_script = crate::runtime::wsl_agent_shell_script(agent);
+    c.arg("-d");
+    c.arg(distro);
+    c.arg("--cd");
+    c.arg(linux_path);
+    c.arg("--exec");
+    c.arg(shell);
+    c.arg("-ic");
+    c.arg(agent_script);
+    c.arg("nezha-agent");
+    if agent == "codex" {
+        add_codex_permission_args(&mut c, permission_mode);
+    } else {
+        add_claude_permission_args(&mut c, permission_mode);
     }
     c
 }
@@ -470,6 +549,7 @@ pub async fn run_task(
     task_manager: State<'_, TaskManager>,
     task_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     prompt: String,
     agent: String,
     permission_mode: String,
@@ -495,7 +575,11 @@ pub async fn run_task(
         .map_err(|e| e.to_string())?;
 
     // 将图片保存至 .nezha/attachments/ 并获取文件路径
-    let image_paths = save_task_images(&project_path, &task_id, &images.unwrap_or_default())?;
+    let image_paths = runtime_prompt_paths(
+        save_task_images(&project_path, &task_id, &images.unwrap_or_default())?,
+        &project_path,
+        &runtime,
+    );
 
     // 将文本附件保存至 .nezha/attachments/ 并获取文件路径
     // 用 spawn_blocking 把同步文件 I/O 移出 Tokio runtime（AGENTS.md 要求）
@@ -507,9 +591,11 @@ pub async fn run_task(
             .await
             .map_err(|e| e.to_string())??
     };
+    let text_paths = runtime_prompt_paths(text_paths, &project_path, &runtime);
 
     // 若配置了项目级 prompt_prefix，则拼接到提示词前
-    let config = crate::config::read_project_config(project_path.clone()).unwrap_or_default();
+    let config =
+        crate::config::read_project_config(project_path.clone(), runtime.clone()).unwrap_or_default();
     let base_prompt = if config.agent.prompt_prefix.is_empty() {
         prompt.clone()
     } else {
@@ -520,23 +606,37 @@ pub async fn run_task(
     let prompt_with_images = if image_paths.is_empty() {
         base_prompt
     } else {
-        format!("{}\n\n[Attached images]\n{}", base_prompt, image_paths.join("\n"))
+        format!(
+            "{}\n\n[Attached images]\n{}",
+            base_prompt,
+            image_paths.join("\n")
+        )
     };
 
     // 将文本附件路径追加到提示词
     let final_prompt = if text_paths.is_empty() {
         prompt_with_images
     } else {
-        format!("{}\n\n[Attached text files — read these for full context]\n{}", prompt_with_images, text_paths.join("\n"))
+        format!(
+            "{}\n\n[Attached text files — read these for full context]\n{}",
+            prompt_with_images,
+            text_paths.join("\n")
+        )
     };
 
     let launch = crate::app_settings::get_agent_launch_spec(&agent);
-    let agent_bin = launch.program.clone();
+    let agent_bin = if wsl_runtime(&runtime).is_some() {
+        agent.clone()
+    } else {
+        launch.program.clone()
+    };
     let is_codex = agent == "codex";
+    let is_wsl = wsl_runtime(&runtime).is_some();
 
     // 版本统一走全局探测（带缓存），判断是否支持 --session-id。
     // 缓存未命中时 *_version_gte 会启子进程探测，故放进 spawn_blocking 避免阻塞 async runtime。
-    let use_explicit_session = !is_codex
+    let use_explicit_session = !is_wsl
+        && !is_codex
         && tokio::task::spawn_blocking(|| crate::app_settings::claude_version_gte("2.1.87"))
             .await
             .unwrap_or(false);
@@ -554,14 +654,27 @@ pub async fn run_task(
     // 会同时触发已安装 hook 与轮询 watcher,导致 session 注册/状态重复上报。
     // 先于 cmd 构建计算,因为 Codex 的 --dangerously-bypass-hook-trust 必须加在
     // `--`/positional prompt 之前。
-    let use_hooks = {
+    let use_hooks = if is_wsl {
+        false
+    } else {
         let agent = agent.clone();
         tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
             .await
             .unwrap_or(false)
     };
 
-    let mut cmd = if is_codex {
+    let mut cmd = if let Some((distro, linux_path, shell)) = wsl_runtime(&runtime) {
+        let mut c = build_wsl_agent_cmd(distro, linux_path, &agent_bin, shell, &permission_mode);
+        if is_codex {
+            if !final_prompt.is_empty() {
+                c.arg("--");
+                c.arg(&final_prompt);
+            }
+        } else if !final_prompt.is_empty() {
+            c.arg(&final_prompt);
+        }
+        c
+    } else if is_codex {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
         // Codex 对非 managed 的 command hook 默认要求 trust,Nezha 注入的是新 hash 会被
         // skip;由 Nezha 注入、来源可信,这里免 trust 直接运行。必须在 `--`/prompt 之前。
@@ -595,13 +708,17 @@ pub async fn run_task(
         }
         c
     };
-    cmd.cwd(&project_path);
+    if !is_wsl {
+        cmd.cwd(&project_path);
+    }
     setup_env(&mut cmd);
     if use_hooks {
         setup_nezha_env(&mut cmd, &task_id, &agent);
     }
-    for (key, value) in &launch.extra_env {
-        cmd.env(key, value);
+    if !is_wsl {
+        for (key, value) in &launch.extra_env {
+            cmd.env(key, value);
+        }
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -624,6 +741,7 @@ pub async fn run_task(
             app.clone(),
             task_id.clone(),
             project_path.clone(),
+            runtime.clone(),
             is_codex,
             session_rx,
             pre_session_id,
@@ -730,12 +848,7 @@ pub async fn complete_task(
 pub async fn get_active_task_ids(
     task_manager: State<'_, TaskManager>,
 ) -> Result<Vec<String>, String> {
-    Ok(task_manager
-        .child_handles
-        .lock()
-        .keys()
-        .cloned()
-        .collect())
+    Ok(task_manager.child_handles.lock().keys().cloned().collect())
 }
 
 #[tauri::command]
@@ -770,6 +883,7 @@ pub async fn resume_task(
     task_manager: State<'_, TaskManager>,
     task_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     agent: String,
     session_id: String,
     _prompt: String,
@@ -794,19 +908,36 @@ pub async fn resume_task(
         .map_err(|e| e.to_string())?;
 
     let launch = crate::app_settings::get_agent_launch_spec(&agent);
-    let agent_bin = launch.program.clone();
+    let is_wsl = wsl_runtime(&runtime).is_some();
+    let agent_bin = if is_wsl {
+        agent.clone()
+    } else {
+        launch.program.clone()
+    };
     // hook 可信时会话发现/状态由 event_watcher 驱动,跳过轮询 watcher;否则回退,
     // 且不注入 NEZHA_* 守卫变量,避免旧版但已安装 hook 的 agent 与轮询路径并行重复
     // 上报。版本统一走全局带缓存的探测。
     // 先于 cmd 构建计算,因 Codex 的 bypass flag 需加在 `resume` 子命令之前。
-    let use_hooks = {
+    let use_hooks = if is_wsl {
+        false
+    } else {
         let agent = agent.clone();
         tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
             .await
             .unwrap_or(false)
     };
 
-    let mut cmd = if agent == "codex" {
+    let mut cmd = if let Some((distro, linux_path, shell)) = wsl_runtime(&runtime) {
+        let mut c = build_wsl_agent_cmd(distro, linux_path, &agent_bin, shell, &permission_mode);
+        if agent == "codex" {
+            c.arg("resume");
+            c.arg(&session_id);
+        } else {
+            c.arg("--resume");
+            c.arg(&session_id);
+        }
+        c
+    } else if agent == "codex" {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
         // Nezha 注入的 hook 默认未信任会被 Codex skip;来源可信,免 trust 直接运行。
         if use_hooks {
@@ -829,13 +960,17 @@ pub async fn resume_task(
         }
         c
     };
-    cmd.cwd(&project_path);
+    if !is_wsl {
+        cmd.cwd(&project_path);
+    }
     setup_env(&mut cmd);
     if use_hooks {
         setup_nezha_env(&mut cmd, &task_id, &agent);
     }
-    for (key, value) in &launch.extra_env {
-        cmd.env(key, value);
+    if !is_wsl {
+        for (key, value) in &launch.extra_env {
+            cmd.env(key, value);
+        }
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -857,6 +992,7 @@ pub async fn resume_task(
             app.clone(),
             task_id.clone(),
             project_path.clone(),
+            runtime.clone(),
             session_id,
             is_codex,
         );
@@ -886,7 +1022,9 @@ pub async fn send_input(
 ) -> Result<(), String> {
     let mut writers = task_manager.pty_writers.lock();
     if let Some(writer) = writers.get_mut(&task_id) {
-        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -908,7 +1046,12 @@ pub async fn resize_pty(
     let masters = task_manager.pty_masters.lock();
     if let Some(master) = masters.get(&task_id) {
         master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -920,16 +1063,13 @@ pub async fn open_shell(
     task_manager: State<'_, TaskManager>,
     shell_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     cols: Option<u16>,
     rows: Option<u16>,
 ) -> Result<(), String> {
     // 先终止已存在的同 ID Shell
     {
-        let child_arc = task_manager
-            .child_handles
-            .lock()
-            .get(&shell_id)
-            .cloned();
+        let child_arc = task_manager.child_handles.lock().get(&shell_id).cloned();
         if let Some(arc) = child_arc {
             let _ = arc.lock().unwrap().kill();
         }
@@ -945,12 +1085,28 @@ pub async fn open_shell(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = crate::platform::default_shell_command();
-    let mut cmd = CommandBuilder::new(&shell.program);
-    for arg in &shell.args {
-        cmd.arg(arg);
+    let mut cmd = if let Some((distro, linux_path, shell)) = wsl_runtime(&runtime) {
+        let mut c = CommandBuilder::new("wsl.exe");
+        c.arg("-d");
+        c.arg(distro);
+        c.arg("--cd");
+        c.arg(linux_path);
+        c.arg("--exec");
+        c.arg(shell.unwrap_or("/bin/bash"));
+        c.arg("-l");
+        c
+    } else {
+        let shell = crate::platform::default_shell_command();
+        let mut c = CommandBuilder::new(&shell.program);
+        for arg in &shell.args {
+            c.arg(arg);
+        }
+        c.cwd(&project_path);
+        c
+    };
+    if wsl_runtime(&runtime).is_none() {
+        cmd.cwd(&project_path);
     }
-    cmd.cwd(&project_path);
     setup_env(&mut cmd);
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -988,11 +1144,7 @@ pub async fn kill_shell(
     task_manager: State<'_, TaskManager>,
     shell_id: String,
 ) -> Result<(), String> {
-    let child_arc = task_manager
-        .child_handles
-        .lock()
-        .get(&shell_id)
-        .cloned();
+    let child_arc = task_manager.child_handles.lock().get(&shell_id).cloned();
     if let Some(arc) = child_arc {
         let _ = arc.lock().unwrap().kill();
     }

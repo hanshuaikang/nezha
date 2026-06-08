@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { getGitStatusColor } from "../utils";
 import { useI18n } from "../i18n";
+import type { ProjectRuntime } from "../types";
 
 interface GitCommit {
   hash: string;
@@ -54,6 +55,7 @@ interface GitBranchInfo {
 
 interface Props {
   projectPath: string;
+  runtime?: ProjectRuntime;
   onCommitSelect: (hash: string, message: string) => void;
   onFileClick?: (hash: string, filePath: string, label: string) => void;
   width?: number;
@@ -68,7 +70,13 @@ function fileDir(path: string): string {
   return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
 }
 
-export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 280 }: Props) {
+export function GitHistory({
+  projectPath,
+  runtime,
+  onCommitSelect,
+  onFileClick,
+  width = 280,
+}: Props) {
   const { t } = useI18n();
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GitRemoteCounts>({
@@ -111,7 +119,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const loadBranches = useCallback(async () => {
     try {
-      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", { projectPath });
+      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", { projectPath, runtime });
       if (list === null) return; // Component unmounted
       setBranches(list);
       // Set initial branch to current if not yet set
@@ -122,7 +130,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     } catch {
       // ignore
     }
-  }, [projectPath, safeInvoke]);
+  }, [projectPath, runtime, safeInvoke]);
 
   const refresh = useCallback(
     async (query?: string, branch?: string) => {
@@ -133,12 +141,14 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         const [log, remote] = await Promise.all([
           safeInvoke<GitCommit[]>("git_log", {
             projectPath,
+            runtime,
             limit: 50,
             search: query ?? searchQuery,
             branch: activeBranch || null,
           }),
           safeInvoke<GitRemoteCounts>("git_remote_counts", {
             projectPath,
+            runtime,
             branch: activeBranch || null,
           }).catch(() => ({ ahead: 0, behind: 0, branch: "" })),
         ]);
@@ -151,7 +161,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         if (!isCancelled()) setLoading(false);
       }
     },
-    [projectPath, searchQuery, selectedBranch, safeInvoke, isCancelled],
+    [projectPath, runtime, searchQuery, selectedBranch, safeInvoke, isCancelled],
   );
 
   useEffect(() => {
@@ -186,6 +196,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       try {
         const detail = await safeInvoke<GitCommitDetail>("git_commit_detail", {
           projectPath,
+          runtime,
           commitHash: commit.hash,
         });
         if (detail === null) return; // Component unmounted
@@ -196,14 +207,14 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         if (!isCancelled()) setLoadingDetail(false);
       }
     },
-    [projectPath, onCommitSelect, safeInvoke, isCancelled],
+    [projectPath, runtime, onCommitSelect, safeInvoke, isCancelled],
   );
 
   const handlePull = async () => {
     setPulling(true);
     setError(null);
     try {
-      await safeInvoke("git_pull", { projectPath });
+      await safeInvoke("git_pull", { projectPath, runtime });
       if (!isCancelled()) refresh();
     } catch (e) {
       if (!isCancelled()) setError(String(e));
@@ -216,7 +227,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     setPushing(true);
     setError(null);
     try {
-      await safeInvoke("git_push", { projectPath, branch: selectedBranch || null });
+      await safeInvoke("git_push", { projectPath, runtime, branch: selectedBranch || null });
       if (!isCancelled()) {
         refresh();
         await loadBranches();

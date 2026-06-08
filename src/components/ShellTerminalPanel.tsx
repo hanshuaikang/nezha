@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
+import type { TerminalFontSize, FontFamily, ThemeVariant, ProjectRuntime } from "../types";
 import {
   themeFor,
   initTerminal,
@@ -41,6 +41,7 @@ interface ShellSession {
 
 interface Props {
   projectPath: string;
+  runtime?: ProjectRuntime;
   projectId: string;
   isActive?: boolean;
   onClose: () => void;
@@ -64,6 +65,7 @@ function createShellSession(projectId: string, index: number): ShellSession {
 const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   shellId: string;
   projectPath: string;
+  runtime?: ProjectRuntime;
   isActive: boolean;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
@@ -71,7 +73,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   onReady?: () => void;
 }>(
   function ShellTerminalInstance(
-    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
+    { shellId, projectPath, runtime, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -131,6 +133,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         invoke<void>("open_shell", {
           shellId,
           projectPath,
+          runtime,
           cols: term.cols,
           rows: term.rows,
         })
@@ -208,7 +211,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         term.dispose();
         invoke("kill_shell", { shellId }).catch(() => {});
       };
-    }, [shellId, projectPath]);
+    }, [shellId, projectPath, runtime]);
 
     useEffect(() => {
       if (!isActive) return;
@@ -283,6 +286,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
   function ShellTerminalPanel(
     {
       projectPath,
+      runtime,
       projectId,
       isActive = true,
       onClose,
@@ -420,6 +424,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 }}
                 shellId={shell.id}
                 projectPath={projectPath}
+                runtime={runtime}
                 isActive={isActive && activeShellId === shell.id}
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}

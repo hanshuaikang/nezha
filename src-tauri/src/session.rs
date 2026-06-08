@@ -7,7 +7,25 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::runtime::{linux_path_to_unc, parse_unc_wsl_path, ProjectRuntime};
 use crate::TaskManager;
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum SessionLocation {
+    Local {
+        path: String,
+    },
+    Wsl {
+        distro: String,
+        linux_path: String,
+        unc_path: Option<String>,
+    },
+}
 
 #[derive(Clone)]
 pub(crate) struct CodexSessionInfo {
@@ -120,7 +138,106 @@ fn session_modified_at(path: &Path) -> SystemTime {
 
 // ── Codex 会话监视器 ──────────────────────────────────────────────────────────
 
-fn codex_sessions_roots(project_path: &str) -> Vec<PathBuf> {
+fn wsl_home(distro: &str, linux_path: &str) -> Option<String> {
+    let mut command = std::process::Command::new("wsl.exe");
+    crate::subprocess::configure_background_command(&mut command);
+    let output = command
+        .arg("-d")
+        .arg(distro)
+        .arg("--cd")
+        .arg(linux_path)
+        .arg("--exec")
+        .arg("/bin/sh")
+        .arg("-lc")
+        .arg("printf %s \"$HOME\"")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let home = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if home.starts_with('/') { Some(home) } else { None }
+}
+
+fn pathbuf_from_unc(unc: String) -> PathBuf {
+    PathBuf::from(unc)
+}
+
+fn project_unc_for_runtime(project_path: &str, runtime: Option<&ProjectRuntime>) -> Option<String> {
+    match runtime {
+        Some(ProjectRuntime::Wsl {
+            distro,
+            linux_path,
+            unc_path,
+            ..
+        }) => unc_path
+            .clone()
+            .or_else(|| linux_path_to_unc(distro, linux_path).ok()),
+        _ => Some(project_path.to_string()),
+    }
+}
+
+fn session_location_from_path(path: &str, runtime: Option<&ProjectRuntime>) -> SessionLocation {
+    if matches!(runtime, Some(ProjectRuntime::Wsl { .. })) {
+        if let Ok(Some(wsl_path)) = parse_unc_wsl_path(path) {
+            return SessionLocation::Wsl {
+                distro: wsl_path.distro,
+                linux_path: wsl_path.linux_path,
+                unc_path: Some(path.to_string()),
+            };
+        }
+    }
+    SessionLocation::Local {
+        path: path.to_string(),
+    }
+}
+
+pub(crate) fn session_location_read_path(location: &SessionLocation) -> Result<String, String> {
+    match location {
+        SessionLocation::Local { path } => Ok(path.clone()),
+        SessionLocation::Wsl {
+            distro,
+            linux_path,
+            unc_path,
+        } => unc_path
+            .clone()
+            .or_else(|| linux_path_to_unc(distro, linux_path).ok())
+            .ok_or_else(|| "Cannot resolve WSL session UNC path".to_string()),
+    }
+}
+
+fn resolve_session_read_path(
+    session_path: Option<String>,
+    session_location: Option<SessionLocation>,
+) -> Result<String, String> {
+    if let Some(location) = session_location {
+        return session_location_read_path(&location);
+    }
+    session_path.ok_or_else(|| "Session path is required".to_string())
+}
+
+fn codex_sessions_roots(project_path: &str, runtime: Option<&ProjectRuntime>) -> Vec<PathBuf> {
+    if let Some(ProjectRuntime::Wsl {
+        distro,
+        linux_path,
+        ..
+    }) = runtime
+    {
+        let mut roots = Vec::new();
+        if let Some(project_unc) = project_unc_for_runtime(project_path, runtime) {
+            roots.push(pathbuf_from_unc(project_unc).join(".codex").join("sessions"));
+        }
+        if let Some(home) = wsl_home(distro, linux_path) {
+            if let Ok(home_unc) = linux_path_to_unc(distro, &home) {
+                let home_root = pathbuf_from_unc(home_unc).join(".codex").join("sessions");
+                if !roots.iter().any(|root| root == &home_root) {
+                    roots.push(home_root);
+                }
+            }
+        }
+        return roots;
+    }
+
     let mut roots = vec![PathBuf::from(project_path).join(".codex").join("sessions")];
     if let Some(home) = crate::platform::home_dir() {
         let home_root = home.join(".codex").join("sessions");
@@ -158,6 +275,23 @@ fn collect_session_files(dir: &Path, out: &mut Vec<PathBuf>) {
             .unwrap_or(false);
 
         if is_rollout_jsonl {
+            out.push(path);
+        }
+    }
+}
+
+fn collect_jsonl_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_jsonl_files(&path, out);
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
             out.push(path);
         }
     }
@@ -488,12 +622,20 @@ fn extract_patch_path(line: &str) -> Option<&str> {
 
 fn patch_target_requires_confirmation(path: &str, project_path: &Path) -> bool {
     let target = Path::new(path);
-    if !target.is_absolute() {
+    if !target.is_absolute() && !path.starts_with('/') {
         return false;
     }
 
     let temp_dir = std::env::temp_dir();
-    !target.starts_with(project_path) && !target.starts_with(&temp_dir)
+    !path_starts_with_path(path, project_path) && !path_starts_with_path(path, &temp_dir)
+}
+
+fn path_starts_with_path(path: &str, root: &Path) -> bool {
+    let path = path.replace('\\', "/");
+    let root = root.to_string_lossy().replace('\\', "/");
+    let root = root.trim_end_matches('/');
+
+    path == root || path.starts_with(&format!("{}/", root))
 }
 
 fn assistant_message_requests_user_input(payload: Option<&serde_json::Value>) -> bool {
@@ -521,7 +663,36 @@ fn assistant_message_requests_user_input(payload: Option<&serde_json::Value>) ->
 
 // ── Claude Code 会话监视器 ────────────────────────────────────────────────────
 
-fn claude_sessions_dir_for_project(project_path: &str) -> Option<PathBuf> {
+fn claude_sessions_dir_for_project(
+    project_path: &str,
+    runtime: Option<&ProjectRuntime>,
+) -> Option<PathBuf> {
+    if let Some(ProjectRuntime::Wsl {
+        distro,
+        linux_path,
+        ..
+    }) = runtime
+    {
+        let home = wsl_home(distro, linux_path)?;
+        let home_unc = linux_path_to_unc(distro, &home).ok()?;
+        let encoded: String = linux_path
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        return Some(
+            pathbuf_from_unc(home_unc)
+                .join(".claude")
+                .join("projects")
+                .join(encoded),
+        );
+    }
+
     let home = crate::platform::home_dir()?;
     let encoded: String = project_path
         .chars()
@@ -639,14 +810,22 @@ pub(crate) enum SessionContent {
 }
 
 #[tauri::command]
-pub async fn read_session_messages(session_path: String) -> Result<Vec<SessionMessage>, String> {
-    let content = std::fs::read_to_string(&session_path).map_err(|e| e.to_string())?;
-    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-    if is_codex_format(&lines) {
-        Ok(parse_codex_session(&lines))
-    } else {
-        Ok(parse_claude_session(&lines))
-    }
+pub async fn read_session_messages(
+    session_path: Option<String>,
+    session_location: Option<SessionLocation>,
+) -> Result<Vec<SessionMessage>, String> {
+    tokio::task::spawn_blocking(move || {
+        let read_path = resolve_session_read_path(session_path, session_location)?;
+        let content = std::fs::read_to_string(&read_path).map_err(|e| e.to_string())?;
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+        if is_codex_format(&lines) {
+            Ok(parse_codex_session(&lines))
+        } else {
+            Ok(parse_claude_session(&lines))
+        }
+    })
+    .await
+    .map_err(|e| format!("read_session_messages join error: {}", e))?
 }
 
 fn is_codex_format(lines: &[&str]) -> bool {
@@ -926,12 +1105,12 @@ pub(crate) fn validate_session_path(
     }
 
     let allowed_roots: Vec<PathBuf> = if is_codex {
-        codex_sessions_roots(project_path)
+        codex_sessions_roots(project_path, None)
             .into_iter()
             .filter_map(|p| p.canonicalize().ok())
             .collect()
     } else {
-        claude_sessions_dir_for_project(project_path)
+        claude_sessions_dir_for_project(project_path, None)
             .and_then(|p| p.canonicalize().ok())
             .into_iter()
             .collect()
@@ -1136,8 +1315,12 @@ fn is_uuid_like(s: &str) -> bool {
             .all(|p| p.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
-fn find_claude_session_file(session_id: &str, project_path: &str) -> Option<PathBuf> {
-    let sessions_dir = claude_sessions_dir_for_project(project_path)?;
+fn find_claude_session_file(
+    session_id: &str,
+    project_path: &str,
+    runtime: Option<&ProjectRuntime>,
+) -> Option<PathBuf> {
+    let sessions_dir = claude_sessions_dir_for_project(project_path, runtime)?;
 
     // Fast path: UUID session IDs map directly to filenames.
     if is_uuid_like(session_id) {
@@ -1187,9 +1370,13 @@ fn slug_matches_session_file(path: &Path, slug: &str) -> bool {
     false
 }
 
-fn find_codex_session_file(session_id: &str, project_path: &str) -> Option<PathBuf> {
+fn find_codex_session_file(
+    session_id: &str,
+    project_path: &str,
+    runtime: Option<&ProjectRuntime>,
+) -> Option<PathBuf> {
     let suffix = format!("-{}.jsonl", session_id);
-    let files = collect_session_files_from_roots(&codex_sessions_roots(project_path));
+    let files = collect_session_files_from_roots(&codex_sessions_roots(project_path, runtime));
     files
         .into_iter()
         .filter(|p| {
@@ -1199,6 +1386,152 @@ fn find_codex_session_file(session_id: &str, project_path: &str) -> Option<PathB
                 .unwrap_or(false)
         })
         .max_by_key(|p| session_modified_at(p))
+}
+
+fn uuid_from_text(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 36 {
+        return None;
+    }
+
+    for start in 0..=(bytes.len() - 36) {
+        let Ok(candidate) = std::str::from_utf8(&bytes[start..start + 36]) else {
+            continue;
+        };
+        if is_uuid_like(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+fn session_id_from_file_path(path: &Path, is_codex: bool) -> Option<String> {
+    let name = path.file_name()?.to_str()?;
+    if is_codex {
+        return uuid_from_text(name);
+    }
+
+    let stem = path.file_stem()?.to_str()?;
+    if is_uuid_like(stem) {
+        Some(stem.to_string())
+    } else {
+        None
+    }
+}
+
+fn try_register_and_watch_session_path(
+    app: &AppHandle,
+    task_id: &str,
+    project_path: &str,
+    session_path: PathBuf,
+    runtime: Option<ProjectRuntime>,
+    is_codex: bool,
+) -> bool {
+    let Some(session_id) = session_id_from_file_path(&session_path, is_codex) else {
+        return false;
+    };
+    let path_string = session_path.to_string_lossy().into_owned();
+    let session_location = session_location_from_path(&path_string, runtime.as_ref());
+
+    if !claim_session_path(app, &path_string) {
+        return false;
+    }
+
+    if is_codex {
+        let tm = app.state::<TaskManager>();
+        tm.codex_sessions.lock().insert(
+            task_id.to_string(),
+            CodexSessionInfo {
+                session_id: session_id.clone(),
+                session_path: path_string.clone(),
+            },
+        );
+    } else {
+        let tm = app.state::<TaskManager>();
+        tm.claude_sessions.lock().insert(
+            task_id.to_string(),
+            ClaudeSessionInfo {
+                session_id: session_id.clone(),
+                session_path: path_string.clone(),
+                is_placeholder: false,
+            },
+        );
+    }
+
+    let _ = app.emit(
+        "task-session",
+        serde_json::json!({
+            "task_id": task_id,
+            "session_id": session_id,
+            "session_path": path_string,
+            "session_location": session_location,
+        }),
+    );
+
+    if is_codex {
+        let project_path = PathBuf::from(project_path);
+        let app = app.clone();
+        let task_id = task_id.to_string();
+        thread::spawn(move || watch_codex_session(app, task_id, session_path, project_path));
+    } else {
+        let app = app.clone();
+        let task_id = task_id.to_string();
+        thread::spawn(move || watch_claude_session(app, task_id, session_path));
+    }
+
+    true
+}
+
+fn spawn_session_file_polling_watcher(
+    app: AppHandle,
+    task_id: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    is_codex: bool,
+) {
+    thread::spawn(move || {
+        let start_time = SystemTime::now()
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
+        while is_task_active(&app, &task_id) {
+            let roots = if is_codex {
+                codex_sessions_roots(&project_path, runtime.as_ref())
+            } else {
+                claude_sessions_dir_for_project(&project_path, runtime.as_ref())
+                    .into_iter()
+                    .collect()
+            };
+            let mut files = if is_codex {
+                collect_session_files_from_roots(&roots)
+            } else {
+                let mut files = Vec::new();
+                for root in &roots {
+                    collect_jsonl_files(root, &mut files);
+                }
+                files
+            }
+            .into_iter()
+            .filter(|path| session_modified_at(path) >= start_time)
+            .collect::<Vec<_>>();
+
+            files.sort_by_key(|path| std::cmp::Reverse(session_modified_at(path)));
+            for file in files {
+                if try_register_and_watch_session_path(
+                    &app,
+                    &task_id,
+                    &project_path,
+                    file,
+                    runtime.clone(),
+                    is_codex,
+                ) {
+                    return;
+                }
+            }
+
+            thread::sleep(Duration::from_millis(500));
+        }
+    });
 }
 
 // ── /status-based session discovery ──────────────────────────────────────────
@@ -1243,12 +1576,17 @@ fn extract_codex_status_session_id(output: &str) -> Option<String> {
 }
 
 /// 轮询最多 5 秒，直到会话文件出现。
-fn wait_for_session_file(session_id: &str, project_path: &str, is_codex: bool) -> Option<PathBuf> {
+fn wait_for_session_file(
+    session_id: &str,
+    project_path: &str,
+    runtime: Option<&ProjectRuntime>,
+    is_codex: bool,
+) -> Option<PathBuf> {
     for _ in 0..50 {
         let path = if is_codex {
-            find_codex_session_file(session_id, project_path)
+            find_codex_session_file(session_id, project_path, runtime)
         } else {
-            find_claude_session_file(session_id, project_path)
+            find_claude_session_file(session_id, project_path, runtime)
         };
         if path.is_some() {
             return path;
@@ -1264,13 +1602,15 @@ pub(crate) fn register_and_watch_session(
     task_id: &str,
     session_id: &str,
     project_path: &str,
+    runtime: Option<ProjectRuntime>,
     is_codex: bool,
 ) {
-    let path = match wait_for_session_file(session_id, project_path, is_codex) {
+    let path = match wait_for_session_file(session_id, project_path, runtime.as_ref(), is_codex) {
         Some(p) => p,
         None => return,
     };
     let path_string = path.to_string_lossy().into_owned();
+    let session_location = session_location_from_path(&path_string, runtime.as_ref());
 
     if !claim_session_path(app, &path_string) {
         return;
@@ -1302,7 +1642,8 @@ pub(crate) fn register_and_watch_session(
         serde_json::json!({
             "task_id": task_id,
             "session_id": session_id,
-            "session_path": path_string
+            "session_path": path_string,
+            "session_location": session_location
         }),
     );
 
@@ -1383,13 +1724,15 @@ fn spawn_claude_lazy_session_attach(
     task_id: String,
     session_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
 ) {
     thread::spawn(move || {
-        let Some(sessions_dir) = claude_sessions_dir_for_project(&project_path) else {
+        let Some(sessions_dir) = claude_sessions_dir_for_project(&project_path, runtime.as_ref()) else {
             return;
         };
         let expected = sessions_dir.join(format!("{}.jsonl", session_id));
         let path_string = expected.to_string_lossy().into_owned();
+        let session_location = session_location_from_path(&path_string, runtime.as_ref());
 
         if !claim_session_path(&app, &path_string) {
             return;
@@ -1413,6 +1756,7 @@ fn spawn_claude_lazy_session_attach(
                 "task_id": task_id,
                 "session_id": session_id,
                 "session_path": path_string,
+                "session_location": session_location,
             }),
         );
 
@@ -1477,18 +1821,25 @@ pub(crate) fn spawn_status_session_watcher(
     app: AppHandle,
     task_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     is_codex: bool,
     rx: mpsc::Receiver<String>,
     pre_session_id: Option<String>,
     prompt_empty: bool,
 ) {
+    if matches!(runtime.as_ref(), Some(ProjectRuntime::Wsl { .. })) {
+        spawn_session_file_polling_watcher(app, task_id, project_path, runtime, is_codex);
+        drop(rx);
+        return;
+    }
+
     // ── Claude 空 prompt 快速路径：session id 已知，文件 lazy 等 ──
     // 空 prompt 启动时 Claude 进入 REPL，要等用户实际发出首条消息才落盘 session 文件，
     // 走标准路径 wait_for_session_file 必然超时；这里直接用预生成 UUID 立刻广播，
     // 后台再无限等文件出现后 attach 监听。
     if let Some(ref sid) = pre_session_id {
         if !is_codex && prompt_empty {
-            spawn_claude_lazy_session_attach(app, task_id, sid.clone(), project_path);
+            spawn_claude_lazy_session_attach(app, task_id, sid.clone(), project_path, runtime);
             return;
         }
     }
@@ -1499,10 +1850,11 @@ pub(crate) fn spawn_status_session_watcher(
             let app2 = app.clone();
             let tid2 = task_id.clone();
             let pp2 = project_path.clone();
+            let runtime2 = runtime.clone();
             let sid2 = sid.clone();
             thread::spawn(move || {
                 // 等待 Claude 创建 session 文件，最长 10 秒
-                register_and_watch_session(&app2, &tid2, &sid2, &pp2, false);
+                register_and_watch_session(&app2, &tid2, &sid2, &pp2, runtime2.clone(), false);
 
                 // 如果 register_and_watch_session 无法找到文件（内部 wait_for_session_file 超时），
                 // 检查是否已经成功注册；若未注册则回退到旧的 /status 流程。
@@ -1519,7 +1871,7 @@ pub(crate) fn spawn_status_session_watcher(
                 }
 
                 // 回退：启动旧的 /status 流程
-                run_status_session_watcher(app2, tid2, pp2, false, rx);
+                run_status_session_watcher(app2, tid2, pp2, runtime2, false, rx);
             });
             return;
         }
@@ -1527,7 +1879,7 @@ pub(crate) fn spawn_status_session_watcher(
 
     // ── 原始路径：Codex 或 Claude < 2.1.87 ──
     thread::spawn(move || {
-        run_status_session_watcher(app, task_id, project_path, is_codex, rx);
+        run_status_session_watcher(app, task_id, project_path, runtime, is_codex, rx);
     });
 }
 
@@ -1536,6 +1888,7 @@ fn run_status_session_watcher(
     app: AppHandle,
     task_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     is_codex: bool,
     rx: mpsc::Receiver<String>,
 ) {
@@ -1609,7 +1962,14 @@ fn run_status_session_watcher(
                     };
 
                     if let Some(sid) = session_id {
-                        register_and_watch_session(&app, &task_id, &sid, &project_path, is_codex);
+                        register_and_watch_session(
+                            &app,
+                            &task_id,
+                            &sid,
+                            &project_path,
+                            runtime.clone(),
+                            is_codex,
+                        );
                         // Claude Code 的 /status 以全屏面板形式展示，需发送 ESC 关闭；
                         // Codex 无此面板，无需处理
                         if !is_codex {
@@ -1634,11 +1994,19 @@ pub(crate) fn spawn_resume_session_watcher(
     app: AppHandle,
     task_id: String,
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     session_id: String,
     is_codex: bool,
 ) {
     thread::spawn(move || {
-        register_and_watch_session(&app, &task_id, &session_id, &project_path, is_codex);
+        register_and_watch_session(
+            &app,
+            &task_id,
+            &session_id,
+            &project_path,
+            runtime,
+            is_codex,
+        );
     });
 }
 
@@ -1665,17 +2033,21 @@ pub struct ExportTaskMeta {
 
 #[tauri::command]
 pub async fn export_session_markdown(
-    session_path: String,
+    session_path: Option<String>,
+    session_location: Option<SessionLocation>,
     project_path: String,
     is_codex: bool,
     output_path: String,
     task_meta: ExportTaskMeta,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        let validate_legacy_path = session_location.is_none();
+        let read_path = resolve_session_read_path(session_path, session_location)?;
         export_session_markdown_inner(
-            &session_path,
+            &read_path,
             &project_path,
             is_codex,
+            validate_legacy_path,
             &output_path,
             &task_meta,
         )
@@ -1688,10 +2060,22 @@ fn export_session_markdown_inner(
     session_path: &str,
     project_path: &str,
     is_codex: bool,
+    validate_legacy_path: bool,
     output_path: &str,
     meta: &ExportTaskMeta,
 ) -> Result<(), String> {
-    let canonical = validate_session_path(session_path, project_path, is_codex)?;
+    let canonical = if validate_legacy_path {
+        validate_session_path(session_path, project_path, is_codex)?
+    } else {
+        let path = Path::new(session_path);
+        if !path.is_absolute() {
+            return Err("Session path must be absolute".into());
+        }
+        if !path.is_file() {
+            return Err("Session path is not a regular file".into());
+        }
+        path.to_path_buf()
+    };
     let canonical_out = validate_export_output_path(output_path)?;
 
     let metadata = fs::metadata(&canonical)

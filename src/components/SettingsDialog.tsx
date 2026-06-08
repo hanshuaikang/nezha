@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as RadixSelect from "@radix-ui/react-select";
-import { X, FolderOpen, ChevronDown, Check } from "lucide-react";
-import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
+import { X, FolderOpen, ChevronDown, Check, Copy, RefreshCw } from "lucide-react";
+import {
+  permissionModeLabel,
+  type PermissionMode,
+  type AgentType,
+  type ProjectRuntime,
+} from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
+import { writeClipboardText } from "./file-explorer/clipboard";
 
 interface ProjectConfig {
   agent: {
@@ -70,7 +76,15 @@ function Select({
   );
 }
 
-function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClose: () => void }) {
+function ProjectSettings({
+  projectPath,
+  runtime,
+  onClose,
+}: {
+  projectPath: string;
+  runtime?: ProjectRuntime;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [agentDefault, setAgentDefault] = useState("claude");
@@ -79,9 +93,11 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
   const [commitPrompt, setCommitPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runtimeCheck, setRuntimeCheck] = useState<string | null>(null);
+  const [checkingRuntime, setCheckingRuntime] = useState(false);
 
   useEffect(() => {
-    invoke<ProjectConfig>("read_project_config", { projectPath })
+    invoke<ProjectConfig>("read_project_config", { projectPath, runtime })
       .then((c) => {
         setConfig(c);
         setAgentDefault(c.agent.default);
@@ -93,7 +109,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         setCommitPrompt(c.git.commit_prompt);
       })
       .catch((e) => setError(String(e)));
-  }, [projectPath]);
+  }, [projectPath, runtime]);
 
   async function handleSave() {
     setSaving(true);
@@ -101,6 +117,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     try {
       await invoke("write_project_config", {
         projectPath,
+        runtime,
         config: {
           agent: {
             default: agentDefault,
@@ -118,6 +135,27 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     }
   }
 
+  async function checkRuntimeHealth() {
+    if (runtime?.kind !== "wsl") return;
+    setCheckingRuntime(true);
+    setRuntimeCheck(null);
+    try {
+      const result = await invoke<{ available: boolean; gitPath: string; error?: string | null }>(
+        "wsl_check_distro",
+        { distro: runtime.distro },
+      );
+      setRuntimeCheck(
+        result.available
+          ? t("settings.runtimeHealthOk", { git: result.gitPath || t("common.notDetected") })
+          : (result.error ?? t("settings.runtimeHealthFailed")),
+      );
+    } catch (e) {
+      setRuntimeCheck(String(e));
+    } finally {
+      setCheckingRuntime(false);
+    }
+  }
+
   return (
     <>
       <div style={s.settingsBody}>
@@ -129,6 +167,38 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
         )}
         {config && (
           <>
+            <div style={s.modalSection}>
+              <div style={s.modalSectionTitle}>{t("settings.runtime")}</div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>{t("settings.runtimeKind")}</label>
+                <div style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+                  {runtime?.kind === "wsl" ? `WSL: ${runtime.distro}` : t("settings.runtimeLocal")}
+                </div>
+              </div>
+              {runtime?.kind === "wsl" && (
+                <>
+                  <ReadonlyRuntimePath label={t("settings.linuxPath")} value={runtime.linuxPath} />
+                  {runtime.uncPath && (
+                    <ReadonlyRuntimePath label={t("settings.uncPath")} value={runtime.uncPath} />
+                  )}
+                  <button
+                    type="button"
+                    style={s.modalCancelBtn}
+                    onClick={checkRuntimeHealth}
+                    disabled={checkingRuntime}
+                  >
+                    <RefreshCw size={13} className={checkingRuntime ? "spin" : undefined} />
+                    {t("settings.checkRuntimeHealth")}
+                  </button>
+                  {runtimeCheck && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
+                      {runtimeCheck}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <div style={s.modalSection}>
               <div style={s.modalSectionTitle}>{t("settings.agent")}</div>
               <div style={s.modalField}>
@@ -214,11 +284,34 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
   );
 }
 
+function ReadonlyRuntimePath({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={s.modalField}>
+      <label style={s.modalLabel}>{label}</label>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <code style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+          {value}
+        </code>
+        <button
+          type="button"
+          style={s.toolbarIconBtn}
+          onClick={() => void writeClipboardText(value)}
+          title={label}
+        >
+          <Copy size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsDialog({
   projectPath,
+  runtime,
   onClose,
 }: {
   projectPath: string;
+  runtime?: ProjectRuntime;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -263,7 +356,7 @@ export function SettingsDialog({
           </div>
 
           {activeNav === "project" && (
-            <ProjectSettings projectPath={projectPath} onClose={onClose} />
+            <ProjectSettings projectPath={projectPath} runtime={runtime} onClose={onClose} />
           )}
         </div>
       </div>

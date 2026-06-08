@@ -33,7 +33,7 @@ import { r } from "@codemirror/legacy-modes/mode/r";
 import type { Extension } from "@codemirror/state";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
 import type { OpenFileTab } from "../hooks/useProjectPanels";
-import type { ThemeVariant } from "../types";
+import type { ProjectRuntime, ThemeVariant } from "../types";
 import { useI18n } from "../i18n";
 
 function isMarkdownFile(fileName: string): boolean {
@@ -274,12 +274,14 @@ function FilePreviewPane({
   filePath,
   fileName,
   projectPath,
+  runtime,
   themeVariant,
   previewMode,
 }: {
   filePath: string;
   fileName: string;
   projectPath: string;
+  runtime?: ProjectRuntime;
   themeVariant: ThemeVariant;
   previewMode: boolean;
 }) {
@@ -342,12 +344,12 @@ function FilePreviewPane({
     setSaveStatus("idle");
 
     const loadFile = isPreviewableImage
-      ? invoke<ImagePreviewData>("read_image_preview", { path: filePath, projectPath }).then((preview) => {
+      ? invoke<ImagePreviewData>("read_image_preview", { path: filePath, projectPath, runtime }).then((preview) => {
           if (cancelled) return;
           setImagePreview(preview);
           setLoading(false);
         })
-      : invoke<string>("read_file_content", { path: filePath, projectPath }).then((nextContent) => {
+      : invoke<string>("read_file_content", { path: filePath, projectPath, runtime }).then((nextContent) => {
           if (cancelled) return;
           setContent(nextContent);
           setLoading(false);
@@ -363,7 +365,7 @@ function FilePreviewPane({
     return () => {
       cancelled = true;
     };
-  }, [filePath, projectPath, isPreviewableImage]);
+  }, [filePath, projectPath, runtime, isPreviewableImage]);
 
   useEffect(
     () => () => {
@@ -382,7 +384,7 @@ function FilePreviewPane({
     setSaveStatus("saving");
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await invoke("write_file_content", { path: filePath, content: value, projectPath });
+        await invoke("write_file_content", { path: filePath, content: value, projectPath, runtime });
         setSaveStatus("saved");
         savedResetRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
       } catch {
@@ -541,6 +543,7 @@ export function FileViewer({
   tabs,
   activeFilePath,
   projectPath,
+  runtime,
   onSelectTab,
   onCloseTab,
   onCloseOtherTabs,
@@ -552,6 +555,7 @@ export function FileViewer({
   tabs: OpenFileTab[];
   activeFilePath: string | null;
   projectPath: string;
+  runtime?: ProjectRuntime;
   onSelectTab: (path: string) => void;
   onCloseTab: (path: string) => void;
   onCloseOtherTabs: (path: string) => void;
@@ -827,6 +831,7 @@ export function FileViewer({
                 filePath={tab.path}
                 fileName={tab.name}
                 projectPath={projectPath}
+                runtime={runtime}
                 themeVariant={themeVariant}
                 previewMode={!!previewModes[tab.path]}
               />

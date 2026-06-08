@@ -4,7 +4,42 @@ use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+use crate::runtime::ProjectRuntime;
+
 // ── 辅助函数 ─────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug)]
+enum GitRuntime {
+    Local { project_path: String },
+    Wsl { distro: String, linux_path: String },
+}
+
+impl GitRuntime {
+    fn from(project_path: String, runtime: Option<ProjectRuntime>) -> Self {
+        match runtime {
+            Some(ProjectRuntime::Wsl {
+                distro, linux_path, ..
+            }) => Self::Wsl { distro, linux_path },
+            _ => Self::Local { project_path },
+        }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::Local { project_path } => validate_project_path(project_path),
+            Self::Wsl { linux_path, .. } => {
+                if !linux_path.starts_with('/') {
+                    return Err("WSL project path must be an absolute Linux path".to_string());
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn is_wsl(&self) -> bool {
+        matches!(self, Self::Wsl { .. })
+    }
+}
 
 /// Validate that project_path is absolute and looks like a real project directory.
 fn validate_project_path(project_path: &str) -> Result<(), String> {
@@ -42,6 +77,33 @@ fn run_git<S: AsRef<std::ffi::OsStr>>(
         .current_dir(project_path)
         .output()
         .map_err(|e| e.to_string())
+}
+
+fn run_git_for_runtime<S: AsRef<std::ffi::OsStr>>(
+    ctx: &GitRuntime,
+    args: &[S],
+) -> Result<std::process::Output, String> {
+    ctx.validate()?;
+
+    let mut cmd = match ctx {
+        GitRuntime::Local { project_path } => {
+            let mut cmd = std::process::Command::new("git");
+            cmd.current_dir(project_path);
+            cmd
+        }
+        GitRuntime::Wsl { distro, linux_path } => {
+            let mut cmd = std::process::Command::new("wsl.exe");
+            cmd.arg("-d")
+                .arg(distro)
+                .arg("--cd")
+                .arg(linux_path)
+                .arg("--exec")
+                .arg("git");
+            cmd
+        }
+    };
+    crate::subprocess::configure_background_command(&mut cmd);
+    cmd.args(args).output().map_err(|e| e.to_string())
 }
 
 async fn read_pipe_to_end<R: AsyncRead + Unpin>(
@@ -114,9 +176,93 @@ async fn run_git_with_timeout(
     })
 }
 
+async fn run_git_with_timeout_for_runtime(
+    ctx: GitRuntime,
+    args: Vec<String>,
+    timeout: Duration,
+) -> Result<Output, String> {
+    ctx.validate()?;
+
+    let mut cmd = match &ctx {
+        GitRuntime::Local { project_path } => {
+            let mut cmd = tokio::process::Command::new("git");
+            cmd.current_dir(project_path);
+            cmd
+        }
+        GitRuntime::Wsl { distro, linux_path } => {
+            let mut cmd = tokio::process::Command::new("wsl.exe");
+            cmd.arg("-d")
+                .arg(distro)
+                .arg("--cd")
+                .arg(linux_path)
+                .arg("--exec")
+                .arg("git");
+            cmd
+        }
+    };
+    crate::subprocess::configure_background_tokio_command(&mut cmd);
+    let mut child = cmd
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture git stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture git stderr".to_string())?;
+
+    let stdout_task = tokio::spawn(read_pipe_to_end(stdout, "stdout"));
+    let stderr_task = tokio::spawn(read_pipe_to_end(stderr, "stderr"));
+
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(result) => result.map_err(|e| e.to_string())?,
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+            stdout_task.abort();
+            stderr_task.abort();
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(format!("Git 命令执行超时（{}秒）", timeout.as_secs()));
+        }
+    };
+
+    let stdout = stdout_task
+        .await
+        .map_err(|e| format!("Git stdout task failed: {}", e))??;
+    let stderr = stderr_task
+        .await
+        .map_err(|e| format!("Git stderr task failed: {}", e))??;
+
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 /// 执行 git 命令，若退出码非零则将 stderr 作为错误返回。
+#[cfg(test)]
 fn run_git_check<S: AsRef<std::ffi::OsStr>>(project_path: &str, args: &[S]) -> Result<(), String> {
     let output = run_git(project_path, args)?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+fn run_git_check_for_runtime<S: AsRef<std::ffi::OsStr>>(
+    ctx: &GitRuntime,
+    args: &[S],
+) -> Result<(), String> {
+    let output = run_git_for_runtime(ctx, args)?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -148,6 +294,26 @@ fn git_worktree_root(project_path: &str) -> Result<PathBuf, String> {
     Ok(root)
 }
 
+fn git_worktree_root_for_runtime(ctx: &GitRuntime) -> Result<String, String> {
+    match ctx {
+        GitRuntime::Local { project_path } => path_to_string(&git_worktree_root(project_path)?),
+        GitRuntime::Wsl { linux_path, .. } => {
+            let output = run_git_for_runtime(ctx, &["rev-parse", "--show-toplevel"])?;
+            if !output.status.success() {
+                return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+            }
+            let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if root.is_empty() {
+                return Err("Cannot resolve git worktree root".to_string());
+            }
+            if !linux_path.starts_with(&root) {
+                return Err("Git worktree root does not contain project path".to_string());
+            }
+            Ok(root)
+        }
+    }
+}
+
 fn path_to_string(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(|path| path.to_string())
@@ -157,6 +323,26 @@ fn path_to_string(path: &Path) -> Result<String, String> {
 fn git_has_head(worktree_root: &str) -> Result<bool, String> {
     let output = run_git(worktree_root, &["rev-parse", "--verify", "HEAD"])?;
     Ok(output.status.success())
+}
+
+fn git_has_head_for_runtime(ctx: &GitRuntime) -> Result<bool, String> {
+    match ctx {
+        GitRuntime::Local { project_path } => git_has_head(project_path),
+        GitRuntime::Wsl { .. } => {
+            let output = run_git_for_runtime(ctx, &["rev-parse", "--verify", "HEAD"])?;
+            Ok(output.status.success())
+        }
+    }
+}
+
+fn runtime_with_path(ctx: &GitRuntime, path: String) -> GitRuntime {
+    match ctx {
+        GitRuntime::Local { .. } => GitRuntime::Local { project_path: path },
+        GitRuntime::Wsl { distro, .. } => GitRuntime::Wsl {
+            distro: distro.clone(),
+            linux_path: path,
+        },
+    }
 }
 
 const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".nezha"];
@@ -175,6 +361,26 @@ fn is_protected_project_relative_path(relative_path: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn is_protected_linux_relative_path(relative_path: &str) -> bool {
+    relative_path
+        .split('/')
+        .find(|segment| !segment.is_empty())
+        .map(|segment| {
+            PROTECTED_FIRST_SEGMENTS
+                .iter()
+                .any(|protected| segment.eq_ignore_ascii_case(protected))
+        })
+        .unwrap_or(false)
+}
+
+fn is_safe_git_relative_path(relative_path: &str) -> bool {
+    !relative_path.is_empty()
+        && !relative_path.starts_with('/')
+        && !relative_path
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+}
+
 fn apply_login_shell_env(cmd: &mut Command) {
     for (key, value) in crate::app_settings::get_login_shell_env() {
         cmd.env(key, value);
@@ -184,22 +390,48 @@ fn apply_login_shell_env(cmd: &mut Command) {
 fn run_agent_commit_message_command(
     agent: &str,
     project_path: &str,
+    runtime: Option<ProjectRuntime>,
     prompt: &str,
 ) -> Result<Output, String> {
-    let launch = crate::app_settings::get_agent_launch_spec(agent);
-    let mut cmd = Command::new(&launch.program);
+    let mut cmd = match runtime {
+        Some(ProjectRuntime::Wsl {
+            distro,
+            linux_path,
+            shell,
+            ..
+        }) => {
+            let shell = crate::runtime::default_wsl_shell(shell.as_deref());
+            let agent_script = crate::runtime::wsl_agent_shell_script(agent);
+            let mut cmd = Command::new("wsl.exe");
+            cmd.arg("-d")
+                .arg(distro)
+                .arg("--cd")
+                .arg(linux_path)
+                .arg("--exec")
+                .arg(shell)
+                .arg("-ic")
+                .arg(agent_script)
+                .arg("nezha-agent");
+            cmd
+        }
+        _ => {
+            let launch = crate::app_settings::get_agent_launch_spec(agent);
+            let mut cmd = Command::new(&launch.program);
+            cmd.current_dir(project_path);
+            apply_login_shell_env(&mut cmd);
+            for (key, value) in &launch.extra_env {
+                cmd.env(key, value);
+            }
+            cmd
+        }
+    };
     crate::subprocess::configure_background_command(&mut cmd);
     if agent == "codex" {
         cmd.args(["exec", prompt]);
     } else {
         cmd.args(["-p", prompt, "--output-format", "text"]);
     }
-    cmd.current_dir(project_path);
     cmd.stdin(Stdio::null());
-    apply_login_shell_env(&mut cmd);
-    for (key, value) in &launch.extra_env {
-        cmd.env(key, value);
-    }
     cmd.output()
         .map_err(|e| format!("Failed to run {agent}: {e}"))
 }
@@ -214,9 +446,13 @@ fn create_empty_temp_file() -> Result<PathBuf, String> {
 // ── Tauri 命令 ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn generate_commit_message(project_path: String) -> Result<String, String> {
+pub async fn generate_commit_message(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<String, String> {
+    let ctx = GitRuntime::from(project_path.clone(), runtime.clone());
     // 1. Get staged diff
-    let diff_output = run_git(&project_path, &["diff", "--staged"])?;
+    let diff_output = run_git_for_runtime(&ctx, &["diff", "--staged"])?;
     let diff = String::from_utf8_lossy(&diff_output.stdout).into_owned();
     if diff.trim().is_empty() {
         return Err("No staged changes to generate a commit message for.".to_string());
@@ -230,7 +466,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     };
 
     // 2. Read project config for prompt and default agent
-    let config = crate::config::read_project_config(project_path.clone())?;
+    let config = crate::config::read_project_config(project_path.clone(), runtime.clone())?;
     let commit_prompt = config.git.commit_prompt;
     let agent = config.agent.default;
 
@@ -244,7 +480,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     let output = tokio::time::timeout(
         Duration::from_secs(15),
         tokio::task::spawn_blocking(move || {
-            run_agent_commit_message_command(&agent, &project_path, &full_prompt)
+            run_agent_commit_message_command(&agent, &project_path, runtime, &full_prompt)
         }),
     )
     .await
@@ -318,7 +554,11 @@ fn parse_porcelain_z_status(stdout: &[u8]) -> Vec<GitFileChange> {
 }
 
 #[tauri::command]
-pub async fn git_status(project_path: String) -> Result<Vec<GitFileChange>, String> {
+pub async fn git_status(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<Vec<GitFileChange>, String> {
+    let ctx = GitRuntime::from(project_path, runtime);
     let args = vec![
         "-c".to_string(),
         "core.quotePath=false".to_string(),
@@ -328,7 +568,7 @@ pub async fn git_status(project_path: String) -> Result<Vec<GitFileChange>, Stri
         "--untracked-files=all".to_string(),
     ];
 
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(5)).await?;
+    let output = run_git_with_timeout_for_runtime(ctx, args, Duration::from_secs(5)).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -363,9 +603,12 @@ pub(crate) struct GitBranchInfo {
 }
 
 #[tauri::command]
-pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo>, String> {
-    let output = run_git_with_timeout(
-        project_path,
+pub async fn git_list_branches(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<Vec<GitBranchInfo>, String> {
+    let output = run_git_with_timeout_for_runtime(
+        GitRuntime::from(project_path, runtime),
         vec!["branch".to_string(), "-a".to_string()],
         Duration::from_secs(5),
     )
@@ -405,6 +648,7 @@ pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo
 #[tauri::command]
 pub async fn git_checkout_branch(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     branch_name: String,
     is_remote: bool,
 ) -> Result<(), String> {
@@ -424,12 +668,13 @@ pub async fn git_checkout_branch(
     } else {
         vec!["checkout".into(), branch_name.clone()]
     };
-    run_git_check(&project_path, &args)
+    run_git_check_for_runtime(&GitRuntime::from(project_path, runtime), &args)
 }
 
 #[tauri::command]
 pub async fn git_create_branch(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     branch_name: String,
     from_branch: String,
     checkout: bool,
@@ -439,12 +684,13 @@ pub async fn git_create_branch(
     } else {
         &["branch", &branch_name, &from_branch]
     };
-    run_git_check(&project_path, args)
+    run_git_check_for_runtime(&GitRuntime::from(project_path, runtime), args)
 }
 
 #[tauri::command]
 pub async fn git_log(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     limit: u32,
     search: Option<String>,
     branch: Option<String>,
@@ -468,7 +714,12 @@ pub async fn git_log(
         }
     }
 
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout_for_runtime(
+        GitRuntime::from(project_path, runtime),
+        args,
+        Duration::from_secs(10),
+    )
+    .await?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let mut commits = Vec::new();
@@ -539,10 +790,12 @@ pub(crate) struct GitCommitDetail {
 #[tauri::command]
 pub async fn git_commit_detail(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     commit_hash: String,
 ) -> Result<GitCommitDetail, String> {
-    let info_out = run_git(
-        &project_path,
+    let ctx = GitRuntime::from(project_path, runtime);
+    let info_out = run_git_for_runtime(
+        &ctx,
         &[
             "show",
             "--no-patch",
@@ -571,8 +824,8 @@ pub async fn git_commit_detail(
         }
     }
 
-    let ns_out = run_git(
-        &project_path,
+    let ns_out = run_git_for_runtime(
+        &ctx,
         &[
             "diff-tree",
             "--no-commit-id",
@@ -610,8 +863,8 @@ pub async fn git_commit_detail(
         }
     }
 
-    let num_out = run_git(
-        &project_path,
+    let num_out = run_git_for_runtime(
+        &ctx,
         &[
             "diff-tree",
             "--no-commit-id",
@@ -662,9 +915,18 @@ pub async fn git_commit_detail(
 }
 
 #[tauri::command]
-pub async fn git_show_diff(project_path: String, commit_hash: String) -> Result<String, String> {
+pub async fn git_show_diff(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    commit_hash: String,
+) -> Result<String, String> {
     let args = vec!["show".to_string(), "--format=".to_string(), commit_hash];
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout_for_runtime(
+        GitRuntime::from(project_path, runtime),
+        args,
+        Duration::from_secs(10),
+    )
+    .await?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).into_owned());
     }
@@ -681,9 +943,11 @@ pub async fn git_show_diff(project_path: String, commit_hash: String) -> Result<
 #[tauri::command]
 pub async fn git_file_diff(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     file_path: String,
     staged: bool,
 ) -> Result<String, String> {
+    let ctx = GitRuntime::from(project_path.clone(), runtime);
     let mut args = vec!["diff".to_string()];
     if staged {
         args.push("--cached".to_string());
@@ -691,10 +955,28 @@ pub async fn git_file_diff(
     args.push("--".to_string());
     args.push(file_path.clone());
 
-    let output = run_git_with_timeout(project_path.clone(), args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout_for_runtime(ctx.clone(), args, Duration::from_secs(10)).await?;
     let raw = output.stdout;
 
     // For untracked files, git diff returns nothing — fall back to --no-index diff
+    if raw.is_empty() && !staged && ctx.is_wsl() {
+        let fallback_args = vec![
+            "diff".to_string(),
+            "--no-index".to_string(),
+            "/dev/null".to_string(),
+            file_path,
+        ];
+        let fallback = run_git_with_timeout_for_runtime(ctx, fallback_args, Duration::from_secs(10)).await?;
+        let fallback_raw = fallback.stdout;
+        let limit = 200 * 1024;
+        return Ok(String::from_utf8_lossy(if fallback_raw.len() > limit {
+            &fallback_raw[..limit]
+        } else {
+            &fallback_raw
+        })
+        .into_owned());
+    }
+
     if raw.is_empty() && !staged {
         let abs_path = std::path::Path::new(&project_path).join(&file_path);
         let abs_path_str = abs_path.to_string_lossy().into_owned();
@@ -729,28 +1011,58 @@ pub async fn git_file_diff(
 }
 
 #[tauri::command]
-pub async fn git_stage(project_path: String, file_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["add", "--", &file_path])
+pub async fn git_stage(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    file_path: String,
+) -> Result<(), String> {
+    run_git_check_for_runtime(
+        &GitRuntime::from(project_path, runtime),
+        &["add", "--", &file_path],
+    )
 }
 
 #[tauri::command]
-pub async fn git_unstage(project_path: String, file_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
+pub async fn git_unstage(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    file_path: String,
+) -> Result<(), String> {
+    run_git_check_for_runtime(
+        &GitRuntime::from(project_path, runtime),
+        &["restore", "--staged", "--", &file_path],
+    )
 }
 
 #[tauri::command]
-pub async fn git_stage_all(project_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["add", "-A"])
+pub async fn git_stage_all(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
+    run_git_check_for_runtime(&GitRuntime::from(project_path, runtime), &["add", "-A"])
 }
 
 #[tauri::command]
-pub async fn git_unstage_all(project_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["restore", "--staged", "."])
+pub async fn git_unstage_all(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
+    run_git_check_for_runtime(
+        &GitRuntime::from(project_path, runtime),
+        &["restore", "--staged", "."],
+    )
 }
 
 #[tauri::command]
-pub async fn git_commit(project_path: String, message: String) -> Result<(), String> {
-    run_git_check(&project_path, &["commit", "-m", &message])
+pub async fn git_commit(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    message: String,
+) -> Result<(), String> {
+    run_git_check_for_runtime(
+        &GitRuntime::from(project_path, runtime),
+        &["commit", "-m", &message],
+    )
 }
 
 fn untracked_files_under_directory<'a>(
@@ -935,6 +1247,108 @@ fn list_untracked_files(project_path: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
+fn list_untracked_files_for_runtime(ctx: &GitRuntime) -> Result<Vec<String>, String> {
+    match ctx {
+        GitRuntime::Local { project_path } => list_untracked_files(project_path),
+        GitRuntime::Wsl { .. } => {
+            let output = run_git_for_runtime(
+                ctx,
+                &[
+                    "-c",
+                    "core.quotePath=false",
+                    "ls-files",
+                    "--others",
+                    "--exclude-standard",
+                    "-z",
+                ],
+            )?;
+            if !output.status.success() {
+                return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+            }
+            Ok(output
+                .stdout
+                .split(|b| *b == 0)
+                .filter(|entry| !entry.is_empty())
+                .map(|entry| String::from_utf8_lossy(entry).into_owned())
+                .collect())
+        }
+    }
+}
+
+fn move_wsl_untracked_to_trash(
+    ctx: &GitRuntime,
+    worktree_root: &str,
+    relative_path: &str,
+) -> Result<(), String> {
+    let GitRuntime::Wsl { distro, .. } = ctx else {
+        return Err("WSL trash helper requires WSL runtime".to_string());
+    };
+    let relative_path = relative_path.trim_end_matches('/');
+    if !is_safe_git_relative_path(relative_path) {
+        return Err("Untracked path must be a safe relative path".to_string());
+    }
+    if is_protected_linux_relative_path(relative_path) {
+        return Err("Refusing to delete protected project metadata".to_string());
+    }
+
+    let trash_id = uuid::Uuid::new_v4().to_string();
+    let script = r#"set -eu
+root=$1
+rel=$2
+trash_id=$3
+src="$root/$rel"
+if [ ! -e "$src" ] && [ ! -L "$src" ]; then
+  echo "Path does not exist" >&2
+  exit 1
+fi
+dest="$root/.nezha/trash/$trash_id/$rel"
+mkdir -p -- "$(dirname -- "$dest")"
+mv -- "$src" "$dest"
+"#;
+    let mut cmd = Command::new("wsl.exe");
+    crate::subprocess::configure_background_command(&mut cmd);
+    let output = cmd
+        .arg("-d")
+        .arg(distro)
+        .arg("--cd")
+        .arg(worktree_root)
+        .arg("--exec")
+        .arg("/bin/sh")
+        .arg("-c")
+        .arg(script)
+        .arg("nezha-trash")
+        .arg(worktree_root)
+        .arg(relative_path)
+        .arg(trash_id)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+fn discard_untracked_file_for_runtime(
+    ctx: &GitRuntime,
+    project_path: &str,
+    worktree_root: &str,
+    relative_path: &str,
+) -> Result<(), String> {
+    match ctx {
+        GitRuntime::Local { .. } => discard_untracked_file(
+            project_path,
+            &PathBuf::from(worktree_root),
+            relative_path,
+        ),
+        GitRuntime::Wsl { .. } => {
+            if !is_listed_untracked_file(relative_path.trim_end_matches('/'), &list_untracked_files_for_runtime(ctx)?) {
+                return Err("Path is not an untracked file".to_string());
+            }
+            move_wsl_untracked_to_trash(ctx, worktree_root, relative_path)
+        }
+    }
+}
+
 /// Discard a single file's pending changes.
 ///
 /// - Untracked files: moved to the system trash.
@@ -947,17 +1361,18 @@ fn list_untracked_files(project_path: &str) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn git_discard_file(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     file_path: String,
     untracked: bool,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        validate_project_path(&project_path)?;
-        let worktree_root = git_worktree_root(&project_path)?;
-        let worktree_root_string = path_to_string(&worktree_root)?;
+        let ctx = GitRuntime::from(project_path.clone(), runtime);
+        let worktree_root = git_worktree_root_for_runtime(&ctx)?;
+        let root_ctx = runtime_with_path(&ctx, worktree_root.clone());
         if untracked {
-            discard_untracked_file(&project_path, &worktree_root, &file_path)
+            discard_untracked_file_for_runtime(&root_ctx, &project_path, &worktree_root, &file_path)
         } else {
-            run_git_check(&worktree_root_string, &["restore", "--", &file_path])
+            run_git_check_for_runtime(&root_ctx, &["restore", "--", &file_path])
         }
     })
     .await
@@ -965,30 +1380,46 @@ pub async fn git_discard_file(
 }
 
 #[tauri::command]
-pub async fn git_discard_all(project_path: String) -> Result<(), String> {
+pub async fn git_discard_all(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        validate_project_path(&project_path)?;
-        let worktree_root = git_worktree_root(&project_path)?;
-        let worktree_root_string = path_to_string(&worktree_root)?;
+        let ctx = GitRuntime::from(project_path.clone(), runtime);
+        let worktree_root = git_worktree_root_for_runtime(&ctx)?;
+        let root_ctx = runtime_with_path(&ctx, worktree_root.clone());
         // Reset every tracked file (staged + worktree) back to HEAD.
         // Staged-only adds become untracked after this; they are cleaned in the second pass.
-        if git_has_head(&worktree_root_string)? {
-            run_git_check(
-                &worktree_root_string,
+        if git_has_head_for_runtime(&root_ctx)? {
+            run_git_check_for_runtime(
+                &root_ctx,
                 &["restore", "--source=HEAD", "--staged", "--worktree", "."],
             )?;
         } else {
-            run_git_check(
-                &worktree_root_string,
+            run_git_check_for_runtime(
+                &root_ctx,
                 &["rm", "-r", "--cached", "--ignore-unmatch", "--", "."],
             )?;
         }
 
-        for rel in list_untracked_files(&worktree_root_string)? {
-            if is_protected_worktree_relative_path(&worktree_root, &project_path, &rel) {
-                continue;
+        match &ctx {
+            GitRuntime::Local { project_path } => {
+                let worktree_root = PathBuf::from(&worktree_root);
+                for rel in list_untracked_files_for_runtime(&root_ctx)? {
+                    if is_protected_worktree_relative_path(&worktree_root, project_path, &rel) {
+                        continue;
+                    }
+                    trash_worktree_relative_path(&worktree_root, project_path, &rel)?;
+                }
             }
-            trash_worktree_relative_path(&worktree_root, &project_path, &rel)?;
+            GitRuntime::Wsl { .. } => {
+                for rel in list_untracked_files_for_runtime(&root_ctx)? {
+                    if is_protected_linux_relative_path(&rel) {
+                        continue;
+                    }
+                    move_wsl_untracked_to_trash(&root_ctx, &worktree_root, &rel)?;
+                }
+            }
         }
         Ok(())
     })
@@ -999,11 +1430,12 @@ pub async fn git_discard_all(project_path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn git_show_file_diff(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     commit_hash: String,
     file_path: String,
 ) -> Result<String, String> {
-    let output = run_git(
-        &project_path,
+    let output = run_git_for_runtime(
+        &GitRuntime::from(project_path, runtime),
         &["show", "--format=", &commit_hash, "--", &file_path],
     )?;
     if !output.status.success() {
@@ -1020,13 +1452,17 @@ pub async fn git_show_file_diff(
 }
 
 #[tauri::command]
-pub async fn git_push(project_path: String, branch: Option<String>) -> Result<String, String> {
+pub async fn git_push(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    branch: Option<String>,
+) -> Result<String, String> {
     let mut args = vec!["push".to_string()];
     if let Some(ref b) = branch.filter(|s| !s.is_empty()) {
         args.push("origin".to_string());
         args.push(b.clone());
     }
-    let output = run_git(&project_path, &args)?;
+    let output = run_git_for_runtime(&GitRuntime::from(project_path, runtime), &args)?;
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -1039,8 +1475,11 @@ pub async fn git_push(project_path: String, branch: Option<String>) -> Result<St
 }
 
 #[tauri::command]
-pub async fn git_pull(project_path: String) -> Result<String, String> {
-    let output = run_git(&project_path, &["pull"])?;
+pub async fn git_pull(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<String, String> {
+    let output = run_git_for_runtime(&GitRuntime::from(project_path, runtime), &["pull"])?;
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -1062,20 +1501,22 @@ pub(crate) struct GitRemoteCounts {
 #[tauri::command]
 pub async fn git_remote_counts(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     branch: Option<String>,
 ) -> Result<GitRemoteCounts, String> {
+    let ctx = GitRuntime::from(project_path, runtime);
     let branch = if let Some(b) = branch.filter(|s| !s.is_empty()) {
         b
     } else {
-        let branch_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        let branch_out = run_git_for_runtime(&ctx, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         String::from_utf8_lossy(&branch_out.stdout)
             .trim()
             .to_string()
     };
 
     let rev_str = format!("{}...@{{u}}", branch);
-    let rev_out = run_git(
-        &project_path,
+    let rev_out = run_git_for_runtime(
+        &ctx,
         &["rev-list", "--count", "--left-right", &rev_str],
     );
 

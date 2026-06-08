@@ -6,6 +6,7 @@ import s from "../../styles";
 import { useI18n } from "../../i18n";
 import { FileIcon } from "./FileIcon";
 import type { ProjectFileSearchResult } from "./types";
+import type { ProjectRuntime } from "../../types";
 
 const SEARCH_DEBOUNCE_MS = 200;
 const SEARCH_LIMIT = 80;
@@ -42,10 +43,12 @@ function filterLabel(filter: FileFilter, t: ReturnType<typeof useI18n>["t"]) {
 
 export function FileSearchDialog({
   projectPath,
+  runtime,
   onFileSelect,
   onClose,
 }: {
   projectPath: string;
+  runtime?: ProjectRuntime;
   onFileSelect: (path: string, name: string) => void;
   onClose: () => void;
 }) {
@@ -93,6 +96,7 @@ export function FileSearchDialog({
     const timer = window.setTimeout(() => {
       invoke<ProjectFileSearchResult[]>("search_project_files", {
         projectPath,
+        runtime,
         query: queryText,
         extensions: activeFilter.extensions,
         limit: SEARCH_LIMIT,
@@ -115,7 +119,7 @@ export function FileSearchDialog({
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [activeFilter.extensions, projectPath, queryText, searchActive]);
+  }, [activeFilter.extensions, projectPath, runtime, queryText, searchActive]);
 
   const clearSearch = () => {
     setQuery("");

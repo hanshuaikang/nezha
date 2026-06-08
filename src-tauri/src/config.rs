@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::runtime::{linux_path_to_unc, ProjectRuntime};
 use crate::storage::atomic_write;
 
 const DEFAULT_CONFIG: &str = r#"# Nezha project configuration
@@ -58,11 +59,29 @@ impl Default for ProjectConfig {
     }
 }
 
+fn config_project_path(project_path: String, runtime: Option<ProjectRuntime>) -> Result<String, String> {
+    match runtime {
+        Some(ProjectRuntime::Wsl {
+            distro,
+            linux_path,
+            unc_path,
+            ..
+        }) => unc_path
+            .map(Ok)
+            .unwrap_or_else(|| linux_path_to_unc(&distro, &linux_path)),
+        _ => Ok(project_path),
+    }
+}
+
 /// Creates `.nezha/config.toml` in the project directory if it doesn't already exist.
 /// Also ensures `.nezha/attachments/` exists.
 /// Returns the parsed config.
 #[tauri::command]
-pub fn init_project_config(project_path: String) -> Result<ProjectConfig, String> {
+pub fn init_project_config(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<ProjectConfig, String> {
+    let project_path = config_project_path(project_path, runtime)?;
     let nezha_dir = Path::new(&project_path).join(".nezha");
     let config_path = nezha_dir.join("config.toml");
     let attachments_dir = nezha_dir.join("attachments");
@@ -82,7 +101,11 @@ pub fn init_project_config(project_path: String) -> Result<ProjectConfig, String
 /// Reads `.nezha/config.toml` from the project directory.
 /// Returns the default config if the file doesn't exist yet.
 #[tauri::command]
-pub fn read_project_config(project_path: String) -> Result<ProjectConfig, String> {
+pub fn read_project_config(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<ProjectConfig, String> {
+    let project_path = config_project_path(project_path, runtime)?;
     let config_path = Path::new(&project_path).join(".nezha").join("config.toml");
     if !config_path.exists() {
         return Ok(ProjectConfig::default());
@@ -94,7 +117,12 @@ pub fn read_project_config(project_path: String) -> Result<ProjectConfig, String
 
 /// Writes updated config to `.nezha/config.toml`, creating the directory if needed.
 #[tauri::command]
-pub fn write_project_config(project_path: String, config: ProjectConfig) -> Result<(), String> {
+pub fn write_project_config(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+    config: ProjectConfig,
+) -> Result<(), String> {
+    let project_path = config_project_path(project_path, runtime)?;
     let nezha_dir = Path::new(&project_path).join(".nezha");
     fs::create_dir_all(&nezha_dir).map_err(|e| e.to_string())?;
     let config_path = nezha_dir.join("config.toml");

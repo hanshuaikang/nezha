@@ -6,6 +6,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+use crate::session::{session_location_read_path, SessionLocation};
+
 #[derive(serde::Serialize, Clone, Default)]
 pub(crate) struct SessionMetrics {
     pub(crate) tool_calls: u64,
@@ -219,8 +221,16 @@ pub(crate) fn parse_session_metrics_cached(path: &std::path::Path) -> SessionMet
 }
 
 #[tauri::command]
-pub async fn read_session_metrics(session_path: String) -> Result<SessionMetrics, String> {
+pub async fn read_session_metrics(
+    session_path: Option<String>,
+    session_location: Option<SessionLocation>,
+) -> Result<SessionMetrics, String> {
     tokio::task::spawn_blocking(move || {
+        let session_path = if let Some(location) = session_location {
+            session_location_read_path(&location)?
+        } else {
+            session_path.ok_or_else(|| "Session path is required".to_string())?
+        };
         let path = std::path::Path::new(&session_path);
         if !path.exists() {
             return Err(format!("Session file not found: {}", session_path));
@@ -230,4 +240,3 @@ pub async fn read_session_metrics(session_path: String) -> Result<SessionMetrics
     .await
     .map_err(|e| format!("read_session_metrics join error: {}", e))?
 }
-

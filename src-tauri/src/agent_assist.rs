@@ -3,6 +3,9 @@ use std::process::{Output, Stdio};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+use crate::runtime::ProjectRuntime;
+use crate::session::SessionLocation;
+
 const NAMING_PROMPT_TEMPLATE: &str = r#"You are a task title generator. Given the original task prompt below and (when available) the session execution summary, produce a single short title for this task.
 
 Rules:
@@ -67,13 +70,37 @@ async fn read_pipe_to_end<R: AsyncRead + Unpin>(
 async fn run_naming_agent_with_timeout(
     agent: &str,
     project_path: &str,
+    runtime: Option<ProjectRuntime>,
     prompt: &str,
     timeout_dur: Duration,
 ) -> Result<Output, String> {
     let launch = crate::app_settings::get_agent_launch_spec(agent);
     let login_env: Vec<(String, String)> = crate::app_settings::get_login_shell_env().to_vec();
 
-    let mut cmd = tokio::process::Command::new(&launch.program);
+    let is_wsl = matches!(runtime.as_ref(), Some(ProjectRuntime::Wsl { .. }));
+    let mut cmd = match runtime {
+        Some(ProjectRuntime::Wsl {
+            distro,
+            linux_path,
+            shell,
+            ..
+        }) => {
+            let shell = crate::runtime::default_wsl_shell(shell.as_deref());
+            let agent_script = crate::runtime::wsl_agent_shell_script(agent);
+            let mut cmd = tokio::process::Command::new("wsl.exe");
+            cmd.arg("-d")
+                .arg(distro)
+                .arg("--cd")
+                .arg(linux_path)
+                .arg("--exec")
+                .arg(shell)
+                .arg("-ic")
+                .arg(agent_script)
+                .arg("nezha-agent");
+            cmd
+        }
+        _ => tokio::process::Command::new(&launch.program),
+    };
     crate::subprocess::configure_background_tokio_command(&mut cmd);
     if agent == "codex" {
         cmd.args([
@@ -98,17 +125,21 @@ async fn run_naming_agent_with_timeout(
             "--no-session-persistence",
         ]);
     }
-    cmd.current_dir(project_path);
+    if !is_wsl {
+        cmd.current_dir(project_path);
+    }
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.kill_on_drop(true);
 
-    for (key, value) in &login_env {
-        cmd.env(key, value);
-    }
-    for (key, value) in &launch.extra_env {
-        cmd.env(key, value);
+    if !is_wsl {
+        for (key, value) in &login_env {
+            cmd.env(key, value);
+        }
+        for (key, value) in &launch.extra_env {
+            cmd.env(key, value);
+        }
     }
 
     let mut child = cmd
@@ -278,8 +309,10 @@ fn truncate_prompt(prompt: String) -> String {
 #[tauri::command]
 pub async fn generate_task_name(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     agent: String,
     session_path: Option<String>,
+    session_location: Option<SessionLocation>,
     original_prompt: String,
 ) -> Result<String, String> {
     if !matches!(agent.as_str(), "claude" | "codex") {
@@ -288,23 +321,37 @@ pub async fn generate_task_name(
     let is_codex = agent == "codex";
 
     // 1. 校验 project_path 合法（M-3）
-    let project_for_validation = project_path.clone();
-    tokio::task::spawn_blocking(move || validate_project_path_for_naming(&project_for_validation))
-        .await
-        .map_err(|e| format!("project_path 校验线程错误: {}", e))??;
+    if !matches!(runtime.as_ref(), Some(ProjectRuntime::Wsl { .. })) {
+        let project_for_validation = project_path.clone();
+        tokio::task::spawn_blocking(move || validate_project_path_for_naming(&project_for_validation))
+            .await
+            .map_err(|e| format!("project_path 校验线程错误: {}", e))??;
+    }
 
     // 2. session 摘要提取在 spawn_blocking 中完成（避免阻塞 Tokio）
-    let summary = if let Some(raw_path) = session_path {
+    let summary = if session_location.is_some() || session_path.is_some() {
         let project_for_summary = project_path.clone();
         tokio::task::spawn_blocking(move || {
-            match crate::session::validate_session_path(&raw_path, &project_for_summary, is_codex) {
-                Ok(canonical) => {
-                    crate::session::extract_session_summary_text(&canonical.to_string_lossy(), 7000)
+            if let Some(location) = session_location {
+                match crate::session::session_location_read_path(&location) {
+                    Ok(path) => crate::session::extract_session_summary_text(&path, 7000),
+                    Err(e) => {
+                        eprintln!("[generate_task_name] session_location 解析失败：{}", e);
+                        None
+                    }
                 }
-                Err(e) => {
-                    eprintln!("[generate_task_name] session_path 校验失败：{}", e);
-                    None
+            } else if let Some(raw_path) = session_path {
+                match crate::session::validate_session_path(&raw_path, &project_for_summary, is_codex) {
+                    Ok(canonical) => {
+                        crate::session::extract_session_summary_text(&canonical.to_string_lossy(), 7000)
+                    }
+                    Err(e) => {
+                        eprintln!("[generate_task_name] session_path 校验失败：{}", e);
+                        None
+                    }
                 }
+            } else {
+                None
             }
         })
         .await
@@ -319,7 +366,7 @@ pub async fn generate_task_name(
 
     // 4. 调用 agent 子进程（kill-on-timeout）
     let output =
-        run_naming_agent_with_timeout(&agent, &project_path, &full_prompt, NAMING_TIMEOUT).await?;
+        run_naming_agent_with_timeout(&agent, &project_path, runtime, &full_prompt, NAMING_TIMEOUT).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

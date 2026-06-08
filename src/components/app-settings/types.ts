@@ -8,6 +8,7 @@ export type NavKey =
   | "shortcuts"
   | "hooks"
   | "skills"
+  | "wsl"
   | "about"
   | "claude"
   | "codex";
@@ -35,6 +36,13 @@ export interface AppSettings {
   codex_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
+  wsl?: WslSettings;
+}
+
+export interface WslSettings {
+  enabled: boolean;
+  default_distro: string;
+  default_shell: string;
 }
 
 export interface AgentVersions {

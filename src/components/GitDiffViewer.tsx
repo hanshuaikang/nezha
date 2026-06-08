@@ -7,12 +7,14 @@ import { parseDiff } from "./git-diff/parse";
 import type { DiffViewMode } from "./git-diff/types";
 import { load, save } from "../utils";
 import { useI18n } from "../i18n";
+import type { ProjectRuntime } from "../types";
 import s from "../styles";
 
 const VIEW_MODE_KEY = "nezha.diffViewMode";
 
 interface Props {
   projectPath: string;
+  runtime?: ProjectRuntime;
   // "commit" = full commit diff, "file" = working-tree file diff, "commit-file" = single file in a commit
   mode: "commit" | "file" | "commit-file";
   commitHash?: string;
@@ -53,6 +55,7 @@ function ViewToggleButton({
 
 export function GitDiffViewer({
   projectPath,
+  runtime,
   mode,
   commitHash,
   filePath,
@@ -80,16 +83,18 @@ export function GitDiffViewer({
       try {
         let result: string;
         if (mode === "commit" && commitHash) {
-          result = await invoke<string>("git_show_diff", { projectPath, commitHash });
+          result = await invoke<string>("git_show_diff", { projectPath, runtime, commitHash });
         } else if (mode === "commit-file" && commitHash && filePath !== undefined) {
           result = await invoke<string>("git_show_file_diff", {
             projectPath,
+            runtime,
             commitHash,
             filePath,
           });
         } else if (mode === "file" && filePath !== undefined) {
           result = await invoke<string>("git_file_diff", {
             projectPath,
+            runtime,
             filePath,
             staged: staged ?? false,
           });
@@ -105,7 +110,7 @@ export function GitDiffViewer({
     };
 
     loadDiff();
-  }, [projectPath, mode, commitHash, filePath, staged]);
+  }, [projectPath, runtime, mode, commitHash, filePath, staged]);
 
   const { parsedFiles, totalAdditions, totalDeletions } = useMemo(() => {
     const files = parseDiff(diff, projectPath);
