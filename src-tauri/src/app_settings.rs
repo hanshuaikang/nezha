@@ -362,6 +362,13 @@ pub fn get_agent_launch_spec(agent: &str) -> AgentLaunchSpec {
     get_agent_launch_spec_from_settings(&load_settings_internal(), agent)
 }
 
+/// codex 是否可用（已安装 / 在 PATH 上）。仅判断二进制能否解析到路径——
+/// `detect_path` 找不到时返回空串，故 `program` 非空即视为已安装。
+/// 注意：不验证登录状态，未登录的 codex 调用仍会在运行时失败。
+pub fn codex_available() -> bool {
+    !get_agent_launch_spec("codex").program.trim().is_empty()
+}
+
 #[tauri::command]
 pub async fn load_app_settings() -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(load_settings_internal)
