@@ -140,13 +140,13 @@ function ProjectSettings({
     setCheckingRuntime(true);
     setRuntimeCheck(null);
     try {
-      const result = await invoke<{ available: boolean; git_path: string; error?: string | null }>(
+      const result = await invoke<{ available: boolean; gitPath: string; error?: string | null }>(
         "wsl_check_distro",
         { distro: runtime.distro },
       );
       setRuntimeCheck(
         result.available
-          ? t("settings.runtimeHealthOk", { git: result.git_path || t("common.notDetected") })
+          ? t("settings.runtimeHealthOk", { git: result.gitPath || t("common.notDetected") })
           : (result.error ?? t("settings.runtimeHealthFailed")),
       );
     } catch (e) {

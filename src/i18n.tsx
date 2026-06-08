@@ -32,8 +32,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.wslHealthOk": "Available. Git: {git}",
     "appSettings.hooks.description":
       "Nezha installs lightweight hooks into Claude Code and Codex (via your global config) so the app gets reliable task status and session linkage. Hooks are only active for tasks Nezha launches — invocations from other terminals are unaffected.",
-    "appSettings.hooks.wslDisabled":
-      "WSL hooks are not enabled in this version. WSL session discovery uses polling.",
     "appSettings.hooks.nodeFound": "Node detected at {path}",
     "appSettings.hooks.nodeMissing":
       "Node was not found in PATH. Install Node 18+ to enable hook-based task status and notifications.",
@@ -73,8 +71,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.codexPath": "Codex Path",
     "appSettings.claudePathHint": "Leave empty to use claude from the system PATH.",
     "appSettings.codexPathHint": "Leave empty to use codex from the system PATH.",
-    "appSettings.localAgentPathsHint":
-      "These paths are used for local projects. WSL projects use the agent installed inside their distro.",
     "appSettings.installedVersions": "Installed Versions",
     "appSettings.versionsHint":
       "Versions are detected from the configured executable path or the system PATH.",
@@ -354,8 +350,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "file.emptyDirectory": "Empty directory",
     "file.openInSystemFolder": "Open in System Folder",
     "file.copyFullPath": "Copy full path",
-    "file.copyLinuxPath": "Copy Linux path",
-    "file.copyUncPath": "Copy Windows UNC path",
     "file.copyAtFullPath": "Copy @full path",
     "file.newFile": "New File",
     "file.newFolder": "New Folder",
@@ -550,8 +544,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.wslHealthOk": "可用。Git：{git}",
     "appSettings.hooks.description":
       "Nezha 会向 Claude Code 与 Codex 的全局配置注入轻量 hook，用于获取更可靠的任务状态与会话关联。Hook 仅对 Nezha 启动的任务生效，从其它终端发起的调用不受影响。",
-    "appSettings.hooks.wslDisabled":
-      "当前版本未启用 WSL hooks。WSL 会话发现使用轮询。",
     "appSettings.hooks.nodeFound": "已检测到 Node:{path}",
     "appSettings.hooks.nodeMissing": "未在 PATH 中找到 Node。安装 Node 18+ 即可启用基于 hook 的任务状态与通知。",
     "appSettings.hooks.scriptPath": "Hook 脚本:{path}",
@@ -590,8 +582,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.codexPath": "Codex 路径",
     "appSettings.claudePathHint": "留空则从系统 PATH 中使用 claude。",
     "appSettings.codexPathHint": "留空则从系统 PATH 中使用 codex。",
-    "appSettings.localAgentPathsHint":
-      "这些路径仅用于本地项目。WSL 项目使用发行版内安装的 agent。",
     "appSettings.installedVersions": "已安装版本",
     "appSettings.versionsHint": "版本会从配置的可执行文件路径或系统 PATH 中检测。",
     "appSettings.nezhaDescription": "轻量级跨平台 AI IDE",
@@ -861,8 +851,6 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "file.emptyDirectory": "空目录",
     "file.openInSystemFolder": "在系统文件夹中打开",
     "file.copyFullPath": "复制完整路径",
-    "file.copyLinuxPath": "复制 Linux 路径",
-    "file.copyUncPath": "复制 Windows UNC 路径",
     "file.copyAtFullPath": "复制 @完整路径",
     "file.newFile": "新建文件",
     "file.newFolder": "新建文件夹",

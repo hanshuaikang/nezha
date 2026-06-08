@@ -395,15 +395,23 @@ fn run_agent_commit_message_command(
 ) -> Result<Output, String> {
     let mut cmd = match runtime {
         Some(ProjectRuntime::Wsl {
-            distro, linux_path, ..
+            distro,
+            linux_path,
+            shell,
+            ..
         }) => {
+            let shell = crate::runtime::default_wsl_shell(shell.as_deref());
+            let agent_script = crate::runtime::wsl_agent_shell_script(agent);
             let mut cmd = Command::new("wsl.exe");
             cmd.arg("-d")
                 .arg(distro)
                 .arg("--cd")
                 .arg(linux_path)
                 .arg("--exec")
-                .arg(agent);
+                .arg(shell)
+                .arg("-ic")
+                .arg(agent_script)
+                .arg("nezha-agent");
             cmd
         }
         _ => {

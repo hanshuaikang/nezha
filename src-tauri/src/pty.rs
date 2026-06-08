@@ -522,12 +522,8 @@ fn build_wsl_agent_cmd(
     permission_mode: &str,
 ) -> CommandBuilder {
     let mut c = CommandBuilder::new("wsl.exe");
-    let shell = shell.filter(|value| !value.trim().is_empty()).unwrap_or("/bin/bash");
-    let agent_script = if agent == "codex" {
-        r#"codex "$@""#
-    } else {
-        r#"claude "$@""#
-    };
+    let shell = crate::runtime::default_wsl_shell(shell);
+    let agent_script = crate::runtime::wsl_agent_shell_script(agent);
     c.arg("-d");
     c.arg(distro);
     c.arg("--cd");

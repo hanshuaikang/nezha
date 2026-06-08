@@ -63,9 +63,7 @@ function parseCrossProject(search: string, projects: Project[]): CrossProjectRef
   if (slashIdx < 0) return null;
   const prefix = search.substring(0, slashIdx);
   const match = projects.find((p) => p.name.toLowerCase() === prefix.toLowerCase());
-  return match
-    ? { id: match.id, path: getProjectDisplayPath(match), name: match.name, runtime: match.runtime }
-    : null;
+  return match ? { id: match.id, path: getProjectDisplayPath(match), name: match.name } : null;
 }
 
 export function NewTaskView({
@@ -283,7 +281,8 @@ export function NewTaskView({
     const cp = parseCrossProject(mentionSearch, otherProjects);
     if (!cp || loadedProjectIds.current.has(cp.id)) return;
     loadedProjectIds.current.add(cp.id);
-    invoke<string[]>("list_project_files", { projectPath: cp.path, runtime: cp.runtime })
+    const runtime = otherProjects.find((otherProject) => otherProject.id === cp.id)?.runtime;
+    invoke<string[]>("list_project_files", { projectPath: cp.path, runtime })
       .then((files) => {
         setCrossProjectFiles((prev) => new Map(prev).set(cp.id, files.map(parseFileEntry)));
       })

@@ -121,26 +121,6 @@ export function FileExplorer({
     }
   }, []);
 
-  const copyUncPath = useCallback(
-    async (event: React.MouseEvent, path: string) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      try {
-        const uncPath =
-          runtime?.kind === "wsl"
-            ? `\\\\wsl.localhost\\${runtime.distro}\\${path.replace(/^\/+/, "").replace(/\//g, "\\")}`
-            : path;
-        await writeClipboardText(uncPath);
-      } catch (error) {
-        console.error("Failed to copy UNC path", error);
-      } finally {
-        setCtxMenu(null);
-      }
-    },
-    [runtime],
-  );
-
   const { safeInvoke, isCancelled } = useCancellableInvoke();
   const nodesRef = useRef<TreeNode[]>([]);
   const refreshIdRef = useRef(0);
@@ -443,8 +423,6 @@ export function FileExplorer({
           onDelete={() => void handleDelete()}
           onOpenInSystem={(event, path) => void openInSystemFolder(event, path)}
           onCopyPath={(event, path, withAt) => void copyPath(event, path, withAt)}
-          onCopyUncPath={(event, path) => void copyUncPath(event, path)}
-          isWsl={runtime?.kind === "wsl"}
         />
       )}
       {/* Header */}

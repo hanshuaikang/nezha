@@ -2,11 +2,6 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, ChevronsRight, Search, PinOff } from "lucide-react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
-import {
-  getProjectDisplayPath,
-  getProjectRuntimeLabel,
-  getProjectRuntimeTitle,
-} from "../projectRuntime";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
@@ -20,7 +15,7 @@ export function projectMatchesRailSearch(project: Project, query: string) {
   const normalizedQuery = normalizeProjectSearchText(query.trim());
   if (!normalizedQuery) return true;
 
-  return [project.name, project.path, getProjectDisplayPath(project), getProjectRuntimeLabel(project)].some((value) =>
+  return [project.name, project.path].some((value) =>
     normalizeProjectSearchText(value).includes(normalizedQuery),
   );
 }
@@ -93,7 +88,7 @@ function RailItem({
 
   return (
     <button
-      title={getProjectRuntimeTitle(project)}
+      title={project.name}
       onClick={() => onSwitch(project)}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -239,8 +234,6 @@ function ProjectDrawer({
           const status = getProjectStatus(allTasks, project.id);
           const attentionCount = getAttentionCount(allTasks, project.id);
           const isActive = project.id === activeProjectId;
-          const runtimeLabel = getProjectRuntimeLabel(project);
-          const displayPath = getProjectDisplayPath(project);
           return (
             <button
               key={project.id}
@@ -278,32 +271,18 @@ function ProjectDrawer({
                   borderColor="var(--bg-panel)"
                 />
               </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: isActive ? 600 : 500,
-                    color: isActive ? "var(--accent)" : "var(--text-primary)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {project.name}
-                </div>
-                <div
-                  style={{
-                    marginTop: 2,
-                    fontSize: 10.5,
-                    color: "var(--text-hint)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {runtimeLabel} - {displayPath}
-                </div>
-              </div>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? "var(--accent)" : "var(--text-primary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {project.name}
+              </span>
               {project.hiddenFromRail && (
                 <PinOff
                   size={12}

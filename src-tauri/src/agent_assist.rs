@@ -85,15 +85,8 @@ async fn run_naming_agent_with_timeout(
             shell,
             ..
         }) => {
-            let shell = shell
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or("/bin/bash");
-            let agent_script = if agent == "codex" {
-                r#"codex "$@""#
-            } else {
-                r#"claude "$@""#
-            };
+            let shell = crate::runtime::default_wsl_shell(shell.as_deref());
+            let agent_script = crate::runtime::wsl_agent_shell_script(agent);
             let mut cmd = tokio::process::Command::new("wsl.exe");
             cmd.arg("-d")
                 .arg(distro)

@@ -18,11 +18,18 @@ pub enum ProjectRuntime {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum RuntimeContext {
-    Local { project_path: String },
-    Wsl { distro: String, linux_path: String },
+pub fn default_wsl_shell(shell: Option<&str>) -> &str {
+    shell
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("/bin/bash")
+}
+
+pub fn wsl_agent_shell_script(agent: &str) -> &'static str {
+    if agent == "codex" {
+        r#"codex "$@""#
+    } else {
+        r#"claude "$@""#
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,49 +76,6 @@ pub struct WslProjectValidation {
     pub git_detected: bool,
     pub canonical_path: String,
     pub error: Option<String>,
-}
-
-impl RuntimeContext {
-    #[allow(dead_code)]
-    pub fn from_project(project_path: String, runtime: Option<ProjectRuntime>) -> Self {
-        match runtime {
-            Some(ProjectRuntime::Wsl {
-                distro, linux_path, ..
-            }) => Self::Wsl { distro, linux_path },
-            _ => Self::Local { project_path },
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn display_path(&self) -> String {
-        match self {
-            Self::Local { project_path } => project_path.clone(),
-            Self::Wsl { linux_path, .. } => linux_path.clone(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn command_program_and_args(
-        &self,
-        program: &str,
-        args: &[String],
-    ) -> (String, Vec<String>) {
-        match self {
-            Self::Local { .. } => (program.to_string(), args.to_vec()),
-            Self::Wsl { distro, linux_path } => {
-                let mut wrapped = vec![
-                    "-d".to_string(),
-                    distro.clone(),
-                    "--cd".to_string(),
-                    linux_path.clone(),
-                    "--exec".to_string(),
-                    program.to_string(),
-                ];
-                wrapped.extend(args.iter().cloned());
-                ("wsl.exe".to_string(), wrapped)
-            }
-        }
-    }
 }
 
 fn sanitize_summary(text: &str) -> String {
@@ -247,9 +211,7 @@ fn run_wsl_interactive_shell_capture(
     shell: Option<&str>,
     script: &str,
 ) -> Result<Vec<u8>, String> {
-    let shell = shell
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or("/bin/bash");
+    let shell = default_wsl_shell(shell);
     let args = vec![
         "-d".to_string(),
         distro.to_string(),

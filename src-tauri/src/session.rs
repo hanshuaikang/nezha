@@ -622,12 +622,20 @@ fn extract_patch_path(line: &str) -> Option<&str> {
 
 fn patch_target_requires_confirmation(path: &str, project_path: &Path) -> bool {
     let target = Path::new(path);
-    if !target.is_absolute() {
+    if !target.is_absolute() && !path.starts_with('/') {
         return false;
     }
 
     let temp_dir = std::env::temp_dir();
-    !target.starts_with(project_path) && !target.starts_with(&temp_dir)
+    !path_starts_with_path(path, project_path) && !path_starts_with_path(path, &temp_dir)
+}
+
+fn path_starts_with_path(path: &str, root: &Path) -> bool {
+    let path = path.replace('\\', "/");
+    let root = root.to_string_lossy().replace('\\', "/");
+    let root = root.trim_end_matches('/');
+
+    path == root || path.starts_with(&format!("{}/", root))
 }
 
 fn assistant_message_requests_user_input(payload: Option<&serde_json::Value>) -> bool {
