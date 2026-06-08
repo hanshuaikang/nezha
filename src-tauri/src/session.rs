@@ -139,7 +139,9 @@ fn session_modified_at(path: &Path) -> SystemTime {
 // ── Codex 会话监视器 ──────────────────────────────────────────────────────────
 
 fn wsl_home(distro: &str, linux_path: &str) -> Option<String> {
-    let output = std::process::Command::new("wsl.exe")
+    let mut command = std::process::Command::new("wsl.exe");
+    crate::subprocess::configure_background_command(&mut command);
+    let output = command
         .arg("-d")
         .arg(distro)
         .arg("--cd")

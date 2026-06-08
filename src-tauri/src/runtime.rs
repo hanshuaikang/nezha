@@ -208,7 +208,9 @@ fn parse_wsl_list_verbose(raw: &str) -> Result<Vec<WslDistroInfo>, String> {
 }
 
 fn run_wsl_capture(args: &[String]) -> Result<Vec<u8>, String> {
-    let output = Command::new("wsl.exe")
+    let mut command = Command::new("wsl.exe");
+    crate::subprocess::configure_background_command(&mut command);
+    let output = command
         .args(args)
         .output()
         .map_err(|e| format!("wsl_unavailable: {e}"))?;
@@ -319,7 +321,9 @@ pub async fn unc_to_wsl_path(path: String) -> Result<Option<WslPath>, String> {
 #[tauri::command]
 pub async fn wsl_list_distros() -> Result<Vec<WslDistroInfo>, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("wsl.exe")
+        let mut command = Command::new("wsl.exe");
+        crate::subprocess::configure_background_command(&mut command);
+        let output = command
             .args(["-l", "-v"])
             .output()
             .map_err(|e| format!("wsl_unavailable: {e}"))?;
