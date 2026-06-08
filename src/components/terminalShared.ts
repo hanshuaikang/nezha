@@ -322,6 +322,10 @@ export function initTerminal(
     fontSize,
     theme: themeFor(variant),
     allowProposedApi: true,
+    // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
+    // 鼠标事件转发给程序并取消本地选区，导致 macOS 用户"运行时无法框选"。开启此项后
+    // 按住 ⌥ Option 拖动可强制本地选区（iTerm2 / Terminal.app 的标准约定）。
+    macOptionClickForcesSelection: true,
   });
 
   const fitAddon = new FitAddon();

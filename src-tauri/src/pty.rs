@@ -430,6 +430,10 @@ fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_
 /// 为 Claude 命令构建 CommandBuilder，并根据 permission_mode 添加权限标志。
 fn build_claude_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
+    // Claude Code 自 v2.1.150 起默认开启 xterm 鼠标上报（mouse mode 1002），会拦截
+    // 终端原生框选——表现为运行时拖动看似选中却不进选区态、无法复制。关掉它后滚轮回退
+    // 到 xterm 自身 scrollback，用户运行时即可直接拖动框选。官方开关，仅影响 Claude。
+    c.env("CLAUDE_CODE_DISABLE_MOUSE", "1");
     match permission_mode {
         "ask" => {
             c.arg("--permission-mode");
