@@ -1,5 +1,5 @@
 import { FileCode2, FileText, FolderOpen, ChevronRight } from "lucide-react";
-import type { Project } from "../../types";
+import type { Project, ProjectRuntime } from "../../types";
 import { CODE_EXTS } from "../../utils";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
@@ -11,7 +11,7 @@ export interface FileEntry {
   ext: string;
 }
 
-export type CrossProjectRef = { id: string; path: string; name: string };
+export type CrossProjectRef = { id: string; path: string; name: string; runtime?: ProjectRuntime };
 
 export type MentionItem =
   | { kind: "file"; file: FileEntry; crossProject?: CrossProjectRef }

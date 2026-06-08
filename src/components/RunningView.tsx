@@ -110,6 +110,8 @@ export function RunningView({
   const isDetached = task.status === "detached";
   const isInterrupted = task.status === "interrupted";
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
+  const sessionLocation = task.claudeSessionLocation ?? task.codexSessionLocation;
+  const hasSession = Boolean(sessionPath || sessionLocation);
   const resumeSessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
   const restoreState = getRestoreState?.() ?? {};
 
@@ -128,7 +130,7 @@ export function RunningView({
 
   const generateTooltip = generatingName
     ? t("task.generatingName")
-    : sessionPath
+    : hasSession
       ? t("task.generateName")
       : t("task.generateNameNoSession");
 
@@ -145,7 +147,7 @@ export function RunningView({
   };
 
   const handleExport = async () => {
-    if (exporting || !sessionPath) return;
+    if (exporting || !hasSession) return;
     setExporting(true);
     try {
       const titleSource = (task.name ?? task.prompt).trim();
@@ -167,6 +169,7 @@ export function RunningView({
 
       await invoke<void>("export_session_markdown", {
         sessionPath,
+        sessionLocation,
         projectPath,
         isCodex: task.agent === "codex",
         outputPath,
@@ -206,7 +209,7 @@ export function RunningView({
   }, [isDetached, isInterrupted, sessionPath]);
 
   useEffect(() => {
-    if (!sessionPath) {
+    if (!hasSession) {
       setMetrics(null);
       return;
     }
@@ -220,7 +223,7 @@ export function RunningView({
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const load = () => {
-      invoke<SessionMetrics>("read_session_metrics", { sessionPath })
+      invoke<SessionMetrics>("read_session_metrics", { sessionPath, sessionLocation })
         .then((nextMetrics) => {
           if (cancelled) return;
           setMetrics(nextMetrics);
@@ -238,7 +241,7 @@ export function RunningView({
         timer = null;
       }
     };
-  }, [sessionPath, isActive, projectActive]);
+  }, [sessionPath, sessionLocation, hasSession, isActive, projectActive]);
 
   return (
     <div
@@ -312,7 +315,7 @@ export function RunningView({
               })()}
             </span>
           )}
-          {sessionPath && !editingTitle && (
+          {hasSession && !editingTitle && (
             <button
               type="button"
               title={t("task.renameTask")}
@@ -372,7 +375,7 @@ export function RunningView({
             </button>
           </>
         )}
-        {!isActive && sessionPath && (
+        {!isActive && hasSession && (
           <button
             style={exporting ? s.exportBtnBusy : s.exportBtn}
             disabled={exporting}
@@ -504,9 +507,9 @@ export function RunningView({
             </span>
           </div>
         )}
-        {sessionPath && (
+        {hasSession && (
           <div
-            title={sessionPath}
+            title={sessionPath ?? ""}
             style={{
               marginTop: 4,
               fontSize: 11,
@@ -517,7 +520,7 @@ export function RunningView({
               whiteSpace: "nowrap",
             }}
           >
-            {t("running.sessionFile", { path: shortenPath(sessionPath) })}
+            {t("running.sessionFile", { path: shortenPath(sessionPath ?? "") })}
           </div>
         )}
         {metrics && (
@@ -590,15 +593,15 @@ export function RunningView({
               </button>
             </div>
           </div>
-          {sessionPath ? (
-            <SessionView sessionPath={sessionPath} />
+          {hasSession ? (
+            <SessionView sessionPath={sessionPath} sessionLocation={sessionLocation} />
           ) : (
             <div style={s.interruptedNoSessionPane}>
               {t(isDetached ? "running.detachedNoSession" : "running.interruptedNoSession")}
             </div>
           )}
         </div>
-      ) : isActive || !sessionPath ? (
+      ) : isActive || !hasSession ? (
         <div style={s.terminalContainer}>
           <TerminalView
             key={`${task.id}-${runCount}`}
@@ -616,11 +619,11 @@ export function RunningView({
           />
         </div>
       ) : (
-        <SessionView sessionPath={sessionPath} />
+        <SessionView sessionPath={sessionPath} sessionLocation={sessionLocation} />
       )}
 
       {/* Status bar when task is done and no session path (terminal fallback) */}
-      {!isActive && !isDetached && !isInterrupted && !sessionPath && (
+      {!isActive && !isDetached && !isInterrupted && !hasSession && (
         <div
           style={{
             padding: "10px 20px",

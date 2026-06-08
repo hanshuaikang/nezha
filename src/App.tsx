@@ -9,6 +9,7 @@ import type {
   TaskStatus,
   AgentType,
   PermissionMode,
+  SessionLocation,
   ThemeMode,
   ThemeVariant,
   TerminalFontSize,
@@ -414,11 +415,16 @@ function App() {
         if (status === "done") scheduleForDoneTask(task_id);
       },
     );
-    const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
+    const p2 = listen<{
+      task_id: string;
+      session_id: string;
+      session_path: string;
+      session_location?: SessionLocation;
+    }>(
       "task-session",
       (e) => {
-        const { task_id, session_id, session_path } = e.payload;
-        updateTaskSession(task_id, session_id, session_path);
+        const { task_id, session_id, session_path, session_location } = e.payload;
+        updateTaskSession(task_id, session_id, session_path, session_location);
       },
     );
     return () => {
@@ -444,9 +450,45 @@ function App() {
     setActiveProject(project);
     mountProject(project.id);
     updateProjectView(project.id, createDefaultProjectViewState());
-    invoke("init_project_config", { projectPath: path }).catch((e: unknown) => {
+    invoke("init_project_config", { projectPath: path, runtime: project.runtime }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
     });
+  }
+
+  function handleOpenWslProject(project: Project) {
+    const existing = projects.find(
+      (p) =>
+        p.runtime?.kind === "wsl" &&
+        project.runtime?.kind === "wsl" &&
+        p.runtime.distro === project.runtime.distro &&
+        p.runtime.linuxPath === project.runtime.linuxPath,
+    );
+    const nextProject: Project = existing
+      ? { ...existing, lastOpenedAt: Date.now() }
+      : project;
+    setProjects((prev) => {
+      const next = [
+        nextProject,
+        ...prev.filter((p) => {
+          if (p.id === nextProject.id) return false;
+          if (p.runtime?.kind !== "wsl" || nextProject.runtime?.kind !== "wsl") return true;
+          return (
+            p.runtime.distro !== nextProject.runtime.distro ||
+            p.runtime.linuxPath !== nextProject.runtime.linuxPath
+          );
+        }),
+      ];
+      persistProjects(next, showToast, formatSaveProjectsError);
+      return next;
+    });
+    setActiveProject(nextProject);
+    mountProject(nextProject.id);
+    updateProjectView(nextProject.id, createDefaultProjectViewState());
+    invoke("init_project_config", { projectPath: nextProject.path, runtime: nextProject.runtime }).catch(
+      (e: unknown) => {
+        showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
+      },
+    );
   }
 
   function handleProjectClick(project: Project) {
@@ -459,7 +501,7 @@ function App() {
     setActiveProject(updated);
     setHubMode(false);
     mountProject(updated.id);
-    invoke("init_project_config", { projectPath: project.path }).catch((e: unknown) => {
+    invoke("init_project_config", { projectPath: project.path, runtime: project.runtime }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
     });
   }
@@ -469,10 +511,17 @@ function App() {
     setHubMode(false);
   }
 
-  function invokeRunTask(task: Task, projectPath: string, images: string[], texts: string[] = []) {
+  function invokeRunTask(
+    task: Task,
+    project: Project,
+    projectPath: string,
+    images: string[],
+    texts: string[] = [],
+  ) {
     invoke("run_task", {
       taskId: task.id,
       projectPath,
+      runtime: projectPath === project.path ? project.runtime : undefined,
       prompt: task.prompt,
       agent: task.agent,
       permissionMode: task.permissionMode,
@@ -514,6 +563,10 @@ function App() {
 
     if (launchMode === "worktree" && !baseBranch) {
       showToast(t("toast.worktreeBaseRequired"), "warning");
+      return;
+    }
+    if (launchMode === "worktree" && project.runtime?.kind === "wsl") {
+      showToast(t("newTask.wslWorktreeUnsupported"), "warning");
       return;
     }
 
@@ -587,6 +640,7 @@ function App() {
 
     invokeRunTask(
       { ...baseTask, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch },
+      project,
       worktreePath ?? project.path,
       images,
       texts,
@@ -608,7 +662,7 @@ function App() {
     });
     tm.resetTaskTerminal(task.id);
     updateProjectView(task.projectId, { selectedTaskId: task.id, isNewTask: false });
-    invokeRunTask(task, task.worktreePath ?? project.path, []);
+    invokeRunTask(task, project, task.worktreePath ?? project.path, []);
   }
 
   function markTaskWorktreeDiscarded(taskId: string) {
@@ -683,6 +737,7 @@ function App() {
     invoke("resume_task", {
       taskId: task.id,
       projectPath: task.worktreePath ?? project.path,
+      runtime: task.worktreePath ? undefined : project.runtime,
       agent: task.agent,
       sessionId,
       prompt: task.prompt,
@@ -893,16 +948,23 @@ function App() {
       task.agent === "codex"
         ? (task.codexSessionPath ?? null)
         : (task.claudeSessionPath ?? null);
+    const sessionLocation =
+      task.agent === "codex"
+        ? task.codexSessionLocation
+        : task.claudeSessionLocation;
     // 点击瞬间的快照，用于 await 完成后的并发校验（防止用户期间 rerun/resume/手改名）
     const expectedPriorName = task.name ?? "";
     const expectedPrompt = task.prompt;
     const expectedStatus = task.status;
     const expectedSessionPath = sessionPath;
+    const expectedSessionLocation = sessionLocation;
     try {
       const name = await invoke<string>("generate_task_name", {
         projectPath: project.path,
+        runtime: project.runtime,
         agent: task.agent,
         sessionPath,
+        sessionLocation,
         originalPrompt: task.prompt,
       });
       const trimmed = name.trim();
@@ -920,7 +982,12 @@ function App() {
           current.agent === "codex"
             ? (current.codexSessionPath ?? null)
             : (current.claudeSessionPath ?? null);
+        const currentSessionLocation =
+          current.agent === "codex"
+            ? current.codexSessionLocation
+            : current.claudeSessionLocation;
         if (currentSessionPath !== expectedSessionPath) return prev;
+        if (currentSessionLocation !== expectedSessionLocation) return prev;
 
         const next = prev.map((x) => (x.id === taskId ? { ...x, name: trimmed || undefined } : x));
         persistProjectTasks(current.projectId, next, showToast, formatSaveTasksError);
@@ -1016,21 +1083,44 @@ function App() {
     });
   }
 
-  function updateTaskSession(taskId: string, sessionId: string, sessionPath: string) {
+  function updateTaskSession(
+    taskId: string,
+    sessionId: string,
+    sessionPath: string,
+    sessionLocation?: SessionLocation,
+  ) {
     setTasks((prev) => {
       let changed = false;
       const next = prev.map((task) => {
         if (task.id !== taskId) return task;
         if (task.agent === "claude") {
-          if (task.claudeSessionId === sessionId && task.claudeSessionPath === sessionPath)
+          if (
+            task.claudeSessionId === sessionId &&
+            task.claudeSessionPath === sessionPath &&
+            task.claudeSessionLocation === sessionLocation
+          )
             return task;
           changed = true;
-          return { ...task, claudeSessionId: sessionId, claudeSessionPath: sessionPath };
+          return {
+            ...task,
+            claudeSessionId: sessionId,
+            claudeSessionPath: sessionPath,
+            claudeSessionLocation: sessionLocation,
+          };
         } else {
-          if (task.codexSessionId === sessionId && task.codexSessionPath === sessionPath)
+          if (
+            task.codexSessionId === sessionId &&
+            task.codexSessionPath === sessionPath &&
+            task.codexSessionLocation === sessionLocation
+          )
             return task;
           changed = true;
-          return { ...task, codexSessionId: sessionId, codexSessionPath: sessionPath };
+          return {
+            ...task,
+            codexSessionId: sessionId,
+            codexSessionPath: sessionPath,
+            codexSessionLocation: sessionLocation,
+          };
         }
       });
 
@@ -1084,7 +1174,7 @@ function App() {
     setHubMode(true);
     setActiveProject(updated);
     mountProject(updated.id);
-    invoke("init_project_config", { projectPath: updated.path }).catch((e: unknown) => {
+    invoke("init_project_config", { projectPath: updated.path, runtime: updated.runtime }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
     });
   }, [hubProjectId, projects, mountProject, showToast, formatSaveProjectsError, t]);
@@ -1186,6 +1276,7 @@ function App() {
             allProjects={sortedProjects}
             tasks={tasks}
             onOpen={handleOpen}
+            onOpenWslProject={handleOpenWslProject}
             onProjectClick={handleProjectClick}
             onDeleteProject={handleDeleteProject}
             onToggleProjectHidden={handleToggleProjectHidden}

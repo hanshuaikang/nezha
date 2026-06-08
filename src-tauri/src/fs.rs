@@ -1,6 +1,8 @@
 use base64::Engine;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+
+use crate::runtime::{linux_path_to_unc, ProjectRuntime};
 
 #[derive(serde::Serialize)]
 pub(crate) struct FsEntry {
@@ -49,6 +51,274 @@ const IGNORED_DIRS: &[&str] = &[
 
 const MAX_IMAGE_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_FILE_SEARCH_RESULTS: usize = 200;
+
+fn wsl_runtime(runtime: &Option<ProjectRuntime>) -> Option<(&str, &str)> {
+    match runtime {
+        Some(ProjectRuntime::Wsl {
+            distro, linux_path, ..
+        }) => Some((distro.as_str(), linux_path.as_str())),
+        _ => None,
+    }
+}
+
+fn run_wsl_sh(
+    distro: &str,
+    script: &str,
+    args: &[String],
+    stdin_bytes: Option<&[u8]>,
+) -> Result<Output, String> {
+    let mut cmd = Command::new("wsl.exe");
+    crate::subprocess::configure_background_command(&mut cmd);
+    cmd.arg("-d")
+        .arg(distro)
+        .arg("--exec")
+        .arg("/bin/sh")
+        .arg("-lc")
+        .arg(script)
+        .arg("nezha");
+    cmd.args(args);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if stdin_bytes.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("wsl_unavailable: {e}"))?;
+    if let Some(bytes) = stdin_bytes {
+        use std::io::Write;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to open WSL stdin".to_string())?;
+        stdin.write_all(bytes).map_err(|e| e.to_string())?;
+    }
+    child.wait_with_output().map_err(|e| e.to_string())
+}
+
+fn wsl_error(output: &Output, fallback: &str) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        fallback.to_string()
+    } else {
+        stderr
+    }
+}
+
+fn validate_wsl_entry_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("File name cannot be empty".to_string());
+    }
+    if name.len() > 255 {
+        return Err("File name is too long (max 255 bytes)".to_string());
+    }
+    if name == "." || name == ".." || name.contains('/') || name.contains('\0') {
+        return Err("Invalid file name".to_string());
+    }
+    Ok(())
+}
+
+fn wsl_read_dir_entries(distro: &str, root: &str, path: &str) -> Result<Vec<FsEntry>, String> {
+    let script = r#"root="$1"
+target="$2"
+root_canon="$(readlink -f -- "$root")" || { echo wsl_missing_coreutils >&2; exit 2; }
+target_canon="$(readlink -f -- "$target")" || { echo wsl_path_missing >&2; exit 2; }
+case "$target_canon" in "$root_canon"|"$root_canon"/*) ;; *) echo path_outside_project >&2; exit 2;; esac
+[ -d "$target_canon" ] || { echo path_not_directory >&2; exit 2; }
+for p in "$target_canon"/* "$target_canon"/.[!.]* "$target_canon"/..?*; do
+  [ -e "$p" ] || continue
+  name="${p##*/}"
+  is_dir=0
+  [ -d "$p" ] && is_dir=1
+  printf '%s\0%s\0%s\0' "$name" "$p" "$is_dir"
+done"#;
+    let output = run_wsl_sh(
+        distro,
+        script,
+        &[root.to_string(), path.to_string()],
+        None,
+    )?;
+    if !output.status.success() {
+        return Err(wsl_error(&output, "Failed to list WSL directory"));
+    }
+    let mut fields = output.stdout.split(|byte| *byte == 0);
+    let mut result = Vec::new();
+    while let Some(name) = fields.next() {
+        if name.is_empty() {
+            continue;
+        }
+        let Some(path) = fields.next() else { break };
+        let Some(is_dir) = fields.next() else { break };
+        let name = String::from_utf8_lossy(name).into_owned();
+        if is_dir == b"1" && IGNORED_DIRS.contains(&name.as_str()) {
+            continue;
+        }
+        let path = String::from_utf8_lossy(path).into_owned();
+        let extension = Path::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase());
+        result.push(FsEntry {
+            name,
+            path,
+            is_dir: is_dir == b"1",
+            extension,
+            is_gitignored: false,
+        });
+    }
+    result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    Ok(result)
+}
+
+fn wsl_read_file_bytes(
+    distro: &str,
+    root: &str,
+    path: &str,
+    max_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    let script = r#"root="$1"
+target="$2"
+max="$3"
+root_canon="$(readlink -f -- "$root")" || { echo wsl_missing_coreutils >&2; exit 2; }
+target_canon="$(readlink -f -- "$target")" || { echo wsl_path_missing >&2; exit 2; }
+case "$target_canon" in "$root_canon"|"$root_canon"/*) ;; *) echo path_outside_project >&2; exit 2;; esac
+[ -f "$target_canon" ] || { echo path_not_file >&2; exit 2; }
+size="$(wc -c < "$target_canon")" || exit 2
+if [ "$size" -gt "$max" ]; then echo "file_too_large:$size" >&2; exit 3; fi
+cat -- "$target_canon""#;
+    let output = run_wsl_sh(
+        distro,
+        script,
+        &[root.to_string(), path.to_string(), max_bytes.to_string()],
+        None,
+    )?;
+    if !output.status.success() {
+        return Err(wsl_error(&output, "Failed to read WSL file"));
+    }
+    Ok(output.stdout)
+}
+
+fn wsl_write_file(
+    distro: &str,
+    root: &str,
+    path: &str,
+    content: &str,
+) -> Result<(), String> {
+    let script = r#"root="$1"
+target="$2"
+root_canon="$(readlink -f -- "$root")" || { echo wsl_missing_coreutils >&2; exit 2; }
+parent="$(dirname -- "$target")"
+base="$(basename -- "$target")"
+parent_canon="$(readlink -f -- "$parent")" || { echo parent_missing >&2; exit 2; }
+case "$parent_canon" in "$root_canon"|"$root_canon"/*) ;; *) echo path_outside_project >&2; exit 2;; esac
+target_canon="$parent_canon/$base"
+if [ -e "$target_canon" ]; then
+  resolved="$(readlink -f -- "$target_canon")" || exit 2
+  case "$resolved" in "$root_canon"|"$root_canon"/*) ;; *) echo path_outside_project >&2; exit 2;; esac
+fi
+tmp="$parent_canon/.${base}.$$.$RANDOM.nezha.tmp"
+cat > "$tmp" || exit 2
+mv -- "$tmp" "$target_canon""#;
+    let output = run_wsl_sh(
+        distro,
+        script,
+        &[root.to_string(), path.to_string()],
+        Some(content.as_bytes()),
+    )?;
+    if !output.status.success() {
+        return Err(wsl_error(&output, "Failed to write WSL file"));
+    }
+    Ok(())
+}
+
+fn wsl_create_path(distro: &str, root: &str, path: &str, is_dir: bool) -> Result<(), String> {
+    let name = Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    validate_wsl_entry_name(name)?;
+    let script = r#"root="$1"
+target="$2"
+kind="$3"
+root_canon="$(readlink -f -- "$root")" || { echo wsl_missing_coreutils >&2; exit 2; }
+parent="$(dirname -- "$target")"
+base="$(basename -- "$target")"
+parent_canon="$(readlink -f -- "$parent")" || { echo parent_missing >&2; exit 2; }
+case "$parent_canon" in "$root_canon"|"$root_canon"/*) ;; *) echo path_outside_project >&2; exit 2;; esac
+target_path="$parent_canon/$base"
+[ ! -e "$target_path" ] || { echo already_exists >&2; exit 3; }
+if [ "$kind" = dir ]; then mkdir -- "$target_path"; else : > "$target_path"; fi"#;
+    let kind = if is_dir { "dir" } else { "file" };
+    let output = run_wsl_sh(
+        distro,
+        script,
+        &[root.to_string(), path.to_string(), kind.to_string()],
+        None,
+    )?;
+    if !output.status.success() {
+        let err = wsl_error(&output, "Failed to create WSL path");
+        return Err(if err == "already_exists" {
+            "A file or folder with that name already exists".to_string()
+        } else {
+            err
+        });
+    }
+    Ok(())
+}
+
+fn wsl_delete_path(distro: &str, root: &str, path: &str) -> Result<(), String> {
+    let script = r#"root="$1"
+target="$2"
+trash_id="$3"
+root_canon="$(readlink -f -- "$root")" || { echo wsl_missing_coreutils >&2; exit 2; }
+parent="$(dirname -- "$target")"
+base="$(basename -- "$target")"
+parent_canon="$(readlink -f -- "$parent")" || { echo parent_missing >&2; exit 2; }
+case "$parent_canon" in "$root_canon"|"$root_canon"/*) ;; *) echo path_outside_project >&2; exit 2;; esac
+target_path="$parent_canon/$base"
+[ -e "$target_path" ] || { echo path_missing >&2; exit 2; }
+[ "$target_path" != "$root_canon" ] || { echo cannot_delete_project_root >&2; exit 2; }
+rel="${target_path#"$root_canon"/}"
+first="${rel%%/*}"
+case "$first" in .git|.nezha) echo protected_path >&2; exit 2;; esac
+trash_dir="$root_canon/.nezha/trash/$trash_id"
+mkdir -p -- "$trash_dir" || exit 2
+mv -- "$target_path" "$trash_dir/$base""#;
+    let output = run_wsl_sh(
+        distro,
+        script,
+        &[
+            root.to_string(),
+            path.to_string(),
+            uuid::Uuid::new_v4().to_string(),
+        ],
+        None,
+    )?;
+    if !output.status.success() {
+        return Err(wsl_error(&output, "Failed to delete WSL path"));
+    }
+    Ok(())
+}
+
+fn wsl_list_project_files(distro: &str, root: &str) -> Result<Vec<String>, String> {
+    let script = r#"root="$1"
+root_canon="$(readlink -f -- "$root")" || { echo wsl_missing_coreutils >&2; exit 2; }
+cd "$root_canon" || exit 2
+git -c core.quotePath=false ls-files -c -o --exclude-standard"#;
+    let output = run_wsl_sh(distro, script, &[root.to_string()], None)?;
+    if !output.status.success() {
+        return Err(wsl_error(&output, "Failed to list WSL project files"));
+    }
+    let mut files: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect();
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
 
 /// Validate that `target` is an absolute path within `allowed_root` (prevents directory traversal).
 /// Validate that `target` is reachable within `allowed_root`.
@@ -237,8 +507,20 @@ fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
 }
 
 #[tauri::command]
-pub async fn open_in_system_file_manager(path: String, project_path: String) -> Result<(), String> {
+pub async fn open_in_system_file_manager(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let (path, project_path) = if let Some((distro, root)) = wsl_runtime(&runtime) {
+            (
+                linux_path_to_unc(distro, &path)?,
+                linux_path_to_unc(distro, root)?,
+            )
+        } else {
+            (path, project_path)
+        };
         let target = validate_path_within(&path, &project_path, true)?;
         let is_dir = target.is_dir();
 
@@ -286,8 +568,15 @@ pub async fn open_in_system_file_manager(path: String, project_path: String) -> 
 }
 
 #[tauri::command]
-pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
+pub async fn read_dir_entries(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<Vec<FsEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            return wsl_read_dir_entries(distro, root, &path);
+        }
         validate_path_within(&path, &project_path, true)?;
         let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
         let mut result: Vec<FsEntry> = entries
@@ -359,7 +648,23 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
 }
 
 #[tauri::command]
-pub async fn read_file_content(path: String, project_path: String) -> Result<String, String> {
+pub async fn read_file_content(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<String, String> {
+    if let Some((distro, root)) = wsl_runtime(&runtime) {
+        let bytes = tauri::async_runtime::spawn_blocking({
+            let distro = distro.to_string();
+            let root = root.to_string();
+            let path = path.clone();
+            move || wsl_read_file_bytes(&distro, &root, &path, 2 * 1024 * 1024)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        return String::from_utf8(bytes).map_err(|e| e.to_string());
+    }
+
     validate_path_within(&path, &project_path, true)?;
 
     use std::io::Read;
@@ -379,7 +684,34 @@ pub async fn read_file_content(path: String, project_path: String) -> Result<Str
 }
 
 #[tauri::command]
-pub async fn read_image_preview(path: String, project_path: String) -> Result<ImagePreviewData, String> {
+pub async fn read_image_preview(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<ImagePreviewData, String> {
+    if let Some((distro, root)) = wsl_runtime(&runtime) {
+        let mime_type = previewable_image_mime_type(Path::new(&path))
+            .ok_or_else(|| "Unsupported image format".to_string())?;
+        let bytes = tauri::async_runtime::spawn_blocking({
+            let distro = distro.to_string();
+            let root = root.to_string();
+            let path = path.clone();
+            move || wsl_read_file_bytes(&distro, &root, &path, MAX_IMAGE_PREVIEW_BYTES)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let byte_length = bytes.len() as u64;
+        return Ok(ImagePreviewData {
+            data_url: format!(
+                "data:{};base64,{}",
+                mime_type,
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            ),
+            mime_type: mime_type.to_string(),
+            byte_length,
+        });
+    }
+
     let validated_path = validate_path_within(&path, &project_path, true)?;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -417,8 +749,16 @@ pub async fn read_image_preview(path: String, project_path: String) -> Result<Im
 }
 
 #[tauri::command]
-pub async fn write_file_content(path: String, content: String, project_path: String) -> Result<(), String> {
+pub async fn write_file_content(
+    path: String,
+    content: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            return wsl_write_file(distro, root, &path, &content);
+        }
         validate_path_within(&path, &project_path, false)?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
     })
@@ -427,8 +767,15 @@ pub async fn write_file_content(path: String, content: String, project_path: Str
 }
 
 #[tauri::command]
-pub async fn create_file(path: String, project_path: String) -> Result<(), String> {
+pub async fn create_file(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            return wsl_create_path(distro, root, &path, false);
+        }
         let (parent, file_name) = validate_new_path_within(&path, &project_path)?;
         let target = parent.join(&file_name);
         std::fs::OpenOptions::new()
@@ -448,8 +795,15 @@ pub async fn create_file(path: String, project_path: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub async fn create_directory(path: String, project_path: String) -> Result<(), String> {
+pub async fn create_directory(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            return wsl_create_path(distro, root, &path, true);
+        }
         let (parent, file_name) = validate_new_path_within(&path, &project_path)?;
         let target = parent.join(&file_name);
         std::fs::create_dir(&target).map_err(|e| match e.kind() {
@@ -526,8 +880,15 @@ fn validate_existing_path_for_delete(
 }
 
 #[tauri::command]
-pub async fn delete_path(path: String, project_path: String) -> Result<(), String> {
+pub async fn delete_path(
+    path: String,
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            return wsl_delete_path(distro, root, &path);
+        }
         let resolved = validate_existing_path_for_delete(&path, &project_path)?;
         trash::delete(&resolved).map_err(|e| e.to_string())
     })
@@ -536,8 +897,14 @@ pub async fn delete_path(path: String, project_path: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub async fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
+pub async fn list_project_files(
+    project_path: String,
+    runtime: Option<ProjectRuntime>,
+) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            return wsl_list_project_files(distro, root);
+        }
         let mut cmd = std::process::Command::new("git");
         crate::subprocess::configure_background_command(&mut cmd);
         let output = cmd
@@ -589,14 +956,99 @@ fn file_extension_lower(name: &str) -> Option<String> {
         .and_then(|(_, ext)| (!ext.is_empty()).then(|| ext.to_ascii_lowercase()))
 }
 
+fn search_project_file_list(
+    root: &str,
+    files: Vec<String>,
+    query: String,
+    extensions: Vec<String>,
+    limit: Option<usize>,
+    linux_paths: bool,
+) -> Result<Vec<ProjectFileSearchResult>, String> {
+    let query = query.trim().to_ascii_lowercase();
+    let extension_filters: std::collections::HashSet<String> = extensions
+        .into_iter()
+        .map(|ext| ext.trim().trim_start_matches('.').to_ascii_lowercase())
+        .filter(|ext| !ext.is_empty())
+        .collect();
+    let limit = limit.unwrap_or(80).clamp(1, MAX_FILE_SEARCH_RESULTS);
+    let mut matches: Vec<(u8, ProjectFileSearchResult)> = Vec::new();
+
+    for rel in files {
+        if rel.is_empty() || !relative_git_path_is_safe(&rel) {
+            continue;
+        }
+        let (dir, name) = split_relative_file_path(&rel);
+        let name_lower = name.to_ascii_lowercase();
+        if !query.is_empty() && !name_lower.contains(&query) {
+            continue;
+        }
+
+        let extension = file_extension_lower(&name);
+        if !extension_filters.is_empty()
+            && !extension
+                .as_ref()
+                .is_some_and(|ext| extension_filters.contains(ext))
+        {
+            continue;
+        }
+
+        let score = if query.is_empty() {
+            3
+        } else if name_lower == query {
+            0
+        } else if name_lower.starts_with(&query) {
+            1
+        } else {
+            2
+        };
+
+        let path = if linux_paths {
+            format!("{}/{}", root.trim_end_matches('/'), rel)
+        } else {
+            Path::new(root).join(&rel).to_string_lossy().into_owned()
+        };
+        matches.push((
+            score,
+            ProjectFileSearchResult {
+                path,
+                name,
+                dir,
+                extension,
+            },
+        ));
+    }
+
+    matches.sort_by(|(score_a, a), (score_b, b)| {
+        score_a
+            .cmp(score_b)
+            .then_with(|| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+            })
+            .then_with(|| a.dir.cmp(&b.dir))
+    });
+
+    Ok(matches
+        .into_iter()
+        .take(limit)
+        .map(|(_, result)| result)
+        .collect())
+}
+
 #[tauri::command]
 pub async fn search_project_files(
     project_path: String,
+    runtime: Option<ProjectRuntime>,
     query: String,
     extensions: Vec<String>,
     limit: Option<usize>,
 ) -> Result<Vec<ProjectFileSearchResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some((distro, root)) = wsl_runtime(&runtime) {
+            let files = wsl_list_project_files(distro, root)?;
+            return search_project_file_list(root, files, query, extensions, limit, true);
+        }
         let root = validate_project_root(&project_path)?;
         let query = query.trim().to_ascii_lowercase();
         let extension_filters: std::collections::HashSet<String> = extensions

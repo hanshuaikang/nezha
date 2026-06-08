@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
 import * as Popover from "@radix-ui/react-popover";
+import type { ProjectRuntime } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
 
@@ -31,12 +32,14 @@ function setMenuItemHover(el: HTMLElement, hover: boolean) {
 
 export function LaunchModeSelector({
   projectPath,
+  runtime,
   launchMode,
   baseBranch,
   onSetLaunchMode,
   onSetBaseBranch,
 }: {
   projectPath: string;
+  runtime?: ProjectRuntime;
   launchMode: LaunchMode;
   baseBranch: string;
   onSetLaunchMode: (mode: LaunchMode) => void;
@@ -47,12 +50,22 @@ export function LaunchModeSelector({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const availableModes = useMemo(
+    () => (runtime?.kind === "wsl" ? (["local"] as LaunchMode[]) : MODES),
+    [runtime],
+  );
+
+  useEffect(() => {
+    if (runtime?.kind === "wsl" && launchMode === "worktree") {
+      onSetLaunchMode("local");
+    }
+  }, [launchMode, onSetLaunchMode, runtime]);
 
   const loadBranches = useCallback(
     async ({ applyDefault }: { applyDefault: boolean }) => {
       if (!projectPath) return;
       try {
-        const list = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath });
+        const list = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath, runtime });
         setBranches(list);
         if (applyDefault && !baseBranch) {
           const current = list.find((b) => b.current);
@@ -64,7 +77,7 @@ export function LaunchModeSelector({
     },
     // baseBranch / onSetBaseBranch 只用于首次挂载默认值，避免后续刷新被它们触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectPath],
+    [projectPath, runtime],
   );
 
   useEffect(() => {
@@ -115,7 +128,7 @@ export function LaunchModeSelector({
         <Select.Portal>
           <Select.Content position="popper" sideOffset={6} style={s.toolbarMenuContent}>
             <Select.Viewport>
-              {MODES.map((mode) => (
+              {availableModes.map((mode) => (
                 <Select.Item
                   key={mode}
                   value={mode}

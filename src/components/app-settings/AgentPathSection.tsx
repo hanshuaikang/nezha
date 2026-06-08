@@ -207,6 +207,9 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
       {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
+      <div style={{ fontSize: 12, color: "var(--text-hint)", lineHeight: 1.5 }}>
+        {t("appSettings.localAgentPathsHint")}
+      </div>
 
       <div
         style={{

@@ -27,15 +27,18 @@ import {
   pathSeparator,
   updateNode,
 } from "./file-explorer/treeUtils";
+import type { ProjectRuntime } from "../types";
 
 export function FileExplorer({
   projectPath,
+  runtime,
   projectName,
   onFileSelect,
   active = true,
   width = 240,
 }: {
   projectPath: string;
+  runtime?: ProjectRuntime;
   projectName: string;
   onFileSelect: (path: string, name: string) => void;
   active?: boolean;
@@ -96,13 +99,13 @@ export function FileExplorer({
       setCtxMenu(null);
 
       try {
-        await invoke("open_in_system_file_manager", { path, projectPath });
+        await invoke("open_in_system_file_manager", { path, projectPath, runtime });
       } catch (error) {
         console.error("Failed to open file in system folder", error);
         showToast(t("file.failedOpenSystemFolder", { error: String(error) }));
       }
     },
-    [projectPath, showToast, t],
+    [projectPath, runtime, showToast, t],
   );
 
   const copyPath = useCallback(async (event: React.MouseEvent, path: string, withAt: boolean) => {
@@ -118,6 +121,26 @@ export function FileExplorer({
     }
   }, []);
 
+  const copyUncPath = useCallback(
+    async (event: React.MouseEvent, path: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      try {
+        const uncPath =
+          runtime?.kind === "wsl"
+            ? `\\\\wsl.localhost\\${runtime.distro}\\${path.replace(/^\/+/, "").replace(/\//g, "\\")}`
+            : path;
+        await writeClipboardText(uncPath);
+      } catch (error) {
+        console.error("Failed to copy UNC path", error);
+      } finally {
+        setCtxMenu(null);
+      }
+    },
+    [runtime],
+  );
+
   const { safeInvoke, isCancelled } = useCancellableInvoke();
   const nodesRef = useRef<TreeNode[]>([]);
   const refreshIdRef = useRef(0);
@@ -127,8 +150,8 @@ export function FileExplorer({
   }, [nodes]);
 
   const readEntries = useCallback(
-    (path: string) => safeInvoke<FsEntry[]>("read_dir_entries", { path, projectPath }),
-    [projectPath, safeInvoke],
+    (path: string) => safeInvoke<FsEntry[]>("read_dir_entries", { path, projectPath, runtime }),
+    [projectPath, runtime, safeInvoke],
   );
 
   const refresh = useCallback(
@@ -311,9 +334,9 @@ export function FileExplorer({
     const parentPath = creating.parentPath;
     try {
       if (kind === "file") {
-        await safeInvoke("create_file", { path: fullPath, projectPath });
+        await safeInvoke("create_file", { path: fullPath, projectPath, runtime });
       } else {
-        await safeInvoke("create_directory", { path: fullPath, projectPath });
+        await safeInvoke("create_directory", { path: fullPath, projectPath, runtime });
       }
       if (isCancelled()) return;
       setCreating(null);
@@ -343,6 +366,7 @@ export function FileExplorer({
     onFileSelect,
     projectPath,
     refresh,
+    runtime,
     safeInvoke,
     showToast,
     t,
@@ -388,7 +412,7 @@ export function FileExplorer({
 
     deleteInFlightRef.current = true;
     try {
-      await safeInvoke("delete_path", { path: targetPath, projectPath });
+      await safeInvoke("delete_path", { path: targetPath, projectPath, runtime });
       if (isCancelled()) return;
       const sep = pathSeparator(targetPath);
       const descendantPrefix = targetPath + sep;
@@ -406,7 +430,7 @@ export function FileExplorer({
     } finally {
       deleteInFlightRef.current = false;
     }
-  }, [ctxMenu, isCancelled, projectPath, refresh, safeInvoke, showToast, t]);
+  }, [ctxMenu, isCancelled, projectPath, refresh, runtime, safeInvoke, showToast, t]);
 
   return (
     <div style={{ ...s.fileExplorerRoot, width }}>
@@ -419,6 +443,8 @@ export function FileExplorer({
           onDelete={() => void handleDelete()}
           onOpenInSystem={(event, path) => void openInSystemFolder(event, path)}
           onCopyPath={(event, path, withAt) => void copyPath(event, path, withAt)}
+          onCopyUncPath={(event, path) => void copyUncPath(event, path)}
+          isWsl={runtime?.kind === "wsl"}
         />
       )}
       {/* Header */}

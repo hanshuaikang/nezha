@@ -161,7 +161,7 @@ export function TaskPanel({
       </div>
 
       {/* Branch bar */}
-      <BranchBar projectPath={project.path} active={active} />
+      <BranchBar projectPath={project.path} runtime={project.runtime} active={active} />
 
       {/* New Task row */}
       <button

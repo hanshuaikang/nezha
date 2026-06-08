@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Search, Plus, ChevronDown, X, Tag, Check, GitFork, GitBranch } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import * as Popover from "@radix-ui/react-popover";
+import type { ProjectRuntime } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
 
@@ -13,11 +14,13 @@ interface GitBranchInfo {
 
 function BranchDialog({
   projectPath,
+  runtime,
   branches,
   onClose,
   onCreated,
 }: {
   projectPath: string;
+  runtime?: ProjectRuntime;
   branches: GitBranchInfo[];
   onClose: () => void;
   onCreated: () => void;
@@ -62,6 +65,7 @@ function BranchDialog({
       try {
         await invoke("git_create_branch", {
           projectPath,
+          runtime,
           branchName: name,
           fromBranch,
           checkout,
@@ -73,7 +77,7 @@ function BranchDialog({
         setLoading(false);
       }
     },
-    [branchName, fromBranch, projectPath, onCreated],
+    [branchName, fromBranch, projectPath, runtime, onCreated],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -313,9 +317,11 @@ function BranchDialog({
 
 export function BranchBar({
   projectPath,
+  runtime,
   active = true,
 }: {
   projectPath: string;
+  runtime?: ProjectRuntime;
   active?: boolean;
 }) {
   const { t } = useI18n();
@@ -333,7 +339,7 @@ export function BranchBar({
     if (inflightRef.current) return inflightRef.current;
     const p = (async () => {
       try {
-        const result = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath });
+        const result = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath, runtime });
         setBranches(result);
       } catch {
         // not a git repo or git not available
@@ -343,7 +349,7 @@ export function BranchBar({
     })();
     inflightRef.current = p;
     return p;
-  }, [projectPath]);
+  }, [projectPath, runtime]);
 
   useEffect(() => {
     if (!active) return;
@@ -389,6 +395,7 @@ export function BranchBar({
     try {
       await invoke("git_checkout_branch", {
         projectPath,
+        runtime,
         branchName: branch.name,
         isRemote: branch.remote !== null,
       });
@@ -589,6 +596,7 @@ export function BranchBar({
       {showDialog && (
         <BranchDialog
           projectPath={projectPath}
+          runtime={runtime}
           branches={branches}
           onClose={() => setShowDialog(false)}
           onCreated={() => {

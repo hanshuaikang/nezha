@@ -4,6 +4,9 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+use crate::runtime::ProjectRuntime;
+use crate::session::SessionLocation;
+
 // ── Data types (mirror TypeScript interfaces) ────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -14,6 +17,8 @@ pub struct Project {
     pub branch: Option<String>,
     #[serde(rename = "lastOpenedAt")]
     pub last_opened_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<ProjectRuntime>,
     // 缺省=常驻；旧数据无此字段时默认 false，序列化时省略 false 以保持文件简洁。
     #[serde(
         rename = "hiddenFromRail",
@@ -37,16 +42,29 @@ pub struct Task {
     pub status: String,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
-    #[serde(rename = "attentionRequestedAt", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "attentionRequestedAt",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub attention_requested_at: Option<i64>,
     #[serde(rename = "claudeSessionId", skip_serializing_if = "Option::is_none")]
     pub claude_session_id: Option<String>,
     #[serde(rename = "claudeSessionPath", skip_serializing_if = "Option::is_none")]
     pub claude_session_path: Option<String>,
+    #[serde(
+        rename = "claudeSessionLocation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub claude_session_location: Option<SessionLocation>,
     #[serde(rename = "codexSessionId", skip_serializing_if = "Option::is_none")]
     pub codex_session_id: Option<String>,
     #[serde(rename = "codexSessionPath", skip_serializing_if = "Option::is_none")]
     pub codex_session_path: Option<String>,
+    #[serde(
+        rename = "codexSessionLocation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub codex_session_location: Option<SessionLocation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub starred: Option<bool>,
     #[serde(rename = "failureReason", skip_serializing_if = "Option::is_none")]
@@ -68,7 +86,8 @@ pub struct Task {
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
 pub(crate) fn nezha_dir() -> Result<PathBuf, String> {
-    let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let home =
+        crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
 

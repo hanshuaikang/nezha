@@ -10,6 +10,8 @@ export function FileExplorerContextMenu({
   onDelete,
   onOpenInSystem,
   onCopyPath,
+  onCopyUncPath,
+  isWsl,
 }: {
   ctxMenu: ContextMenuState;
   onClose: () => void;
@@ -18,6 +20,8 @@ export function FileExplorerContextMenu({
   onDelete: () => void;
   onOpenInSystem: (e: React.MouseEvent, path: string) => void;
   onCopyPath: (e: React.MouseEvent, path: string, withAt: boolean) => void;
+  onCopyUncPath?: (e: React.MouseEvent, path: string) => void;
+  isWsl?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -26,7 +30,8 @@ export function FileExplorerContextMenu({
     { label: t("file.newFolder"), action: "newFolder" },
     { action: "separator" },
     { label: t("file.openInSystemFolder"), action: "open" },
-    { label: t("file.copyFullPath"), action: "copy", withAt: false },
+    { label: t(isWsl ? "file.copyLinuxPath" : "file.copyFullPath"), action: "copy", withAt: false },
+    ...(isWsl ? ([{ label: t("file.copyUncPath"), action: "copyUnc" }] as const) : []),
     { label: t("file.copyAtFullPath"), action: "copy", withAt: true },
     ...(ctxMenu.isRoot
       ? []
@@ -105,6 +110,10 @@ export function FileExplorerContextMenu({
                 }
                 if (item.action === "copy") {
                   onCopyPath(event, ctxMenu.path, item.withAt);
+                  return;
+                }
+                if (item.action === "copyUnc") {
+                  onCopyUncPath?.(event, ctxMenu.path);
                 }
               }}
             >

@@ -26,6 +26,10 @@ fn default_shift_enter_newline() -> bool {
     true
 }
 
+fn default_wsl_enabled() -> bool {
+    true
+}
+
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static CACHED_CODEX_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static SETTINGS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -48,6 +52,32 @@ pub struct AppSettings {
     pub send_shortcut: String,
     #[serde(default = "default_shift_enter_newline")]
     pub terminal_shift_enter_newline: bool,
+    #[serde(default)]
+    pub wsl: WslSettings,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WslSettings {
+    #[serde(default = "default_wsl_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub default_distro: String,
+    #[serde(default = "default_wsl_shell")]
+    pub default_shell: String,
+}
+
+fn default_wsl_shell() -> String {
+    "/bin/bash".to_string()
+}
+
+impl Default for WslSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_wsl_enabled(),
+            default_distro: String::new(),
+            default_shell: default_wsl_shell(),
+        }
+    }
 }
 
 impl Default for AppSettings {
@@ -57,6 +87,7 @@ impl Default for AppSettings {
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
+            wsl: WslSettings::default(),
         }
     }
 }
@@ -90,9 +121,7 @@ fn clear_cached_versions() {
     *CACHED_CLAUDE_VERSION
         .get_or_init(|| Mutex::new(None))
         .lock() = None;
-    *CACHED_CODEX_VERSION
-        .get_or_init(|| Mutex::new(None))
-        .lock() = None;
+    *CACHED_CODEX_VERSION.get_or_init(|| Mutex::new(None)).lock() = None;
 }
 
 fn settings_lock() -> &'static Mutex<()> {
@@ -100,7 +129,8 @@ fn settings_lock() -> &'static Mutex<()> {
 }
 
 fn nezha_dir() -> Result<PathBuf, String> {
-    let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let home =
+        crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
 
@@ -143,7 +173,11 @@ fn path_file_name_eq(path: &Path, expected: &str) -> bool {
 
 #[cfg(windows)]
 fn find_scoped_package_root(path: &Path, scope: &str, package: &str) -> Option<PathBuf> {
-    let mut current = if path.is_dir() { Some(path) } else { path.parent() };
+    let mut current = if path.is_dir() {
+        Some(path)
+    } else {
+        path.parent()
+    };
     while let Some(dir) = current {
         let parent = dir.parent()?;
         if path_file_name_eq(dir, package) && path_file_name_eq(parent, scope) {
@@ -162,7 +196,12 @@ fn npm_package_root_from_shim(path: &Path, scope: &str, package: &str) -> Option
 }
 
 #[cfg(windows)]
-fn candidate_from_ancestors(path: &Path, scope: &str, package: &str, relative: &[&str]) -> Option<PathBuf> {
+fn candidate_from_ancestors(
+    path: &Path,
+    scope: &str,
+    package: &str,
+    relative: &[&str],
+) -> Option<PathBuf> {
     let package_root = find_scoped_package_root(path, scope, package)
         .or_else(|| npm_package_root_from_shim(path, scope, package))?;
     let mut candidate = package_root;
@@ -173,7 +212,9 @@ fn candidate_from_ancestors(path: &Path, scope: &str, package: &str, relative: &
 }
 
 #[cfg(windows)]
-fn codex_vendor_artifact_from_vendor_root(vendor_root: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
+fn codex_vendor_artifact_from_vendor_root(
+    vendor_root: &Path,
+) -> Option<(PathBuf, Option<PathBuf>)> {
     if !vendor_root.is_dir() {
         return None;
     }
@@ -198,7 +239,11 @@ fn codex_vendor_artifact_from_vendor_root(vendor_root: &Path) -> Option<(PathBuf
 
 #[cfg(windows)]
 fn resolve_codex_vendor_artifact(path: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
-    if path_file_name_eq(path, "codex.exe") && path.parent().is_some_and(|parent| path_file_name_eq(parent, "codex")) {
+    if path_file_name_eq(path, "codex.exe")
+        && path
+            .parent()
+            .is_some_and(|parent| path_file_name_eq(parent, "codex"))
+    {
         let arch_root = path.parent()?.parent()?;
         let path_dir = arch_root.join("path");
         return Some((path.to_path_buf(), path_dir.is_dir().then_some(path_dir)));
@@ -227,7 +272,9 @@ fn resolve_codex_vendor_artifact(path: &Path) -> Option<(PathBuf, Option<PathBuf
             package_dirs.sort();
 
             for package_dir in package_dirs {
-                if let Some(found) = codex_vendor_artifact_from_vendor_root(&package_dir.join("vendor")) {
+                if let Some(found) =
+                    codex_vendor_artifact_from_vendor_root(&package_dir.join("vendor"))
+                {
                     return Some(found);
                 }
             }
@@ -282,7 +329,8 @@ fn resolve_agent_launch_spec_from_path(agent: &str, path: &str) -> AgentLaunchSp
         "codex" => {
             if let Some((program, path_dir)) = resolve_codex_vendor_artifact(resolved_path) {
                 let mut extra_env = Vec::new();
-                if let Some(path_value) = prepend_to_path(&path_dir.into_iter().collect::<Vec<_>>()) {
+                if let Some(path_value) = prepend_to_path(&path_dir.into_iter().collect::<Vec<_>>())
+                {
                     extra_env.push(("PATH".to_string(), path_value));
                 }
                 extra_env.push(("CODEX_MANAGED_BY_NPM".to_string(), "1".to_string()));
@@ -314,6 +362,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
         terminal_shift_enter_newline: settings.terminal_shift_enter_newline,
+        wsl: settings.wsl,
     }
 }
 
@@ -329,6 +378,7 @@ fn load_settings_unlocked() -> AppSettings {
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
+            wsl: WslSettings::default(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -385,7 +435,10 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn save_agent_paths(claude_path: String, codex_path: String) -> Result<AppSettings, String> {
+pub async fn save_agent_paths(
+    claude_path: String,
+    codex_path: String,
+) -> Result<AppSettings, String> {
     let normalized = tokio::task::spawn_blocking(move || {
         let _guard = settings_lock().lock();
         let mut settings = load_settings_unlocked();
@@ -537,7 +590,9 @@ pub fn codex_version_gte(min_version: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn detect_agent_versions_for_settings(settings: AppSettings) -> Result<AgentVersions, String> {
+pub async fn detect_agent_versions_for_settings(
+    settings: AppSettings,
+) -> Result<AgentVersions, String> {
     tokio::task::spawn_blocking(move || detect_versions_for_settings(&settings))
         .await
         .map_err(|e| e.to_string())

@@ -111,6 +111,7 @@ export function HooksPanel() {
       <div>
         <label style={s.hooksPanelLabel}>{t("appSettings.hooks")}</label>
         <p style={s.hooksPanelHint}>{t("appSettings.hooks.description")}</p>
+        <p style={s.hooksPanelHint}>{t("appSettings.hooks.wslDisabled")}</p>
       </div>
 
       <div style={s.hooksPanelCard}>

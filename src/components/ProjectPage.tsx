@@ -27,6 +27,11 @@ import { TodoTaskView } from "./TodoTaskView";
 import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTerminalPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useProjectPanels } from "../hooks/useProjectPanels";
+import {
+  getProjectDisplayPath,
+  getProjectRuntimeBadge,
+  getProjectRuntimeTitle,
+} from "../projectRuntime";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
@@ -197,6 +202,7 @@ export function ProjectPage({
     selectedTask?.worktreePath && !selectedTask.worktreeDiscarded
       ? selectedTask.worktreePath
       : project.path;
+  const projectFilePath = getProjectDisplayPath(project);
 
   const handleSearchFileSelect = useCallback(
     (path: string, name: string) => {
@@ -323,6 +329,25 @@ export function ProjectPage({
       />
       <div style={{ ...s.mainContent, flexDirection: "column" }}>
         <div
+          title={getProjectRuntimeTitle(project)}
+          style={{
+            height: 28,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "0 12px",
+            borderBottom: "1px solid var(--border-dim)",
+            background: "var(--bg-panel)",
+            color: "var(--text-muted)",
+            fontSize: 11.5,
+          }}
+        >
+          <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>
+            {getProjectRuntimeBadge(project)}
+          </span>
+        </div>
+        <div
           style={{
             flex: 1,
             display: "flex",
@@ -361,6 +386,7 @@ export function ProjectPage({
               openDiff.kind === "file" ? (
                 <GitDiffViewer
                   projectPath={gitContextPath}
+                  runtime={gitContextPath === project.path ? project.runtime : undefined}
                   mode="file"
                   filePath={openDiff.filePath}
                   staged={openDiff.staged}
@@ -370,6 +396,7 @@ export function ProjectPage({
               ) : openDiff.kind === "commit-file" ? (
                 <GitDiffViewer
                   projectPath={gitContextPath}
+                  runtime={gitContextPath === project.path ? project.runtime : undefined}
                   mode="commit-file"
                   commitHash={openDiff.hash}
                   filePath={openDiff.filePath}
@@ -379,6 +406,7 @@ export function ProjectPage({
               ) : (
                 <GitDiffViewer
                   projectPath={gitContextPath}
+                  runtime={gitContextPath === project.path ? project.runtime : undefined}
                   mode="commit"
                   commitHash={openDiff.hash}
                   title={openDiff.message}
@@ -389,7 +417,8 @@ export function ProjectPage({
               <FileViewer
                 tabs={openFiles}
                 activeFilePath={activeFilePath}
-                projectPath={project.path}
+                projectPath={projectFilePath}
+                runtime={project.runtime}
                 onSelectTab={handleFileTabSelect}
                 onCloseTab={handleFileTabClose}
                 onCloseOtherTabs={handleCloseOtherFileTabs}
@@ -459,6 +488,7 @@ export function ProjectPage({
           <ShellTerminalPanel
             ref={shellRef}
             projectPath={project.path}
+            runtime={project.runtime}
             projectId={project.id}
             isActive={visible}
             onClose={() => setShowShellTerminal(false)}
@@ -489,7 +519,8 @@ export function ProjectPage({
           {rightPanel === "files" && (
             <ErrorBoundary label="文件浏览器">
               <FileExplorer
-                projectPath={project.path}
+                projectPath={projectFilePath}
+                runtime={project.runtime}
                 projectName={project.name}
                 onFileSelect={handleFileSelect}
                 active={visible}
@@ -501,6 +532,7 @@ export function ProjectPage({
             <ErrorBoundary label="Git 变更">
               <GitChanges
                 projectPath={gitContextPath}
+                runtime={gitContextPath === project.path ? project.runtime : undefined}
                 currentTaskCreatedAt={currentTaskCreatedAt}
                 onFileSelect={handleDiffFileSelect}
                 width={rightPanelWidth}
@@ -511,6 +543,7 @@ export function ProjectPage({
             <ErrorBoundary label="Git 历史">
               <GitHistory
                 projectPath={gitContextPath}
+                runtime={gitContextPath === project.path ? project.runtime : undefined}
                 onCommitSelect={handleCommitSelect}
                 onFileClick={handleCommitFileClick}
                 width={rightPanelWidth}
@@ -531,14 +564,19 @@ export function ProjectPage({
 
       {showFileSearch && (
         <FileSearchDialog
-          projectPath={project.path}
+          projectPath={projectFilePath}
+          runtime={project.runtime}
           onFileSelect={handleSearchFileSelect}
           onClose={() => setShowFileSearch(false)}
         />
       )}
 
       {showSettings && (
-        <SettingsDialog projectPath={project.path} onClose={() => setShowSettings(false)} />
+        <SettingsDialog
+          projectPath={project.path}
+          runtime={project.runtime}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );

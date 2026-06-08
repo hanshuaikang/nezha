@@ -1,11 +1,46 @@
+export type ProjectRuntime =
+  | { kind: "local" }
+  | {
+      kind: "wsl";
+      distro: string;
+      linuxPath: string;
+      uncPath?: string;
+      shell?: string;
+    };
+
+export type SessionLocation =
+  | { kind: "local"; path: string }
+  | {
+      kind: "wsl";
+      distro: string;
+      linuxPath: string;
+      uncPath?: string;
+    };
+
 export interface Project {
   id: string;
   name: string;
   path: string;
   branch?: string;
   lastOpenedAt: number;
+  runtime?: ProjectRuntime;
   /** 为 true 时不在左侧常驻竖条显示，仅可从首页或「展开全部」抽屉访问。缺省=常驻。 */
   hiddenFromRail?: boolean;
+}
+
+export interface WslDistroInfo {
+  name: string;
+  state: string;
+  version: string;
+  isDefault: boolean;
+}
+
+export interface WslProjectValidation {
+  exists: boolean;
+  writable: boolean;
+  gitDetected: boolean;
+  canonicalPath: string;
+  error?: string | null;
 }
 
 export type AgentType = "claude" | "codex";
@@ -69,8 +104,10 @@ export interface Task {
   failureReason?: string;
   codexSessionId?: string;
   codexSessionPath?: string;
+  codexSessionLocation?: SessionLocation;
   claudeSessionId?: string;
   claudeSessionPath?: string;
+  claudeSessionLocation?: SessionLocation;
   worktreePath?: string;
   worktreeBranch?: string;
   baseBranch?: string;

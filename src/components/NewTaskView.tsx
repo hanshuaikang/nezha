@@ -21,6 +21,7 @@ import { AgentPermSelector } from "./new-task/AgentPermSelector";
 import { LaunchModeSelector, type LaunchMode } from "./new-task/LaunchModeSelector";
 import { useI18n } from "../i18n";
 import { APP_PLATFORM } from "../platform";
+import { getProjectDisplayPath } from "../projectRuntime";
 import {
   DEFAULT_SEND_SHORTCUT,
   getSendShortcutKeys,
@@ -62,7 +63,9 @@ function parseCrossProject(search: string, projects: Project[]): CrossProjectRef
   if (slashIdx < 0) return null;
   const prefix = search.substring(0, slashIdx);
   const match = projects.find((p) => p.name.toLowerCase() === prefix.toLowerCase());
-  return match ? { id: match.id, path: match.path, name: match.name } : null;
+  return match
+    ? { id: match.id, path: getProjectDisplayPath(match), name: match.name, runtime: match.runtime }
+    : null;
 }
 
 export function NewTaskView({
@@ -99,6 +102,7 @@ export function NewTaskView({
   const [filesLoading, setFilesLoading] = useState(false);
   const [crossProjectFiles, setCrossProjectFiles] = useState<CrossProjectFileMap>(new Map());
   const loadedProjectIds = useRef<Set<string>>(new Set());
+  const projectFileRoot = getProjectDisplayPath(project);
 
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -187,7 +191,7 @@ export function NewTaskView({
     if (initialDraft) return;
     invoke<{ agent: { default: string; default_permission_mode?: string } }>(
       "read_project_config",
-      { projectPath: project.path },
+      { projectPath: project.path, runtime: project.runtime },
     )
       .then((cfg) => {
         const defaultAgent = cfg.agent.default;
@@ -209,12 +213,13 @@ export function NewTaskView({
     setHasMdFile(null);
     const filename = agent === "claude" ? "CLAUDE.md" : "AGENTS.md";
     invoke<string>("read_file_content", {
-      path: `${project.path}/${filename}`,
-      projectPath: project.path,
+      path: `${projectFileRoot}/${filename}`,
+      projectPath: projectFileRoot,
+      runtime: project.runtime,
     })
       .then(() => setHasMdFile(true))
       .catch(() => setHasMdFile(false));
-  }, [project.path, agent]);
+  }, [projectFileRoot, project.runtime, agent]);
 
   // Hook 就绪状态：版本过低 / 无 node 时软提示用户(任务仍可启动,已回退轮询)。
   const [hookReadiness, setHookReadiness] = useState<HookAgentReadiness[] | null>(null);
@@ -255,10 +260,10 @@ export function NewTaskView({
 
   // Load current project file list
   useEffect(() => {
-    if (!project.path) return;
+    if (!projectFileRoot) return;
     setAllFiles([]);
     setFilesLoading(true);
-    invoke<string[]>("list_project_files", { projectPath: project.path })
+    invoke<string[]>("list_project_files", { projectPath: projectFileRoot, runtime: project.runtime })
       .then((files) => {
         setAllFiles(files.map(parseFileEntry));
       })
@@ -270,7 +275,7 @@ export function NewTaskView({
       })
       .finally(() => setFilesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.path]);
+  }, [projectFileRoot, project.runtime]);
 
   // Lazily load cross-project files when user enters cross-project mode
   useEffect(() => {
@@ -278,7 +283,7 @@ export function NewTaskView({
     const cp = parseCrossProject(mentionSearch, otherProjects);
     if (!cp || loadedProjectIds.current.has(cp.id)) return;
     loadedProjectIds.current.add(cp.id);
-    invoke<string[]>("list_project_files", { projectPath: cp.path })
+    invoke<string[]>("list_project_files", { projectPath: cp.path, runtime: cp.runtime })
       .then((files) => {
         setCrossProjectFiles((prev) => new Map(prev).set(cp.id, files.map(parseFileEntry)));
       })
@@ -601,6 +606,7 @@ export function NewTaskView({
       <div style={s.launchModeBar}>
         <LaunchModeSelector
           projectPath={project.path}
+          runtime={project.runtime}
           launchMode={launchMode}
           baseBranch={baseBranch}
           onSetLaunchMode={setLaunchMode}

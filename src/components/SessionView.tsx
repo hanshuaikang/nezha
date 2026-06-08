@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import { marked } from "marked";
 import { useI18n } from "../i18n";
+import type { SessionLocation } from "../types";
 
 interface SessionContent {
   type: "text" | "tool_use" | "thinking";
@@ -229,7 +230,13 @@ function MessageBlock({ message }: { message: SessionMessage }) {
   );
 }
 
-export function SessionView({ sessionPath }: { sessionPath: string }) {
+export function SessionView({
+  sessionPath,
+  sessionLocation,
+}: {
+  sessionPath?: string;
+  sessionLocation?: SessionLocation;
+}) {
   const { t } = useI18n();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,7 +246,7 @@ export function SessionView({ sessionPath }: { sessionPath: string }) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    invoke<SessionMessage[]>("read_session_messages", { sessionPath })
+    invoke<SessionMessage[]>("read_session_messages", { sessionPath, sessionLocation })
       .then((msgs) => {
         setMessages(msgs);
         setLoading(false);
@@ -248,7 +255,7 @@ export function SessionView({ sessionPath }: { sessionPath: string }) {
         setError(String(err));
         setLoading(false);
       });
-  }, [sessionPath]);
+  }, [sessionPath, sessionLocation]);
 
   return (
     <div

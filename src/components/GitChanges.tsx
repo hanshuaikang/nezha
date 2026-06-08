@@ -14,6 +14,7 @@ import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import s from "../styles";
 import { getGitStatusColor, getGitStatusLabel } from "../utils";
 import { useI18n } from "../i18n";
+import type { ProjectRuntime } from "../types";
 
 interface GitFileChange {
   path: string;
@@ -23,6 +24,7 @@ interface GitFileChange {
 
 interface Props {
   projectPath: string;
+  runtime?: ProjectRuntime;
   currentTaskCreatedAt: number | null;
   onFileSelect: (filePath: string, staged: boolean, label: string) => void;
   width?: number;
@@ -38,6 +40,7 @@ function fileDir(path: string): string {
 
 export function GitChanges({
   projectPath,
+  runtime,
   currentTaskCreatedAt,
   onFileSelect,
   width = 280,
@@ -61,7 +64,7 @@ export function GitChanges({
     setLoading(true);
     if (options?.clearError !== false) setError(null);
     try {
-      const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath });
+      const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath, runtime });
       if (result === null) return; // Component unmounted
       setChanges(result);
     } catch (e) {
@@ -69,7 +72,7 @@ export function GitChanges({
     } finally {
       if (!isCancelled()) setLoading(false);
     }
-  }, [projectPath, safeInvoke, isCancelled]);
+  }, [projectPath, runtime, safeInvoke, isCancelled]);
 
   useEffect(() => {
     refresh();
@@ -91,9 +94,9 @@ export function GitChanges({
     e.stopPropagation();
     try {
       if (c.staged) {
-        await invoke("git_unstage", { projectPath, filePath: c.path });
+        await invoke("git_unstage", { projectPath, runtime, filePath: c.path });
       } else {
-        await invoke("git_stage", { projectPath, filePath: c.path });
+        await invoke("git_stage", { projectPath, runtime, filePath: c.path });
       }
       refresh();
     } catch (err) {
@@ -104,7 +107,7 @@ export function GitChanges({
   const handleStageAll = async () => {
     try {
       setError(null);
-      await invoke("git_stage_all", { projectPath });
+      await invoke("git_stage_all", { projectPath, runtime });
       refresh();
     } catch (err) {
       setError(String(err));
@@ -114,7 +117,7 @@ export function GitChanges({
   const handleUnstageAll = async () => {
     try {
       setError(null);
-      await invoke("git_unstage_all", { projectPath });
+      await invoke("git_unstage_all", { projectPath, runtime });
       refresh();
     } catch (err) {
       setError(String(err));
@@ -138,6 +141,7 @@ export function GitChanges({
       setError(null);
       await invoke("git_discard_file", {
         projectPath,
+        runtime,
         filePath: c.path,
         untracked,
       });
@@ -157,7 +161,7 @@ export function GitChanges({
     if (!ok) return;
     try {
       setError(null);
-      await invoke("git_discard_all", { projectPath });
+      await invoke("git_discard_all", { projectPath, runtime });
     } catch (err) {
       setError(t("git.discardFailed", { error: String(err) }));
     } finally {
@@ -169,7 +173,7 @@ export function GitChanges({
     setGeneratingMsg(true);
     setError(null);
     try {
-      const msg = await safeInvoke<string>("generate_commit_message", { projectPath });
+      const msg = await safeInvoke<string>("generate_commit_message", { projectPath, runtime });
       if (msg === null) return; // Component unmounted
       setCommitMsg(msg);
       if (commitMsgError) setCommitMsgError(false);
@@ -189,7 +193,7 @@ export function GitChanges({
     setCommitting(true);
     setError(null);
     try {
-      await invoke("git_commit", { projectPath, message: commitMsg.trim() });
+      await invoke("git_commit", { projectPath, runtime, message: commitMsg.trim() });
       setCommitMsg("");
       refresh();
     } catch (err) {
