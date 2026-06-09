@@ -232,6 +232,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     // 2. Read project config for prompt and default agent
     let config = crate::config::read_project_config(project_path.clone())?;
     let commit_prompt = config.git.commit_prompt;
+    let timeout_secs = config.git.commit_message_timeout_secs.clamp(1, 120);
     let agent = config.agent.default;
 
     // 3. Build full prompt
@@ -240,15 +241,15 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         commit_prompt, diff
     );
 
-    // 4. Run agent in non-interactive exec mode with 15 second timeout
+    // 4. Run agent in non-interactive exec mode with configurable timeout
     let output = tokio::time::timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             run_agent_commit_message_command(&agent, &project_path, &full_prompt)
         }),
     )
     .await
-    .map_err(|_| "生成提交信息超时（15秒）".to_string())?
+    .map_err(|_| format!("生成提交信息超时（{}秒）", timeout_secs))?
     .map_err(|e| format!("生成提交信息线程错误: {}", e))??;
 
     if !output.status.success() {
