@@ -287,14 +287,15 @@ pub async fn generate_task_name(
     }
     let is_codex = agent == "codex";
 
-    // 临时策略：claude `-p` 计费变化期间，命名调用优先走 codex（已安装时），
-    // 规避 claude headless 额度消耗。注意 session 摘要仍按任务真实 agent
-    // （is_codex）读取——只有“生成标题的模型 + 输出解析”改用 naming_agent，
-    // 因此 claude 任务依旧能带上自己的会话上下文。
+    // 临时策略：claude `-p` 计费变动期间，命名一律改用 codex（headless）生成，
+    // 规避 claude headless 额度消耗。codex 未安装则直接报错——不回落 claude
+    // （claude -p 当前不可用）。注意 session 摘要仍按任务真实 agent（is_codex）
+    // 读取，只有“生成标题的模型 + 输出解析”改用 naming_agent，故 claude 任务依旧
+    // 能带上自己的会话上下文。
     let naming_agent = if crate::app_settings::codex_available() {
         "codex"
     } else {
-        agent.as_str()
+        return Err("codex 未安装，无法生成任务名称。请安装 codex 后重试。".to_string());
     };
     let naming_is_codex = naming_agent == "codex";
 
