@@ -1022,34 +1022,45 @@ pub async fn git_show_file_diff(
 #[tauri::command]
 pub async fn git_push(project_path: String, branch: Option<String>) -> Result<String, String> {
     let mut args = vec!["push".to_string()];
-    if let Some(ref b) = branch.filter(|s| !s.is_empty()) {
+    let requested_branch = branch.clone().filter(|s| !s.is_empty());
+    if let Some(ref b) = requested_branch {
         args.push("origin".to_string());
         args.push(b.clone());
     }
     let output = run_git(&project_path, &args)?;
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        return Err(combined);
+        return Err(format!("{}{}", stdout, stderr).trim().to_string());
     }
-    Ok(combined.trim().to_string())
+
+    if let Some(branch) = requested_branch {
+        return Ok(branch);
+    }
+
+    let branch_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if !branch_out.status.success() {
+        return Ok(String::new());
+    }
+
+    Ok(String::from_utf8_lossy(&branch_out.stdout).trim().to_string())
 }
 
 #[tauri::command]
 pub async fn git_pull(project_path: String) -> Result<String, String> {
     let output = run_git(&project_path, &["pull"])?;
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        return Err(combined);
+        return Err(format!("{}{}", stdout, stderr).trim().to_string());
     }
-    Ok(combined.trim().to_string())
+
+    let branch_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if !branch_out.status.success() {
+        return Ok(String::new());
+    }
+
+    Ok(String::from_utf8_lossy(&branch_out.stdout).trim().to_string())
 }
 
 #[derive(serde::Serialize)]

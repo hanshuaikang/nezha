@@ -371,6 +371,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "git.committing": "Committing…",
     "git.history": "History",
     "git.pull": "Pull",
+    "git.pulling": "Pulling…",
     "git.push": "Push",
     "git.pushing": "Pushing…",
     "git.searchCommits": "Search commits",
@@ -491,6 +492,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
       "Failed to load project file list, @ references unavailable: {error}",
     "toast.saveProjectsFailed": "Failed to save project list: {error}",
     "toast.saveTasksFailed": "Failed to save tasks for project {projectId}: {error}",
+    "toast.pushSuccess": "Pushed to {branch}",
+    "toast.pushFailed": "Push failed: {error}",
+    "toast.pullSuccess": "Pulled from {branch}",
+    "toast.pullFailed": "Pull failed: {error}",
   },
   zh: {
     "appSettings.title": "应用设置",
@@ -834,6 +839,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "git.committing": "提交中…",
     "git.history": "历史",
     "git.pull": "拉取",
+    "git.pulling": "拉取中…",
     "git.push": "推送",
     "git.pushing": "推送中…",
     "git.searchCommits": "搜索提交",
@@ -953,6 +959,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "toast.loadProjectFilesFailed": "加载项目文件列表失败，@ 引用不可用：{error}",
     "toast.saveProjectsFailed": "保存项目列表失败：{error}",
     "toast.saveTasksFailed": "保存任务失败（项目 {projectId}）：{error}",
+    "toast.pushSuccess": "已推送到 {branch}",
+    "toast.pushFailed": "推送失败：{error}",
+    "toast.pullSuccess": "已从 {branch} 拉取",
+    "toast.pullFailed": "拉取失败：{error}",
   },
 };
 
