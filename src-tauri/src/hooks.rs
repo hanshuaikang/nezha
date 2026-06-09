@@ -22,10 +22,9 @@ use serde_json::{Map, Value};
 use crate::storage::atomic_write;
 
 /// hook 链路可信所需的 agent 最低版本。
-/// - Codex:hooks 自 0.124.0 起 `Stage::Stable` 且默认开启(无需 feature flag)。
-/// - Claude:沿用项目既有的现代会话机制门槛 2.1.87,该版本已具备
-///   SessionStart/Notification/UserPromptSubmit 等 hook 事件。
-const CODEX_HOOK_MIN_VERSION: &str = "0.124.0";
+/// Codex 门槛取 0.131.0:该版本才加入 `--dangerously-bypass-hook-trust`,
+/// 低于此版本注入的 hook 会被 trust 模型 skip 或拼 flag 报错,回退轮询 watcher。
+const CODEX_HOOK_MIN_VERSION: &str = "0.131.0";
 const CLAUDE_HOOK_MIN_VERSION: &str = "2.1.87";
 
 const HOOK_SCRIPT: &str = include_str!("nezha-hook.mjs");
