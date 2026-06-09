@@ -1,11 +1,12 @@
 import { Fragment, useState } from "react";
-import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type, Zap, Blocks } from "lucide-react";
+import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type, Zap, Blocks, Heart } from "lucide-react";
 import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
 import { AboutPanel } from "./app-settings/AboutPanel";
+import { ThanksPanel } from "./app-settings/ThanksPanel";
 import { AgentConfigPanel } from "./app-settings/AgentConfigPanel";
 import { GeneralPanel } from "./app-settings/GeneralPanel";
 import { ShortcutsPanel } from "./app-settings/ShortcutsPanel";
@@ -40,6 +41,14 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
     lang: "toml",
   },
   { key: "about", labelKey: "appSettings.about", section: "about", icon: Info },
+  {
+    key: "thanks",
+    labelKey: "appSettings.thanks",
+    section: "about",
+    icon: Heart,
+    iconColor: "#ef4444",
+    iconFill: "#ef4444",
+  },
 ];
 
 const SECTION_ORDER: NavSection[] = ["application", "agents", "about"];
@@ -61,7 +70,14 @@ function NavItemIcon({ item, size }: { item: AppSettingsNavItem; size: number })
   }
   if (item.icon) {
     const Icon = item.icon;
-    return <Icon size={size} strokeWidth={1.8} color="var(--text-secondary)" />;
+    return (
+      <Icon
+        size={size}
+        strokeWidth={1.8}
+        color={item.iconColor ?? "var(--text-secondary)"}
+        fill={item.iconFill ?? "none"}
+      />
+    );
   }
   return null;
 }
@@ -192,6 +208,8 @@ export function AppSettingsDialog({
             <SkillsPanel key="skills" />
           ) : activeNav === "about" ? (
             <AboutPanel key="about" />
+          ) : activeNav === "thanks" ? (
+            <ThanksPanel key="thanks" />
           ) : (
             <AgentConfigPanel
               key={activeNav}

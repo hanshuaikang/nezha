@@ -1065,4 +1065,76 @@ export const panels = {
     whiteSpace: "nowrap" as const,
   },
   hooksPanelBtnDisabled: { opacity: 0.5, cursor: "not-allowed" as const },
+
+  // 感谢页（ThanksPanel）
+  thanksBody: {
+    flex: 1,
+    overflowY: "auto" as const,
+    padding: "20px",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 28,
+  },
+  thanksSection: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 12,
+  },
+  thanksSectionHeader: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 3,
+  },
+  thanksSectionTitle: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "var(--text-primary)",
+  },
+  thanksSectionDesc: {
+    fontSize: 12,
+    color: "var(--text-secondary)",
+    lineHeight: 1.5,
+  },
+  thanksGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+    gap: 10,
+  },
+  // 卡片底色 / 描边 / hover 由 App.css 的 .thanks-card 负责，这里只管布局，
+  // 避免行内 background 覆盖样式表的 :hover。
+  thanksCard: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    gap: 7,
+    width: "100%",
+    minWidth: 0,
+    padding: "11px 8px",
+    borderRadius: 10,
+    cursor: "pointer",
+    font: "inherit",
+    color: "inherit",
+    appearance: "none" as const,
+    textAlign: "center" as const,
+  },
+  thanksAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: "50%",
+    objectFit: "cover" as const,
+    flexShrink: 0,
+    background: "var(--bg-card)",
+  },
+  thanksName: {
+    maxWidth: "100%",
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: "var(--text-primary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  thanksNameCopied: {
+    color: "var(--accent)",
+  },
 } satisfies Record<string, React.CSSProperties>;
