@@ -3,6 +3,8 @@ use std::path::Path;
 
 use crate::storage::atomic_write;
 
+const DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS: u64 = 15;
+
 const DEFAULT_CONFIG: &str = r#"# Nezha project configuration
 # https://github.com/hanshuaikang/nezha
 
@@ -17,6 +19,8 @@ prompt_prefix = ""
 [git]
 # Prompt used when generating commit messages via the AI agent
 commit_prompt = "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting"
+# Timeout in seconds when generating commit messages via the AI agent
+commit_message_timeout_secs = 15
 "#;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -35,6 +39,12 @@ fn default_permission_mode() -> String {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GitConfig {
     pub commit_prompt: String,
+    #[serde(default = "default_commit_message_timeout_secs")]
+    pub commit_message_timeout_secs: u64,
+}
+
+fn default_commit_message_timeout_secs() -> u64 {
+    DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -53,6 +63,7 @@ impl Default for ProjectConfig {
             },
             git: GitConfig {
                 commit_prompt: "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting".to_string(),
+                commit_message_timeout_secs: default_commit_message_timeout_secs(),
             },
         }
     }

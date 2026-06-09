@@ -420,4 +420,16 @@ export const dialogs = {
     cursor: "pointer",
     outline: "none",
   },
+  settingsFlexRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  settingsInputWithFlex: {
+    flex: 1,
+  },
+  settingsUnitText: {
+    color: "var(--text-hint)",
+    fontSize: 12,
+  },
 } satisfies Record<string, React.CSSProperties>;
