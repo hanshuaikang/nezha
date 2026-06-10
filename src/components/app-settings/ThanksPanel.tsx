@@ -7,7 +7,7 @@ import { CONTRIBUTORS, SUPPORTERS } from "./thanks-data";
 
 export function ThanksPanel() {
   const { t } = useI18n();
-  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [copiedName, setCopiedName] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -17,15 +17,15 @@ export function ThanksPanel() {
     [],
   );
 
-  const handleCopy = useCallback(async (link: string) => {
+  const handleCopy = useCallback(async (name: string) => {
     try {
-      await writeClipboardText(link);
+      await writeClipboardText(name);
     } catch {
       return;
     }
-    setCopiedLink(link);
+    setCopiedName(name);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopiedLink(null), 1500);
+    copiedTimer.current = setTimeout(() => setCopiedName(null), 1500);
   }, []);
 
   const handleOpen = useCallback((url: string) => {
@@ -64,22 +64,22 @@ export function ThanksPanel() {
         <div style={s.thanksGrid}>
           {SUPPORTERS.map((sp) => {
             const copyable = sp.action === "copy";
-            const copied = copyable && copiedLink === sp.link;
+            const copied = copyable && copiedName === sp.name;
             return (
               <button
-                key={sp.link}
+                key={sp.name}
                 type="button"
                 className="thanks-card"
                 style={s.thanksCard}
-                onClick={() => (copyable ? handleCopy(sp.link) : handleOpen(sp.link))}
+                onClick={() => (copyable ? handleCopy(sp.name) : sp.link && handleOpen(sp.link))}
                 title={
                   copyable
-                    ? t("appSettings.thanks.copyLink")
+                    ? t("appSettings.thanks.copyName")
                     : t("appSettings.thanks.openLink")
                 }
               >
                 <img src={sp.avatar} alt={sp.name} style={s.thanksAvatar} draggable={false} />
-                <span style={copied ? { ...s.thanksName, ...s.thanksNameCopied } : s.thanksName}>
+                <span style={copied ? s.thanksNameCopied : s.thanksName}>
                   {copied ? t("appSettings.thanks.copied") : sp.name}
                 </span>
               </button>

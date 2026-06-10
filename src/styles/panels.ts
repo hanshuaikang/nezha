@@ -2,6 +2,16 @@ import type React from "react";
 
 import { ROW_HEIGHT } from "../components/file-explorer/types";
 
+// 感谢页卡片名称的共用排版，thanksName / thanksNameCopied 仅颜色不同。
+const thanksNameBase: React.CSSProperties = {
+  maxWidth: "100%",
+  fontSize: 11.5,
+  fontWeight: 600,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
 export const panels = {
   newTaskOuter: {
     flex: 1,
@@ -1070,7 +1080,7 @@ export const panels = {
   thanksBody: {
     flex: 1,
     overflowY: "auto" as const,
-    padding: "20px",
+    padding: "18px 20px",
     display: "flex",
     flexDirection: "column" as const,
     gap: 28,
@@ -1125,16 +1135,6 @@ export const panels = {
     flexShrink: 0,
     background: "var(--bg-card)",
   },
-  thanksName: {
-    maxWidth: "100%",
-    fontSize: 11.5,
-    fontWeight: 600,
-    color: "var(--text-primary)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-  },
-  thanksNameCopied: {
-    color: "var(--accent)",
-  },
+  thanksName: { ...thanksNameBase, color: "var(--text-primary)" },
+  thanksNameCopied: { ...thanksNameBase, color: "var(--accent)" },
 } satisfies Record<string, React.CSSProperties>;

@@ -28,7 +28,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.thanks.supportersTitle": "Thanks for the Support",
     "appSettings.thanks.supportersDesc":
       "Thanks to the following creators for sharing and supporting Nezha.",
-    "appSettings.thanks.copyLink": "Click to copy link",
+    "appSettings.thanks.copyName": "Click to copy the account name",
     "appSettings.thanks.openLink": "Open in browser",
     "appSettings.thanks.copied": "Copied",
     "appSettings.fonts": "Fonts",
@@ -519,7 +519,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.thanks.contributorsDesc": "感谢每一位为 Nezha 贡献过代码的开发者。",
     "appSettings.thanks.supportersTitle": "感谢支持",
     "appSettings.thanks.supportersDesc": "感谢以下博主对 Nezha 的转发和支持。",
-    "appSettings.thanks.copyLink": "点击复制链接",
+    "appSettings.thanks.copyName": "点击复制公众号名称",
     "appSettings.thanks.openLink": "在浏览器中打开",
     "appSettings.thanks.copied": "已复制",
     "appSettings.fonts": "字体",

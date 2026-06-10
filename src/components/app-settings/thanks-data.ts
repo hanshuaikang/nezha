@@ -39,12 +39,12 @@ export interface Supporter {
   name: string;
   /** 本地头像（Vite 打包后的 URL） */
   avatar: string;
-  /** 关联链接（推特主页 / 网站） */
-  link: string;
+  /** 关联链接（推特主页 / 网站），仅 action === "open" 时需要 */
+  link?: string;
   /**
    * 点击行为：
    * - "open" 用默认浏览器打开 link（推特、网站）
-   * - "copy" 仅把 link 复制到剪贴板（公众号，没有可直接打开的主页）
+   * - "copy" 把 name 复制到剪贴板（公众号，没有可直接打开的主页，复制名称便于在微信内搜索）
    */
   action: "open" | "copy";
 }
@@ -63,8 +63,8 @@ export const SUPPORTERS: Supporter[] = [
   { name: "AIGC Link", avatar: aigclink, link: "https://x.com/aigclink", action: "open" },
   { name: "Geek Lite", avatar: geekLite, link: "https://x.com/geek_lite", action: "open" },
   { name: "I Love K8s", avatar: ilovek8s, link: "https://x.com/ilovek8s", action: "open" },
-  { name: "码问", avatar: mawen, link: "https://x.com/mawen", action: "copy" },
-  { name: "一飞开源", avatar: yifei, link: "https://x.com/yifei", action: "copy" },
+  { name: "码问", avatar: mawen, action: "copy" },
+  { name: "一飞开源", avatar: yifei, action: "copy" },
   { name: "jaywcjlove", avatar: jaywcjlove, link: "https://x.com/jaywcjlove", action: "open" },
   { name: "Vincent | 信号＞噪音", avatar: vincentLogic, link: "https://x.com/VincentLogic", action: "open" },
   { name: "GitHubDaily", avatar: githubDaily, link: "https://x.com/GitHub_Daily", action: "open" },
