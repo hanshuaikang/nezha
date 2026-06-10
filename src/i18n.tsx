@@ -17,6 +17,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.title": "App Settings",
     "appSettings.section.application": "Application",
     "appSettings.section.agents": "Agents",
+    "appSettings.section.community": "Community",
     "appSettings.section.about": "About",
     "appSettings.general": "General",
     "appSettings.theme": "Appearance",
@@ -80,6 +81,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.nezhaDescription": "Desktop task manager for AI coding agents",
     "appSettings.version": "Version",
     "appSettings.github": "GitHub",
+    "appSettings.community": "User Group",
     "appSettings.starHint":
       "If you think NeZha is helpful, please consider starring this project on GitHub.",
     "appSettings.syntaxHighlightUnavailable":
@@ -512,6 +514,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.title": "应用设置",
     "appSettings.section.application": "应用",
     "appSettings.section.agents": "Agents",
+    "appSettings.section.community": "社区",
     "appSettings.section.about": "关于",
     "appSettings.general": "通用",
     "appSettings.theme": "外观",
@@ -572,6 +575,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.nezhaDescription": "轻量级跨平台 AI IDE",
     "appSettings.version": "版本",
     "appSettings.github": "GitHub",
+    "appSettings.community": "交流群",
     "appSettings.starHint": "如果你觉得 NeZha 有帮助，欢迎在 GitHub 上给 NeZha 点个 Star。",
     "appSettings.syntaxHighlightUnavailable": "语法高亮暂不可用，正在显示纯文本。",
     "appSettings.configFileNotFound": "未找到配置文件：{path}",

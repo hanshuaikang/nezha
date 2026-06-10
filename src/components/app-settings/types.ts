@@ -10,6 +10,7 @@ export type NavKey =
   | "skills"
   | "about"
   | "thanks"
+  | "community"
   | "claude"
   | "codex";
 
@@ -45,7 +46,7 @@ export interface AgentVersions {
 
 export type AgentKey = "claude" | "codex";
 
-export type NavSection = "application" | "agents" | "about";
+export type NavSection = "application" | "agents" | "community" | "about";
 
 export interface AppSettingsNavItem {
   key: NavKey;
@@ -59,6 +60,8 @@ export interface AppSettingsNavItem {
   logo?: string;
   filePath?: string;
   lang?: string;
+  /** 设置后点击该项不切换面板，而是用浏览器打开此外链 */
+  url?: string;
 }
 
 export const APP_SETTINGS_CHANGED_EVENT = "nezha:app-settings-changed";

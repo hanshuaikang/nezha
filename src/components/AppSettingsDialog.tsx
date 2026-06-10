@@ -1,10 +1,25 @@
 import { Fragment, useState } from "react";
-import { X, Keyboard, Monitor, Info, Settings as SettingsIcon, Type, Zap, Blocks, Heart } from "lucide-react";
+import {
+  X,
+  Keyboard,
+  Monitor,
+  Info,
+  Settings as SettingsIcon,
+  Type,
+  Zap,
+  Blocks,
+  Heart,
+  ExternalLink,
+} from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
 import chatgptLogo from "../assets/chatgpt.svg";
+import wechatLogo from "../assets/wechat.png";
+
+const WECHAT_GROUP_URL = "https://github.com/hanshuaikang/nezha/issues/66";
 import { AboutPanel } from "./app-settings/AboutPanel";
 import { ThanksPanel } from "./app-settings/ThanksPanel";
 import { AgentConfigPanel } from "./app-settings/AgentConfigPanel";
@@ -40,6 +55,13 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
     filePath: getAgentSettingsFilePath("codex"),
     lang: "toml",
   },
+  {
+    key: "community",
+    labelKey: "appSettings.community",
+    section: "community",
+    logo: wechatLogo,
+    url: WECHAT_GROUP_URL,
+  },
   { key: "about", labelKey: "appSettings.about", section: "about", icon: Info },
   {
     key: "thanks",
@@ -51,11 +73,12 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   },
 ];
 
-const SECTION_ORDER: NavSection[] = ["application", "agents", "about"];
+const SECTION_ORDER: NavSection[] = ["application", "agents", "community", "about"];
 
 const SECTION_LABEL_KEY: Record<NavSection, string> = {
   application: "appSettings.section.application",
   agents: "appSettings.section.agents",
+  community: "appSettings.section.community",
   about: "appSettings.section.about",
 };
 
@@ -154,10 +177,17 @@ export function AppSettingsDialog({
                     color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
                     fontWeight: activeNav === item.key ? 600 : 500,
                   }}
-                  onClick={() => setActiveNav(item.key)}
+                  onClick={() => {
+                    if (item.url) {
+                      openUrl(item.url).catch(() => {});
+                    } else {
+                      setActiveNav(item.key);
+                    }
+                  }}
                 >
                   <NavItemIcon item={item} size={14} />
                   {t(item.labelKey)}
+                  {item.url ? <ExternalLink size={12} style={s.settingsNavExternalIcon} /> : null}
                 </button>
               ))}
             </Fragment>
