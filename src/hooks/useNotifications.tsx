@@ -42,6 +42,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     fetchNotifications();
+    // Long-running desktop app: poll periodically so users who never restart
+    // still receive new notifications. The backend throttles actual remote
+    // fetches to once per hour, so this only triggers a network hit every 6h.
+    const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
+    const interval = setInterval(fetchNotifications, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, [fetchNotifications]);
 
   const markRead = useCallback(async (id: string) => {
