@@ -187,6 +187,18 @@ body {
 .branch-popover-item:hover {
   background: var(--bg-hover);
 }
+/* 感谢页卡片：底色 / 描边 / hover（布局样式见 styles/panels.ts 的 thanksCard） */
+.thanks-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-dim);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.thanks-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-medium);
+}
 .branch-popover-item-name {
   flex: 1;
   overflow: hidden;

@@ -9,6 +9,7 @@ export type NavKey =
   | "hooks"
   | "skills"
   | "about"
+  | "thanks"
   | "claude"
   | "codex";
 
@@ -51,6 +52,10 @@ export interface AppSettingsNavItem {
   labelKey: string;
   section: NavSection;
   icon?: LucideIcon;
+  /** 覆盖图标描边颜色（默认 var(--text-secondary)） */
+  iconColor?: string;
+  /** 图标填充色（默认 "none"，传入颜色即为实心图标） */
+  iconFill?: string;
   logo?: string;
   filePath?: string;
   lang?: string;
