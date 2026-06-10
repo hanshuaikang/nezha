@@ -804,7 +804,12 @@ pub async fn git_stage(project_path: String, file_path: String) -> Result<(), St
 
 #[tauri::command]
 pub async fn git_unstage(project_path: String, file_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
+    if git_has_head(&project_path)? {
+        run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
+    } else {
+        // 首次提交前无 HEAD，改用 `git reset` 将暂存项退回。
+        run_git_check(&project_path, &["reset", "--", &file_path])
+    }
 }
 
 #[tauri::command]
@@ -826,7 +831,25 @@ pub async fn git_unstage_files(
     project_path: String,
     file_paths: Vec<String>,
 ) -> Result<(), String> {
-    let args = git_path_args(&["restore", "--staged"], file_paths)?;
+    // 首次提交前无 HEAD，`git restore --staged` 会失败，退回到不依赖 HEAD 的 `git reset`。
+    // 此处用异步 run_git_with_timeout（而非同步 git_has_head）做检测，避免阻塞 Tokio 运行时。
+    let head_check = run_git_with_timeout(
+        project_path.clone(),
+        vec![
+            "rev-parse".to_string(),
+            "--verify".to_string(),
+            "HEAD".to_string(),
+        ],
+        Duration::from_secs(5),
+    )
+    .await?;
+    let base: &[&str] = if head_check.status.success() {
+        &["restore", "--staged"]
+    } else {
+        &["reset"]
+    };
+
+    let args = git_path_args(base, file_paths)?;
     if args.is_empty() {
         return Ok(());
     }

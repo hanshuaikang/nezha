@@ -187,6 +187,8 @@ export function GitFileBrowser<T extends GitFileEntry>({
   const [viewportHeight, setViewportHeight] = useState(GIT_FILE_BROWSER_MAX_HEIGHT);
   const [externalOffsetTop, setExternalOffsetTop] = useState(0);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
+  // 记录已自动折叠过的目录：每个大目录只自动折叠一次，之后尊重用户的手动展开/折叠。
+  const autoCollapseHandledRef = useRef<Set<string>>(new Set());
   const usesExternalScroll = !!scrollContext;
   const externalContainerRef = scrollContext?.containerRef;
   const externalScrollTop = scrollContext?.scrollTop ?? 0;
@@ -263,6 +265,9 @@ export function GitFileBrowser<T extends GitFileEntry>({
       let changed = false;
       const next = new Set(prev);
       for (const path of autoCollapsedDirs) {
+        // 已自动折叠过的目录不再强制折回，避免刷新后覆盖用户的手动展开。
+        if (autoCollapseHandledRef.current.has(path)) continue;
+        autoCollapseHandledRef.current.add(path);
         if (!next.has(path)) {
           next.add(path);
           changed = true;
