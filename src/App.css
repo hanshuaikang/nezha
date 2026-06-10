@@ -199,6 +199,18 @@ body {
   background: var(--bg-hover);
   border-color: var(--border-medium);
 }
+/* 关于页微信交流群入口：底色 / 描边 / hover（布局样式见 styles/panels.ts 的 aboutWechatEntry） */
+.about-wechat-entry {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-dim);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.about-wechat-entry:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-medium);
+}
 .branch-popover-item-name {
   flex: 1;
   overflow: hidden;

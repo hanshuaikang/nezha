@@ -54,6 +54,11 @@ export const dialogs = {
     textAlign: "left" as const,
     transition: "background 0.12s, color 0.12s",
   },
+  settingsNavExternalIcon: {
+    marginLeft: "auto",
+    color: "var(--text-hint)",
+    flexShrink: 0,
+  },
   settingsNavSectionLabel: {
     fontSize: 10,
     fontWeight: 700,
