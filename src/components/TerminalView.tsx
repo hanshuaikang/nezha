@@ -24,6 +24,12 @@ import {
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
 
+function chatTerminalThemeFor(themeVariant: ThemeVariant) {
+  const theme = themeFor(themeVariant);
+  if (themeVariant !== "dark") return theme;
+  return { ...theme, background: "#2b313d" };
+}
+
 interface TerminalViewProps {
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
@@ -85,6 +91,7 @@ export function TerminalView({
     const container = containerRef.current;
 
     const { term, fitAddon } = initTerminal(themeVariant, 1000, terminalFontSize, monoFontFamily);
+    term.options.theme = chatTerminalThemeFor(themeVariant);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
@@ -226,7 +233,7 @@ export function TerminalView({
 
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = themeFor(themeVariant);
+      terminalRef.current.options.theme = chatTerminalThemeFor(themeVariant);
     }
   }, [themeVariant]);
 
