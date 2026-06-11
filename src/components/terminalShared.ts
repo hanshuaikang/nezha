@@ -304,6 +304,67 @@ export interface InitTerminalResult {
   fitAddon: FitAddon;
 }
 
+interface TerminalMetricsCore {
+  _charSizeService?: {
+    width: number;
+    height: number;
+  };
+  _renderService?: {
+    handleCharSizeChanged: () => void;
+  };
+}
+
+const DOM_MEASURE_REPEAT = 32;
+
+function measureTerminalFontWithDom(
+  term: Terminal,
+  container: HTMLElement,
+): { width: number; height: number } | null {
+  // xterm 在支持 OffscreenCanvas 时会用 canvas measureText 测量字符宽度；
+  // WKWebView + Nerd Font 下这个结果可能和真实 DOM 排版不一致，导致 WebGL cell 宽度偏移。
+  const measure = container.ownerDocument.createElement("span");
+  measure.classList.add("xterm-char-measure-element");
+  measure.textContent = "W".repeat(DOM_MEASURE_REPEAT);
+  measure.setAttribute("aria-hidden", "true");
+  measure.style.whiteSpace = "pre";
+  measure.style.fontKerning = "none";
+  measure.style.fontFamily = term.options.fontFamily ?? "monospace";
+  measure.style.fontSize = `${term.options.fontSize ?? 12}px`;
+  measure.style.fontWeight = String(term.options.fontWeight ?? "normal");
+  container.appendChild(measure);
+
+  const width = measure.offsetWidth / DOM_MEASURE_REPEAT;
+  const height = measure.offsetHeight;
+  measure.remove();
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
+function syncTerminalFontMetrics(term: Terminal, container: HTMLElement): void {
+  // WebGL renderer 的 cell dimensions 来自 _charSizeService；这里用 DOM 实测值校正它，
+  // 让 FitAddon 和 WebGL glyph atlas 使用同一套字符宽度。
+  const core = (term as unknown as { _core?: TerminalMetricsCore })._core;
+  const charSizeService = core?._charSizeService;
+  const renderService = core?._renderService;
+  if (!charSizeService || !renderService) return;
+
+  const measured = measureTerminalFontWithDom(term, container);
+  if (!measured) return;
+
+  const changed =
+    Math.abs(charSizeService.width - measured.width) > 0.01 ||
+    Math.abs(charSizeService.height - measured.height) > 0.01;
+  if (!changed) return;
+
+  charSizeService.width = measured.width;
+  charSizeService.height = measured.height;
+  renderService.handleCharSizeChanged();
+  term.refresh(0, term.rows - 1);
+}
+
 /**
  * 创建 xterm Terminal 实例并加载通用 addon（FitAddon, Unicode11, WebGL）。
  * 调用方负责 term.open(container)。
@@ -388,12 +449,16 @@ export function safeFit(
   if (container) {
     const rect = container.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return null;
+    // proposeDimensions 依赖 renderer dimensions，先同步一次才能用正确 cell 宽度计算列数。
+    syncTerminalFontMetrics(term, container);
   }
   try {
     const dims = fitAddon.proposeDimensions();
     if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return null;
     if (dims.cols < 2 || dims.rows < 2) return null;
     fitAddon.fit();
+    // fit/resize 后 WebGL renderer 可能重算 dimensions，再补一次避免窗口缩放后宽度回退。
+    if (container) syncTerminalFontMetrics(term, container);
     return { cols: term.cols, rows: term.rows };
   } catch {
     return null;
