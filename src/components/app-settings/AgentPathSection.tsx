@@ -6,6 +6,7 @@ import { useI18n } from "../../i18n";
 import {
   DEFAULT_SEND_SHORTCUT,
   DEFAULT_SHIFT_ENTER_NEWLINE,
+  DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED,
   normalizeSendShortcut,
 } from "../../shortcuts";
 import s from "../../styles";
@@ -73,6 +74,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    terminal_font_size_shortcuts_enabled: DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED,
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);
@@ -168,6 +170,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
         ...settings,
         [pathField]: detected[pathField],
         send_shortcut: normalizeSendShortcut(detected.send_shortcut),
+        terminal_font_size_shortcuts_enabled: detected.terminal_font_size_shortcuts_enabled,
       };
       setSettings(nextSettings);
       await loadVersions(nextSettings);
