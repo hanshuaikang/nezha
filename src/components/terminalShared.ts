@@ -398,6 +398,41 @@ export function initTerminal(
   return { term, fitAddon };
 }
 
+function refreshWebglAtlasAfterFontReady(term: Terminal, webglAddon: WebglAddon): void {
+  const ownerDocument = term.element?.ownerDocument ?? document;
+  const ownerWindow = ownerDocument.defaultView ?? window;
+  const fontSize = term.options.fontSize ?? 12;
+  const fontFamily = term.options.fontFamily ?? "monospace";
+  const fontWeight = term.options.fontWeight ?? "normal";
+  const fontSpec = `${fontWeight} ${fontSize}px ${fontFamily}`;
+
+  const refreshAtlas = () => {
+    if (!term.element) return;
+    try {
+      webglAddon.clearTextureAtlas();
+      term.refresh(0, term.rows - 1);
+    } catch {
+      /* 终端已卸载或 WebGL context 已丢失时忽略。 */
+    }
+  };
+
+  // 首次 WebGL atlas warmup 可能早于 WKWebView 完成 Nerd Font 的 canvas font 匹配，
+  // 于是默认色 ASCII 被缓存成 fallback 字形。字体 ready 后清一次 atlas，等价于用户手动
+  // 改字体大小触发的重新栅格化。
+  const fontsReady = ownerDocument.fonts
+    ? Promise.allSettled([
+        ownerDocument.fonts.ready,
+        ownerDocument.fonts.load(fontSpec, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+      ]).then(() => undefined)
+    : Promise.resolve();
+
+  fontsReady.finally(() => {
+    ownerWindow.requestAnimationFrame(() => {
+      ownerWindow.requestAnimationFrame(refreshAtlas);
+    });
+  });
+}
+
 /**
  * 尝试加载 WebGL addon，失败时静默降级。
  * 必须在 term.open() 之后调用。
@@ -420,6 +455,7 @@ export function loadWebglAddon(term: Terminal): void {
       webglAddon.dispose();
     });
     term.loadAddon(webglAddon);
+    refreshWebglAtlasAfterFontReady(term, webglAddon);
   } catch (err) {
     console.warn("[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
     /* 不支持 WebGL 时降级，不影响功能 */
