@@ -8,7 +8,8 @@ import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
 import { useToast } from "./Toast";
 import { writeClipboardText } from "./file-explorer/clipboard";
-import { getUsageColor, shortenPath } from "../utils";
+import { ProjectStatusDot } from "./ProjectStatusDot";
+import { getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
@@ -35,10 +36,16 @@ interface SessionMetrics {
 }
 
 function formatDuration(secs: number): string {
-  if (secs < 60) return `${Math.round(secs)}s`;
-  const m = Math.floor(secs / 60);
-  const s = Math.round(secs % 60);
-  return `${m}m ${s}s`;
+  const totalSeconds = Math.max(0, Math.round(secs));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function formatTokens(n: number): string {
@@ -128,7 +135,11 @@ export function RunningView({
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
 
-  const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
+  const [metricsState, setMetricsState] = useState<{
+    sessionPath: string;
+    metrics: SessionMetrics;
+  } | null>(null);
+  const metrics = metricsState && metricsState.sessionPath === sessionPath ? metricsState.metrics : null;
   const [editingTitle, setEditingTitle] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [hoverHeader, setHoverHeader] = useState(false);
@@ -230,10 +241,15 @@ export function RunningView({
   }, [isDetached, isInterrupted, sessionPath]);
 
   useEffect(() => {
+    setMetricsState(null);
+  }, [sessionPath]);
+
+  useEffect(() => {
     if (!sessionPath) {
-      setMetrics(null);
+      setMetricsState(null);
       return;
     }
+    const activeSessionPath = sessionPath;
     // 只在项目处于前台时才跑 metrics 轮询；切到其他项目时暂停，
     // 项目重新激活时这里会立即补拉一次。注意这里用的是 projectActive
     // 而不是 visible —— 后者在同项目内打开 FileViewer / GitDiff 时也会是 false，
@@ -244,12 +260,14 @@ export function RunningView({
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const load = () => {
-      invoke<SessionMetrics>("read_session_metrics", { sessionPath })
+      invoke<SessionMetrics>("read_session_metrics", { sessionPath: activeSessionPath })
         .then((nextMetrics) => {
           if (cancelled) return;
-          setMetrics(nextMetrics);
+          setMetricsState({ sessionPath: activeSessionPath, metrics: nextMetrics });
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) setMetricsState(null);
+        });
     };
 
     load();
@@ -483,77 +501,83 @@ export function RunningView({
           flexShrink: 0,
         }}
       >
-        <div style={s.runMetaRow}>
-          <span style={s.runMetaFixed}>
-            {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
-            {permissionModeLabel(task.permissionMode, task.agent)}
-          </span>
-          {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
-            ? usageSnapshot.claude.status === "available" && (
-                <>
-                  {usageSnapshot.claude.data.fiveHour && (
-                    <><span>·</span><InlineWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>
-                  )}
-                  {usageSnapshot.claude.data.sevenDay && (
-                    <><span>·</span><InlineWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>
-                  )}
-                </>
-              )
-            : usageSnapshot.codex.status === "available" && (
-                <>
-                  {usageSnapshot.codex.data.primary && (
-                    <><span>·</span><InlineWindow label="5h" window={usageSnapshot.codex.data.primary} /></>
-                  )}
-                  {usageSnapshot.codex.data.secondary && (
-                    <><span>·</span><InlineWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>
-                  )}
-                </>
-              )
-          )}
-          {task.worktreePath && task.worktreeBranch && task.baseBranch && (
-            <>
-              <span style={s.runMetaFixed}>·</span>
-              <span
-                title={t("running.worktreeBranchTitle", {
-                  branch: task.worktreeBranch,
-                  base: task.baseBranch,
-                })}
-                style={s.runMetaBranchInline}
-              >
-                <GitBranch size={11} strokeWidth={2.2} />
-                <span style={s.runMetaBranchText}>
-                  {t("running.worktreeBranchInfo", {
+        <div style={s.runMetaWrap}>
+          <div style={s.runMetaRow}>
+            <span style={s.runMetaFixed}>
+              {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
+              {permissionModeLabel(task.permissionMode, task.agent)}
+            </span>
+            {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
+              ? usageSnapshot.claude.status === "available" && (
+                  <>
+                    {usageSnapshot.claude.data.fiveHour && (
+                      <><span>·</span><InlineWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>
+                    )}
+                    {usageSnapshot.claude.data.sevenDay && (
+                      <><span>·</span><InlineWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>
+                    )}
+                  </>
+                )
+              : usageSnapshot.codex.status === "available" && (
+                  <>
+                    {usageSnapshot.codex.data.primary && (
+                      <><span>·</span><InlineWindow label="5h" window={usageSnapshot.codex.data.primary} /></>
+                    )}
+                    {usageSnapshot.codex.data.secondary && (
+                      <><span>·</span><InlineWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>
+                    )}
+                  </>
+                )
+            )}
+            {task.worktreePath && task.worktreeBranch && task.baseBranch && (
+              <>
+                <span style={s.runMetaFixed}>·</span>
+                <span
+                  title={t("running.worktreeBranchTitle", {
                     branch: task.worktreeBranch,
                     base: task.baseBranch,
                   })}
+                  style={s.runMetaBranchInline}
+                >
+                  <GitBranch size={11} strokeWidth={2.2} />
+                  <span style={s.runMetaBranchText}>
+                    {t("running.worktreeBranchInfo", {
+                      branch: task.worktreeBranch,
+                      base: task.baseBranch,
+                    })}
+                  </span>
                 </span>
-              </span>
-            </>
-          )}
-        </div>
-        {metrics && (
-          <div style={s.runMetricsRow}>
-            <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
-            <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
-            {metrics.context_window > 0 && metrics.context_tokens > 0 && (
-              <MetricPill
-                label={t("running.context")}
-                value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
-                  (metrics.context_tokens / metrics.context_window) * 100,
-                )}%)`}
-              />
-            )}
-            {sessionPath && (
-              <SessionFilePill
-                label={t("running.sessionFileLabel")}
-                value={formatFileSize(metrics.session_file_bytes)}
-                path={sessionPath}
-                copiedLabel={t("running.sessionFilePathCopied")}
-                onCopy={handleCopySessionPath}
-              />
+              </>
             )}
           </div>
-        )}
+          {(metrics || sessionPath) && (
+            <div style={s.runMetricsRow}>
+              {metrics && (
+                <>
+                  <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
+                  <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
+                  {metrics.context_window > 0 && metrics.context_tokens > 0 && (
+                    <MetricPill
+                      label={t("running.context")}
+                      value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
+                        (metrics.context_tokens / metrics.context_window) * 100,
+                      )}%)`}
+                    />
+                  )}
+                </>
+              )}
+              {sessionPath && (
+                <SessionFilePill
+                  label={t("running.sessionFileLabel")}
+                  value={formatFileSize(metrics?.session_file_bytes ?? 0)}
+                  linked={(metrics?.session_file_bytes ?? 0) > 0}
+                  copiedLabel={t("running.sessionFilePathCopied")}
+                  onCopy={handleCopySessionPath}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Main content: terminal when active, session view when done/failed. */}
@@ -670,13 +694,13 @@ function MetricPill({ label, value }: { label: string; value: string }) {
 function SessionFilePill({
   label,
   value,
-  path,
+  linked,
   copiedLabel,
   onCopy,
 }: {
   label: string;
   value: string;
-  path: string;
+  linked: boolean;
   copiedLabel: string;
   onCopy: () => Promise<boolean>;
 }) {
@@ -716,12 +740,15 @@ function SessionFilePill({
         style={{ ...s.runMetricPill, ...s.runMetricPillButton }}
         onClick={handleClick}
       >
+        <ProjectStatusDot
+          tone={linked ? "success" : "error"}
+          borderColor="var(--bg-input)"
+          style={s.runSessionStatusDot}
+        />
         <span style={s.runMetricPillLabel}>{label}</span>
         <span style={s.runMetricPillValue}>{value}</span>
       </button>
-      {hovered && (
-        <span style={s.runSessionPathTooltip}>{copied ? copiedLabel : shortenPath(path)}</span>
-      )}
+      {copied && hovered && <span style={s.runSessionCopyTooltip}>{copiedLabel}</span>}
     </span>
   );
 }

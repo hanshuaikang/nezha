@@ -21,10 +21,19 @@ export const terminal = {
     gap: 10,
     flexShrink: 0,
   },
+  runMetaWrap: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap" as const,
+    columnGap: 16,
+    rowGap: 8,
+    minWidth: 0,
+  },
   runMetaRow: {
     display: "flex",
     alignItems: "center",
     gap: 6,
+    flex: "1 1 320px",
     fontSize: 11,
     color: "var(--text-muted)",
     minWidth: 0,
@@ -48,10 +57,11 @@ export const terminal = {
     whiteSpace: "nowrap" as const,
   },
   runMetricsRow: {
-    marginTop: 8,
     display: "flex",
     gap: 12,
     flexWrap: "wrap" as const,
+    flex: "0 0 auto",
+    maxWidth: "100%",
   },
   runMetricPill: {
     display: "flex",
@@ -83,7 +93,14 @@ export const terminal = {
     display: "inline-flex",
     alignItems: "center",
   },
-  runSessionPathTooltip: {
+  runSessionStatusDot: {
+    display: "inline-block",
+    position: "static" as const,
+    bottom: "auto",
+    right: "auto",
+    flexShrink: 0,
+  },
+  runSessionCopyTooltip: {
     position: "absolute" as const,
     left: "50%",
     bottom: "calc(100% + 6px)",
@@ -95,8 +112,8 @@ export const terminal = {
     border: "1px solid var(--border-medium)",
     boxShadow: "0 8px 24px rgba(0, 0, 0, 0.18)",
     color: "var(--text-secondary)",
-    fontFamily: "var(--font-mono)",
     fontSize: 11,
+    fontWeight: 600,
     lineHeight: 1.4,
     whiteSpace: "nowrap" as const,
     pointerEvents: "none" as const,
