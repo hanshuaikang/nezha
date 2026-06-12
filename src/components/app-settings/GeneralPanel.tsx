@@ -8,6 +8,7 @@ import {
   type TaskDisplayWindow,
 } from "../../types";
 import s from "../../styles";
+import { AttachmentPasteSettings } from "./AttachmentPasteSettings";
 
 export function GeneralPanel({
   taskDisplayWindow,
@@ -180,6 +181,8 @@ export function GeneralPanel({
         </button>
         <span style={hintStyle}>{t("appSettings.attentionBadgeHint")}</span>
       </div>
+
+      <AttachmentPasteSettings />
     </div>
   );
 }
