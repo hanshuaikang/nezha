@@ -174,6 +174,7 @@ export function ProjectPage({
   } = useProjectPanels();
 
   const [showShellTerminal, setShowShellTerminal] = useState(false);
+  const [shellProjectPath, setShellProjectPath] = useState(project.path);
   const [showSettings, setShowSettings] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
@@ -240,14 +241,36 @@ export function ProjectPage({
     (target: string) => {
       const cmd = `make ${target}\n`;
       if (showShellTerminal && shellRef.current) {
-        shellRef.current.sendCommand(cmd);
+        shellRef.current.sendCommandToPath(project.path, cmd);
       } else {
+        setShellProjectPath(project.path);
         pendingCmdRef.current = cmd;
         setShowShellTerminal(true);
       }
     },
+    [project.path, showShellTerminal],
+  );
+
+  const handleOpenWorktreeTerminal = useCallback(
+    (worktreePath: string) => {
+      if (showShellTerminal && shellRef.current) {
+        shellRef.current.openPath(worktreePath);
+        return;
+      }
+      setShellProjectPath(worktreePath);
+      setShowShellTerminal(true);
+    },
     [showShellTerminal],
   );
+
+  const handleToggleShellTerminal = useCallback(() => {
+    setShowShellTerminal((currentlyVisible) => {
+      if (!currentlyVisible) {
+        setShellProjectPath(project.path);
+      }
+      return !currentlyVisible;
+    });
+  }, [project.path]);
 
   const handleShellReady = useCallback(() => {
     if (pendingCmdRef.current) {
@@ -456,6 +479,8 @@ export function ProjectPage({
                 !!selectedTask &&
                 task.id === selectedTaskId &&
                 task.status !== "todo";
+              const worktreePath =
+                task.worktreePath && !task.worktreeDiscarded ? task.worktreePath : null;
               return (
                 <RunningView
                   key={task.id}
@@ -468,6 +493,9 @@ export function ProjectPage({
                   onResume={() => onResumeTask(task.id)}
                   onMergeWorktree={() => onMergeWorktree(task.id)}
                   onDiscardWorktree={() => onDiscardWorktree(task.id)}
+                  onOpenWorktreeTerminal={
+                    worktreePath ? () => handleOpenWorktreeTerminal(worktreePath) : undefined
+                  }
                   onReconnect={() => onReconnectTask(task.id)}
                   onMarkDone={() => onMarkTaskDone(task.id)}
                   onInput={(data) => onInput(task.id, data)}
@@ -488,7 +516,7 @@ export function ProjectPage({
         {showShellTerminal && (
           <ShellTerminalPanel
             ref={shellRef}
-            projectPath={project.path}
+            projectPath={shellProjectPath}
             projectId={project.id}
             isActive={visible}
             onClose={() => setShowShellTerminal(false)}
@@ -554,7 +582,7 @@ export function ProjectPage({
         activePanel={rightPanel}
         onToggle={handleTogglePanel}
         terminalActive={showShellTerminal}
-        onToggleTerminal={() => setShowShellTerminal((v) => !v)}
+        onToggleTerminal={handleToggleShellTerminal}
         onOpenSearch={() => setShowFileSearch(true)}
         onOpenSettings={() => setShowSettings(true)}
       />
