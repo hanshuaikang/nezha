@@ -1,14 +1,31 @@
 use std::fs;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
+use chrono::Local;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher};
 use crate::TaskManager;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalAttachmentInput {
+    data_url: String,
+    name: String,
+    mime_type: String,
+    label: String,
+    size: u64,
+}
+
+#[derive(serde::Serialize)]
+pub struct SavedTerminalAttachment {
+    path: String,
+    label: String,
+}
 
 const SESSION_WAIT_POLL: Duration = Duration::from_millis(50);
 const SESSION_WAIT_MAX: Duration = Duration::from_millis(500);
@@ -19,11 +36,35 @@ const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
 /// 最终使写入进程（Claude/Codex）的 write() 系统调用阻塞，从源头限流。
 const PTY_EMIT_CHANNEL_CAPACITY: usize = 32;
 
+fn attachment_dir_name(task_id: &str) -> String {
+    task_id
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => ch,
+        })
+        .collect()
+}
+
 fn task_attachments_dir(project_path: &str, task_id: &str) -> std::path::PathBuf {
     Path::new(project_path)
         .join(".nezha")
         .join("attachments")
-        .join(task_id)
+        .join(attachment_dir_name(task_id))
+}
+
+fn validate_project_root(project_path: &str) -> Result<std::path::PathBuf, String> {
+    let path = Path::new(project_path);
+    if !path.is_absolute() {
+        return Err("Project path must be absolute".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    if !canonical.is_dir() {
+        return Err("Project path is not a directory".to_string());
+    }
+    Ok(canonical)
 }
 
 fn has_task_session(app: &AppHandle, task_id: &str, is_codex: bool) -> bool {
@@ -142,6 +183,209 @@ fn save_task_images(
         let file_path = attachments_dir.join(&filename);
         fs::write(&file_path, &data).map_err(|e| e.to_string())?;
         paths.push(file_path.to_string_lossy().into_owned());
+    }
+    Ok(paths)
+}
+
+fn decode_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+    let comma = data_url.find(',').ok_or("invalid attachment data URL")?;
+    let b64 = &data_url[comma + 1..];
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| e.to_string())
+}
+
+fn extension_from_attachment(name: &str, mime_type: &str) -> String {
+    if let Some(ext) = Path::new(name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.trim().to_lowercase())
+        .filter(|ext| {
+            !ext.is_empty()
+                && ext.len() <= 24
+                && ext
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+        })
+    {
+        return ext;
+    }
+    extension_from_mime_type(mime_type).to_string()
+}
+
+fn extension_from_mime_type(mime_type: &str) -> &'static str {
+    let mime = mime_type.to_lowercase();
+    if mime.contains("jpeg") || mime.contains("jpg") {
+        "jpg"
+    } else if mime.contains("png") {
+        "png"
+    } else if mime.contains("gif") {
+        "gif"
+    } else if mime.contains("webp") {
+        "webp"
+    } else if mime == "application/pdf" {
+        "pdf"
+    } else if mime == "application/json" || mime.ends_with("+json") {
+        "json"
+    } else if mime == "text/csv" {
+        "csv"
+    } else if mime.starts_with("text/") {
+        "txt"
+    } else {
+        "bin"
+    }
+}
+
+fn safe_attachment_stem(name: &str) -> String {
+    let raw_stem = Path::new(name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("attachment");
+    let sanitized: String = raw_stem
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            ch if ch.is_control() => '_',
+            _ => ch,
+        })
+        .take(120)
+        .collect::<String>()
+        .trim_matches([' ', '.'])
+        .to_string();
+    if sanitized.is_empty() {
+        "attachment".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn normalize_attachment_label(label: &str) -> String {
+    let filtered: String = label
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
+        .take(24)
+        .collect();
+    if filtered.is_empty() {
+        "File".to_string()
+    } else {
+        filtered
+    }
+}
+
+fn existing_attachment_files(attachments_dir: &Path) -> Result<Vec<(PathBuf, SystemTime)>, String> {
+    if !attachments_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    for entry in fs::read_dir(attachments_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        files.push((entry.path(), modified));
+    }
+    Ok(files)
+}
+
+fn prune_old_attachments_for_limit(
+    attachments_dir: &Path,
+    incoming_count: usize,
+    max_count: usize,
+) -> Result<(), String> {
+    if incoming_count > max_count {
+        return Err(format!(
+            "Too many attachments: {} files exceeds the task limit of {}.",
+            incoming_count, max_count
+        ));
+    }
+
+    let mut files = existing_attachment_files(attachments_dir)?;
+    let total_after_paste = files.len().saturating_add(incoming_count);
+    if total_after_paste <= max_count {
+        return Ok(());
+    }
+
+    files.sort_by_key(|(_, modified)| *modified);
+    let delete_count = total_after_paste - max_count;
+    for (path, _) in files.into_iter().take(delete_count) {
+        fs::remove_file(&path).map_err(|e| {
+            format!(
+                "Failed to delete old attachment {}: {}",
+                path.to_string_lossy(),
+                e
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn save_terminal_files_blocking(
+    project_path: &str,
+    task_id: &str,
+    files: &[TerminalAttachmentInput],
+    settings: &crate::app_settings::AppSettings,
+) -> Result<Vec<SavedTerminalAttachment>, String> {
+    if files.is_empty() {
+        return Ok(vec![]);
+    }
+    if !cfg!(target_os = "macos") {
+        return Err("Attachment paste is only available on macOS.".to_string());
+    }
+    if !settings.terminal_attachment_paste_enabled {
+        return Err("Attachment paste is disabled in app settings.".to_string());
+    }
+    let max_count = settings.terminal_attachment_max_count as usize;
+    if files.len() > max_count {
+        return Err(format!(
+            "Too many attachments: {} files exceeds the task limit of {}.",
+            files.len(),
+            max_count
+        ));
+    }
+    let max_size_bytes = settings.terminal_attachment_max_size_mb as u64 * 1024 * 1024;
+    for file in files {
+        if file.size > max_size_bytes {
+            return Err(format!(
+                "Attachment {} is larger than the {} MB limit.",
+                file.name, settings.terminal_attachment_max_size_mb
+            ));
+        }
+    }
+    let mut decoded_files = Vec::with_capacity(files.len());
+    for file in files {
+        let data = decode_data_url(&file.data_url)?;
+        if data.len() as u64 > max_size_bytes {
+            return Err(format!(
+                "Attachment {} is larger than the {} MB limit.",
+                file.name, settings.terminal_attachment_max_size_mb
+            ));
+        }
+        decoded_files.push(data);
+    }
+
+    let project_root = validate_project_root(project_path)?;
+    let attachments_dir = task_attachments_dir(&project_root.to_string_lossy(), task_id);
+    fs::create_dir_all(&attachments_dir).map_err(|e| e.to_string())?;
+    prune_old_attachments_for_limit(
+        &attachments_dir,
+        files.len(),
+        max_count,
+    )?;
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let mut paths = Vec::new();
+    for (i, (file, data)) in files.iter().zip(decoded_files.iter()).enumerate() {
+        let ext = extension_from_attachment(&file.name, &file.mime_type);
+        let stem = safe_attachment_stem(&file.name);
+        let filename = format!("{}_{}_{}.{}", timestamp, i, stem, ext);
+        let file_path = attachments_dir.join(&filename);
+        fs::write(&file_path, data).map_err(|e| e.to_string())?;
+        paths.push(SavedTerminalAttachment {
+            path: file_path.to_string_lossy().into_owned(),
+            label: normalize_attachment_label(&file.label),
+        });
     }
     Ok(paths)
 }
@@ -902,6 +1146,20 @@ pub async fn send_input(
 }
 
 #[tauri::command]
+pub async fn save_terminal_files(
+    project_path: String,
+    task_id: String,
+    files: Vec<TerminalAttachmentInput>,
+) -> Result<Vec<SavedTerminalAttachment>, String> {
+    tokio::task::spawn_blocking(move || {
+        let settings = crate::app_settings::load_settings_internal();
+        save_terminal_files_blocking(&project_path, &task_id, &files, &settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn resize_pty(
     task_manager: State<'_, TaskManager>,
     task_id: String,
@@ -996,6 +1254,7 @@ pub async fn open_shell(
 pub async fn kill_shell(
     task_manager: State<'_, TaskManager>,
     shell_id: String,
+    project_path: Option<String>,
 ) -> Result<(), String> {
     let child_arc = task_manager
         .child_handles
@@ -1006,5 +1265,10 @@ pub async fn kill_shell(
         let _ = arc.lock().unwrap().kill();
     }
     task_manager.remove_pty_handles(&shell_id);
+    if let Some(project_path) = project_path {
+        if let Ok(project_root) = validate_project_root(&project_path) {
+            let _ = fs::remove_dir_all(task_attachments_dir(&project_root.to_string_lossy(), &shell_id));
+        }
+    }
     Ok(())
 }

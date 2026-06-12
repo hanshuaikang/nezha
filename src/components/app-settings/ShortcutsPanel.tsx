@@ -17,7 +17,13 @@ import {
 } from "../../shortcuts";
 import s from "../../styles";
 import { renderShortcutKeys } from "./shared";
-import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
+import {
+  APP_SETTINGS_CHANGED_EVENT,
+  DEFAULT_TERMINAL_ATTACHMENT_MAX_COUNT,
+  DEFAULT_TERMINAL_ATTACHMENT_MAX_SIZE_MB,
+  DEFAULT_TERMINAL_ATTACHMENT_PASTE_ENABLED,
+  type AppSettings,
+} from "./types";
 
 interface ShortcutOption {
   value: string;
@@ -93,6 +99,18 @@ function normalizeSettings(loaded: AppSettings): AppSettings {
     ...loaded,
     send_shortcut: normalizeSendShortcut(loaded.send_shortcut),
     terminal_shift_enter_newline: normalizeShiftEnterNewline(loaded.terminal_shift_enter_newline),
+    terminal_attachment_paste_enabled:
+      typeof loaded.terminal_attachment_paste_enabled === "boolean"
+        ? loaded.terminal_attachment_paste_enabled
+        : DEFAULT_TERMINAL_ATTACHMENT_PASTE_ENABLED,
+    terminal_attachment_max_size_mb:
+      typeof loaded.terminal_attachment_max_size_mb === "number"
+        ? loaded.terminal_attachment_max_size_mb
+        : DEFAULT_TERMINAL_ATTACHMENT_MAX_SIZE_MB,
+    terminal_attachment_max_count:
+      typeof loaded.terminal_attachment_max_count === "number"
+        ? loaded.terminal_attachment_max_count
+        : DEFAULT_TERMINAL_ATTACHMENT_MAX_COUNT,
   };
 }
 
@@ -103,6 +121,9 @@ export function ShortcutsPanel() {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    terminal_attachment_paste_enabled: DEFAULT_TERMINAL_ATTACHMENT_PASTE_ENABLED,
+    terminal_attachment_max_size_mb: DEFAULT_TERMINAL_ATTACHMENT_MAX_SIZE_MB,
+    terminal_attachment_max_count: DEFAULT_TERMINAL_ATTACHMENT_MAX_COUNT,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

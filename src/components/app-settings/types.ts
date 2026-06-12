@@ -37,7 +37,14 @@ export interface AppSettings {
   codex_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
+  terminal_attachment_paste_enabled: boolean;
+  terminal_attachment_max_size_mb: number;
+  terminal_attachment_max_count: number;
 }
+
+export const DEFAULT_TERMINAL_ATTACHMENT_PASTE_ENABLED = true;
+export const DEFAULT_TERMINAL_ATTACHMENT_MAX_SIZE_MB = 10;
+export const DEFAULT_TERMINAL_ATTACHMENT_MAX_COUNT = 100;
 
 export interface AgentVersions {
   claude_version: string;
