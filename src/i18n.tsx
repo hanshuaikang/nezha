@@ -447,6 +447,9 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.interruptedNoSession":
       "No session ID was saved for this task, so resume is unavailable. You can still cancel it or mark it completed.",
     "running.sessionFile": "Session file: {path}",
+    "running.sessionFileLabel": "Session file",
+    "running.sessionFilePathCopied": "Copied",
+    "running.sessionFilePathCopyFailed": "Failed to copy session file path: {error}",
     "running.worktreeBranchInfo": "Worktree: {branch} → {base}",
     "running.worktreeBranchTitle": "Task is on branch {branch}, will merge into {base}",
     "running.duration": "Duration",
@@ -927,6 +930,9 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "running.interruptedNoSession":
       "这个任务没有保存会话 ID，因此暂时无法恢复；你仍然可以取消任务或标记已完成。",
     "running.sessionFile": "会话文件：{path}",
+    "running.sessionFileLabel": "会话文件",
+    "running.sessionFilePathCopied": "已复制",
+    "running.sessionFilePathCopyFailed": "复制会话文件路径失败：{error}",
     "running.worktreeBranchInfo": "工作树：{branch} → {base}",
     "running.worktreeBranchTitle": "任务位于分支 {branch}，将合并回 {base}",
     "running.duration": "时长",

@@ -7,7 +7,8 @@ import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
 import { useToast } from "./Toast";
-import { shortenPath, getUsageColor } from "../utils";
+import { writeClipboardText } from "./file-explorer/clipboard";
+import { getUsageColor, shortenPath } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
@@ -27,6 +28,7 @@ import {
 
 interface SessionMetrics {
   duration_secs: number;
+  session_file_bytes: number;
   total_tokens: number;
   context_tokens: number;
   context_window: number;
@@ -43,6 +45,17 @@ function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}K`;
+  if (bytes < 1024 * 1024 * 1024) {
+    const mb = bytes / 1024 / 1024;
+    return `${mb.toFixed(mb < 10 ? 1 : 0)}M`;
+  }
+  const gb = bytes / 1024 / 1024 / 1024;
+  return `${gb.toFixed(gb < 10 ? 1 : 0)}G`;
 }
 
 function InlineWindow({ label, window }: { label: string; window: UsageWindow }) {
@@ -188,6 +201,17 @@ export function RunningView({
       showToast(t("running.exportFailed", { error: String(err) }), "error");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleCopySessionPath = async () => {
+    if (!sessionPath) return false;
+    try {
+      await writeClipboardText(sessionPath);
+      return true;
+    } catch (err) {
+      showToast(t("running.sessionFilePathCopyFailed", { error: String(err) }), "error");
+      return false;
     }
   };
 
@@ -459,8 +483,8 @@ export function RunningView({
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
-          <span>
+        <div style={s.runMetaRow}>
+          <span style={s.runMetaFixed}>
             {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
             {permissionModeLabel(task.permissionMode, task.agent)}
           </span>
@@ -486,49 +510,29 @@ export function RunningView({
                 </>
               )
           )}
+          {task.worktreePath && task.worktreeBranch && task.baseBranch && (
+            <>
+              <span style={s.runMetaFixed}>·</span>
+              <span
+                title={t("running.worktreeBranchTitle", {
+                  branch: task.worktreeBranch,
+                  base: task.baseBranch,
+                })}
+                style={s.runMetaBranchInline}
+              >
+                <GitBranch size={11} strokeWidth={2.2} />
+                <span style={s.runMetaBranchText}>
+                  {t("running.worktreeBranchInfo", {
+                    branch: task.worktreeBranch,
+                    base: task.baseBranch,
+                  })}
+                </span>
+              </span>
+            </>
+          )}
         </div>
-        {task.worktreePath && task.worktreeBranch && task.baseBranch && (
-          <div
-            title={t("running.worktreeBranchTitle", {
-              branch: task.worktreeBranch,
-              base: task.baseBranch,
-            })}
-            style={s.runMetaBranchRow}
-          >
-            <GitBranch size={11} strokeWidth={2.2} />
-            <span>
-              {t("running.worktreeBranchInfo", {
-                branch: task.worktreeBranch,
-                base: task.baseBranch,
-              })}
-            </span>
-          </div>
-        )}
-        {sessionPath && (
-          <div
-            title={sessionPath}
-            style={{
-              marginTop: 4,
-              fontSize: 11,
-              color: "var(--text-muted)",
-              fontFamily: "var(--font-mono)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("running.sessionFile", { path: shortenPath(sessionPath) })}
-          </div>
-        )}
         {metrics && (
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              gap: 12,
-              flexWrap: "wrap" as const,
-            }}
-          >
+          <div style={s.runMetricsRow}>
             <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
             <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
             {metrics.context_window > 0 && metrics.context_tokens > 0 && (
@@ -537,6 +541,15 @@ export function RunningView({
                 value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
                   (metrics.context_tokens / metrics.context_window) * 100,
                 )}%)`}
+              />
+            )}
+            {sessionPath && (
+              <SessionFilePill
+                label={t("running.sessionFileLabel")}
+                value={formatFileSize(metrics.session_file_bytes)}
+                path={sessionPath}
+                copiedLabel={t("running.sessionFilePathCopied")}
+                onCopy={handleCopySessionPath}
               />
             )}
           </div>
@@ -647,29 +660,68 @@ export function RunningView({
 
 function MetricPill({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "3px 8px",
-        borderRadius: 6,
-        background: "var(--bg-input)",
-        border: "1px solid var(--border-dim)",
-      }}
-    >
-      <span
-        style={{
-          fontSize: 10,
-          color: "var(--text-hint)",
-          fontWeight: 600,
-          textTransform: "uppercase" as const,
-          letterSpacing: 0.4,
-        }}
-      >
-        {label}
-      </span>
-      <span style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600 }}>{value}</span>
+    <div style={s.runMetricPill}>
+      <span style={s.runMetricPillLabel}>{label}</span>
+      <span style={s.runMetricPillValue}>{value}</span>
     </div>
+  );
+}
+
+function SessionFilePill({
+  label,
+  value,
+  path,
+  copiedLabel,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  path: string;
+  copiedLabel: string;
+  onCopy: () => Promise<boolean>;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleClick = async () => {
+    const ok = await onCopy();
+    if (!ok) return;
+    setCopied(true);
+    if (copiedTimerRef.current !== null) {
+      clearTimeout(copiedTimerRef.current);
+    }
+    copiedTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copiedTimerRef.current = null;
+    }, 3000);
+  };
+
+  return (
+    <span
+      style={s.runSessionFilePillWrap}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        type="button"
+        style={{ ...s.runMetricPill, ...s.runMetricPillButton }}
+        onClick={handleClick}
+      >
+        <span style={s.runMetricPillLabel}>{label}</span>
+        <span style={s.runMetricPillValue}>{value}</span>
+      </button>
+      {hovered && (
+        <span style={s.runSessionPathTooltip}>{copied ? copiedLabel : shortenPath(path)}</span>
+      )}
+    </span>
   );
 }

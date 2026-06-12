@@ -10,6 +10,8 @@ use std::time::SystemTime;
 pub(crate) struct SessionMetrics {
     pub(crate) tool_calls: u64,
     pub(crate) duration_secs: f64,
+    /// Session JSONL file size in bytes, used by the running view metadata pill.
+    pub(crate) session_file_bytes: u64,
     /// 任务累计 token 消耗（包含缓存命中 / reasoning），用于 UI"总消耗"。
     pub(crate) total_tokens: u64,
     /// 当前上下文占用（最后一轮 prompt 大小）。Codex 直读，Claude 由最后一条 assistant 推导。
@@ -106,6 +108,7 @@ fn parse_claude_metrics(content: &str) -> SessionMetrics {
     SessionMetrics {
         tool_calls,
         duration_secs: duration_from(first_ts, last_ts),
+        session_file_bytes: 0,
         total_tokens: input_tokens + output_tokens + cache_creation + cache_read,
         context_tokens: last_context,
         context_window: 0, // Claude session 不带窗口大小
@@ -168,6 +171,7 @@ fn parse_codex_metrics(content: &str) -> SessionMetrics {
     SessionMetrics {
         tool_calls,
         duration_secs: duration_from(first_ts, last_ts),
+        session_file_bytes: 0,
         total_tokens,
         context_tokens,
         context_window,
@@ -191,10 +195,15 @@ pub(crate) fn parse_session_metrics_cached(path: &std::path::Path) -> SessionMet
     let path_str = path.to_string_lossy().to_string();
 
     // 获取文件修改时间
-    let modified = match std::fs::metadata(path).and_then(|m| m.modified()) {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return SessionMetrics::default(),
+    };
+    let modified = match metadata.modified() {
         Ok(t) => t,
         Err(_) => return SessionMetrics::default(),
     };
+    let file_bytes = metadata.len();
 
     // 检查缓存
     {
@@ -207,7 +216,8 @@ pub(crate) fn parse_session_metrics_cached(path: &std::path::Path) -> SessionMet
     }
 
     // 缓存未命中，完整解析
-    let metrics = parse_session_metrics_from_path(path);
+    let mut metrics = parse_session_metrics_from_path(path);
+    metrics.session_file_bytes = file_bytes;
 
     // 更新缓存
     {
@@ -230,4 +240,3 @@ pub async fn read_session_metrics(session_path: String) -> Result<SessionMetrics
     .await
     .map_err(|e| format!("read_session_metrics join error: {}", e))?
 }
-
