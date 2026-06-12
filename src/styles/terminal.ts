@@ -48,7 +48,6 @@ export const terminal = {
     gap: 5,
     minWidth: 0,
     overflow: "hidden",
-    fontFamily: "var(--font-mono)",
   },
   runMetaBranchText: {
     minWidth: 0,
