@@ -501,83 +501,81 @@ export function RunningView({
           flexShrink: 0,
         }}
       >
-        <div style={s.runMetaWrap}>
-          <div style={s.runMetaRow}>
-            <span style={s.runMetaFixed}>
-              {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
-              {permissionModeLabel(task.permissionMode, task.agent)}
-            </span>
-            {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
-              ? usageSnapshot.claude.status === "available" && (
-                  <>
-                    {usageSnapshot.claude.data.fiveHour && (
-                      <><span>·</span><InlineWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>
-                    )}
-                    {usageSnapshot.claude.data.sevenDay && (
-                      <><span>·</span><InlineWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>
-                    )}
-                  </>
-                )
-              : usageSnapshot.codex.status === "available" && (
-                  <>
-                    {usageSnapshot.codex.data.primary && (
-                      <><span>·</span><InlineWindow label="5h" window={usageSnapshot.codex.data.primary} /></>
-                    )}
-                    {usageSnapshot.codex.data.secondary && (
-                      <><span>·</span><InlineWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>
-                    )}
-                  </>
-                )
-            )}
-            {task.worktreePath && task.worktreeBranch && task.baseBranch && (
-              <>
-                <span style={s.runMetaFixed}>·</span>
-                <span
-                  title={t("running.worktreeBranchTitle", {
+        <div style={s.runMetaRow}>
+          <span style={s.runMetaFixed}>
+            {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
+            {permissionModeLabel(task.permissionMode, task.agent)}
+          </span>
+          {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
+            ? usageSnapshot.claude.status === "available" && (
+                <>
+                  {usageSnapshot.claude.data.fiveHour && (
+                    <><span>·</span><InlineWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>
+                  )}
+                  {usageSnapshot.claude.data.sevenDay && (
+                    <><span>·</span><InlineWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>
+                  )}
+                </>
+              )
+            : usageSnapshot.codex.status === "available" && (
+                <>
+                  {usageSnapshot.codex.data.primary && (
+                    <><span>·</span><InlineWindow label="5h" window={usageSnapshot.codex.data.primary} /></>
+                  )}
+                  {usageSnapshot.codex.data.secondary && (
+                    <><span>·</span><InlineWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>
+                  )}
+                </>
+              )
+          )}
+          {task.worktreePath && task.worktreeBranch && task.baseBranch && (
+            <>
+              <span style={s.runMetaFixed}>·</span>
+              <span
+                title={t("running.worktreeBranchTitle", {
+                  branch: task.worktreeBranch,
+                  base: task.baseBranch,
+                })}
+                style={s.runMetaBranchInline}
+              >
+                <GitBranch size={11} strokeWidth={2.2} />
+                <span style={s.runMetaBranchText}>
+                  {t("running.worktreeBranchInfo", {
                     branch: task.worktreeBranch,
                     base: task.baseBranch,
                   })}
-                  style={s.runMetaBranchInline}
-                >
-                  <GitBranch size={11} strokeWidth={2.2} />
-                  <span style={s.runMetaBranchText}>
-                    {t("running.worktreeBranchInfo", {
-                      branch: task.worktreeBranch,
-                      base: task.baseBranch,
-                    })}
-                  </span>
                 </span>
-              </>
-            )}
-          </div>
-          {(metrics || sessionPath) && (
-            <div style={s.runMetricsRow}>
-              {metrics && (
-                <>
-                  <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
-                  <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
-                  {metrics.context_window > 0 && metrics.context_tokens > 0 && (
-                    <MetricPill
-                      label={t("running.context")}
-                      value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
-                        (metrics.context_tokens / metrics.context_window) * 100,
-                      )}%)`}
-                    />
-                  )}
-                </>
-              )}
-              {sessionPath && (
-                <SessionFilePill
-                  label={t("running.sessionFileLabel")}
-                  value={formatFileSize(metrics?.session_file_bytes ?? 0)}
-                  linked={(metrics?.session_file_bytes ?? 0) > 0}
-                  copiedLabel={t("running.sessionFilePathCopied")}
-                  onCopy={handleCopySessionPath}
-                />
-              )}
-            </div>
+              </span>
+            </>
           )}
         </div>
+        {(metrics || sessionPath) && (
+          <div style={s.runMetricsRow}>
+            {metrics && (
+              <>
+                <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
+                <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
+                {metrics.context_window > 0 && metrics.context_tokens > 0 && (
+                  <MetricPill
+                    label={t("running.context")}
+                    value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
+                      (metrics.context_tokens / metrics.context_window) * 100,
+                    )}%)`}
+                  />
+                )}
+              </>
+            )}
+            {sessionPath && (
+              <SessionFilePill
+                label={t("running.sessionFileLabel")}
+                value={formatFileSize(metrics?.session_file_bytes ?? 0)}
+                linked={(metrics?.session_file_bytes ?? 0) > 0}
+                copiedLabel={t("running.sessionFilePathCopied")}
+                onCopy={handleCopySessionPath}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main content: terminal when active, session view when done/failed. */}
