@@ -20,6 +20,7 @@ import {
   attachMacWebKitTerminalGuard,
   applyTerminalFontSize,
   applyTerminalFontFamily,
+  applyDomCharSizeOverride,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
@@ -84,18 +85,33 @@ export function TerminalView({
     if (!containerRef.current) return;
     const container = containerRef.current;
 
-    const { term, fitAddon } = initTerminal(themeVariant, 1000, terminalFontSize, monoFontFamily);
+    const { term, fitAddon, whenFontsReady } = initTerminal(
+      themeVariant,
+      1000,
+      terminalFontSize,
+      monoFontFamily,
+    );
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    let disposed = false;
 
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
+    // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
+    const disposeCharSizeOverride = applyDomCharSizeOverride(term);
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
     loadWebglAddon(term);
 
     const size = safeFit(fitAddon, term, container);
     if (size) notifyResize(size.cols, size.rows);
+
+    // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
+    whenFontsReady.then(() => {
+      if (disposed) return;
+      const s = safeFit(fitAddon, term, container);
+      if (s) notifyResize(s.cols, s.rows);
+    });
 
     const focusTerminal = () => {
       window.requestAnimationFrame(() => {
@@ -168,6 +184,7 @@ export function TerminalView({
     resizeObserver.observe(container);
 
     return () => {
+      disposed = true;
       try {
         const snapshot = serializeAddon.serialize();
         if (snapshot) onSnapshotRef.current?.(snapshot);
@@ -176,6 +193,7 @@ export function TerminalView({
       }
       onRegisterRef.current(null);
       fitAddonRef.current = null;
+      disposeCharSizeOverride();
       disposeMacWebKitGuard();
       disposeInputFix();
       disposeSmartCopy();
@@ -243,13 +261,22 @@ export function TerminalView({
 
   useEffect(() => {
     if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
-    const size = applyTerminalFontFamily(
+    const result = applyTerminalFontFamily(
       terminalRef.current,
       fitAddonRef.current,
       monoFontFamily,
       containerRef.current,
     );
-    if (size) notifyResize(size.cols, size.rows);
+    if (!result) return;
+    if (result.immediate) notifyResize(result.immediate.cols, result.immediate.rows);
+    let cancelled = false;
+    result.whenSettled.then((s) => {
+      if (cancelled || !s) return;
+      notifyResize(s.cols, s.rows);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [monoFontFamily, notifyResize]);
 
   return (

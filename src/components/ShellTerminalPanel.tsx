@@ -15,6 +15,7 @@ import {
   attachMacWebKitTerminalGuard,
   applyTerminalFontSize,
   applyTerminalFontFamily,
+  applyDomCharSizeOverride,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
@@ -106,10 +107,17 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
 
-      const { term, fitAddon } = initTerminal(themeVariantRef.current, 5000, terminalFontSizeRef.current, monoFontFamilyRef.current);
+      const { term, fitAddon, whenFontsReady } = initTerminal(
+        themeVariantRef.current,
+        5000,
+        terminalFontSizeRef.current,
+        monoFontFamilyRef.current,
+      );
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
+      // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
+      const disposeCharSizeOverride = applyDomCharSizeOverride(term);
       const disposeInputFix = attachMacWebKitShiftInputFix(term);
       loadWebglAddon(term);
       const writer = createSmartWriter(term);
@@ -124,6 +132,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         lastSizeRef.current = { cols: s.cols, rows: s.rows };
         invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
+
+      // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
+      whenFontsReady.then(() => {
+        if (cleaned) return;
+        fit();
+      });
 
       initTimeoutId = window.setTimeout(() => {
         if (cleaned) return;
@@ -203,6 +217,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         terminalRef.current = null;
         fitAddonRef.current = null;
+        disposeCharSizeOverride();
         disposeMacWebKitGuard();
         disposeInputFix();
         term.dispose();
@@ -249,17 +264,29 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
     useEffect(() => {
       if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
-      const size = applyTerminalFontFamily(
+      const result = applyTerminalFontFamily(
         terminalRef.current,
         fitAddonRef.current,
         monoFontFamily,
         containerRef.current,
       );
-      if (!size) return;
-      const last = lastSizeRef.current;
-      if (last && last.cols === size.cols && last.rows === size.rows) return;
-      lastSizeRef.current = { cols: size.cols, rows: size.rows };
-      invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+      if (!result) return;
+      const pushResize = (size: { cols: number; rows: number } | null) => {
+        if (!size) return;
+        const last = lastSizeRef.current;
+        if (last && last.cols === size.cols && last.rows === size.rows) return;
+        lastSizeRef.current = { cols: size.cols, rows: size.rows };
+        invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+      };
+      pushResize(result.immediate);
+      let cancelled = false;
+      result.whenSettled.then((s) => {
+        if (cancelled) return;
+        pushResize(s);
+      });
+      return () => {
+        cancelled = true;
+      };
     }, [monoFontFamily, shellId]);
 
     return (
