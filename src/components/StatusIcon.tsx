@@ -1,5 +1,6 @@
 import {
   CheckCircle2,
+  CircleCheck,
   XCircle,
   MinusCircle,
   Circle,
@@ -20,6 +21,8 @@ export function StatusIcon({ status }: { status: TaskStatus }) {
       );
     case "input_required":
       return <AlertCircle size={14} style={{ color: "var(--warning)" }} />;
+    case "awaiting_review":
+      return <CircleCheck size={14} style={{ color: "var(--accent)" }} />;
     case "detached":
       return <AlertTriangle size={14} style={{ color: "var(--warning)" }} />;
     case "interrupted":

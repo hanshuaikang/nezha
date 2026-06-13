@@ -30,6 +30,7 @@ import type { FontFamily } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
+import { KanbanView, OPEN_KANBAN_VIEW_EVENT } from "./components/KanbanView";
 import { useToast } from "./components/Toast";
 import { isHideWindowShortcut } from "./shortcuts";
 import { APP_PLATFORM } from "./platform";
@@ -127,11 +128,19 @@ function normalizeInterruptedTasksOnStartup(
 }
 
 function shouldIgnoreTaskStatusTransition(current: TaskStatus, next: TaskStatus): boolean {
-  return current === "detached" && (next === "running" || next === "input_required");
+  return (
+    current === "detached" &&
+    (next === "running" || next === "input_required" || next === "awaiting_review")
+  );
 }
 
 function isLiveTerminalTaskStatus(status: TaskStatus): boolean {
-  return status === "pending" || status === "running" || status === "input_required";
+  return (
+    status === "pending" ||
+    status === "running" ||
+    status === "input_required" ||
+    status === "awaiting_review"
+  );
 }
 
 function getSystemPrefersDark() {
@@ -200,6 +209,7 @@ function App() {
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
   const [skillHubConfig, setSkillHubConfig] = useState<SkillHubConfig | null>(null);
   const [hubMode, setHubMode] = useState(false);
+  const [showKanban, setShowKanban] = useState(false);
 
   const tm = useTerminalManager();
   const pendingResumeStartsRef = useRef<Record<string, () => void>>({});
@@ -996,7 +1006,9 @@ function App() {
         if (shouldIgnoreTaskStatusTransition(task.status, status)) return task;
 
         const attentionRequestedAt =
-          status === "input_required" ? (extra?.attentionRequestedAt ?? Date.now()) : undefined;
+          status === "input_required" || status === "awaiting_review"
+            ? (extra?.attentionRequestedAt ?? Date.now())
+            : undefined;
 
         if (task.status === status && task.attentionRequestedAt === attentionRequestedAt) {
           return task;
@@ -1094,6 +1106,29 @@ function App() {
     setActiveProject(null);
   }, []);
 
+  // 看板入口在 ProjectRail 底部触发,打开全屏浮层覆盖当前页面。
+  // 不切换 activeProject,关闭浮层后用户回到原先所在的任务上下文。
+  useEffect(() => {
+    const handle = () => setShowKanban(true);
+    window.addEventListener(OPEN_KANBAN_VIEW_EVENT, handle);
+    return () => window.removeEventListener(OPEN_KANBAN_VIEW_EVENT, handle);
+  }, []);
+
+  // 从看板跳转到某个项目（可选定位到具体 task）。关浮层 + 切活动项目（或进入 hub）
+  // + 在该项目的本地视图状态里选中 task。三步必须一起做,任何一步漏掉都会让用户看到
+  // 错位的页面状态。
+  function enterProjectFromKanban(project: Project, taskId?: string) {
+    setShowKanban(false);
+    if (project.id === hubProjectId) {
+      handleEnterSkillHub();
+    } else {
+      handleProjectClick(project);
+    }
+    if (taskId) {
+      updateProjectView(project.id, { selectedTaskId: taskId, isNewTask: false });
+    }
+  }
+
   return (
     <div style={{ ...s.root, position: "relative" }}>
       <div
@@ -1173,6 +1208,20 @@ function App() {
           );
         })}
       </div>
+      {showKanban && (
+        <div style={s.kanbanOverlay}>
+          <KanbanView
+            projects={sortedProjects}
+            tasks={tasks}
+            onClose={() => setShowKanban(false)}
+            onTaskClick={(task) => {
+              const project = projects.find((p) => p.id === task.projectId);
+              if (project) enterProjectFromKanban(project, task.id);
+            }}
+            onProjectClick={(project) => enterProjectFromKanban(project)}
+          />
+        </div>
+      )}
       {!activeProject && (
         <div
           style={{

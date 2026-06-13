@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Plus, ChevronsRight, Search, PinOff } from "lucide-react";
+import { Plus, ChevronsRight, LayoutGrid, Search, PinOff } from "lucide-react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
+import { OPEN_KANBAN_VIEW_EVENT } from "./KanbanView";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeWaveGif from "../assets/gif/claude-wave.gif";
@@ -25,7 +26,11 @@ function getProjectStatus(tasks: Task[], projectId: string): ProjectStatus {
   const projectTasks = tasks.filter((t) => t.projectId === projectId);
   if (
     projectTasks.some(
-      (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
+      (t) =>
+        t.status === "input_required" ||
+        t.status === "awaiting_review" ||
+        t.status === "detached" ||
+        t.status === "interrupted",
     )
   ) {
     return "attention";
@@ -34,9 +39,13 @@ function getProjectStatus(tasks: Task[], projectId: string): ProjectStatus {
   return null;
 }
 
-// 待确认(input_required)任务数——用于黄色数量角标
+// 待确认任务数（需要介入 + 已完成待确认）——用于黄色数量角标
 function getAttentionCount(tasks: Task[], projectId: string): number {
-  return tasks.filter((t) => t.projectId === projectId && t.status === "input_required").length;
+  return tasks.filter(
+    (t) =>
+      t.projectId === projectId &&
+      (t.status === "input_required" || t.status === "awaiting_review"),
+  ).length;
 }
 
 // 项目状态指示:启用角标且存在待确认任务时显示数量角标,否则回退为小圆点。
@@ -341,6 +350,7 @@ export function ProjectRail({
   const { t } = useI18n();
   const [addHov, setAddHov] = useState(false);
   const [expandHov, setExpandHov] = useState(false);
+  const [kanbanHov, setKanbanHov] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // 竖条只显示常驻项目；当前激活项目即使被设为非常驻也始终保留，避免失去当前上下文。
@@ -410,6 +420,16 @@ export function ProjectRail({
 
       {!singleProjectMode ? (
         <>
+          <button
+            title={t("kanban.title")}
+            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_KANBAN_VIEW_EVENT))}
+            onMouseEnter={() => setKanbanHov(true)}
+            onMouseLeave={() => setKanbanHov(false)}
+            style={{ ...s.railKanbanBtn, ...(kanbanHov ? s.railKanbanBtnHover : null) }}
+          >
+            <LayoutGrid size={14} strokeWidth={2.2} />
+          </button>
+
           <button
             title={t("project.showAllProjects")}
             onClick={() => setDrawerOpen((v) => !v)}

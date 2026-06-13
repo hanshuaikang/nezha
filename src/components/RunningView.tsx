@@ -106,7 +106,10 @@ export function RunningView({
   const { t } = useI18n();
   const { showToast } = useToast();
   const isActive =
-    task.status === "pending" || task.status === "running" || task.status === "input_required";
+    task.status === "pending" ||
+    task.status === "running" ||
+    task.status === "input_required" ||
+    task.status === "awaiting_review";
   const isDetached = task.status === "detached";
   const isInterrupted = task.status === "interrupted";
   const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;

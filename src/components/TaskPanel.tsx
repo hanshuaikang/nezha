@@ -84,7 +84,11 @@ export function TaskPanel({
   const [query, setQuery] = useState("");
   const isDark = themeVariant === "dark";
   const hasAttention = tasks.some(
-    (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
+    (t) =>
+      t.status === "input_required" ||
+      t.status === "awaiting_review" ||
+      t.status === "detached" ||
+      t.status === "interrupted",
   );
 
   if (collapsed) {
