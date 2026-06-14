@@ -164,6 +164,7 @@ export function ProjectPage({
     handleFileTabClose,
     handleCloseOtherFileTabs,
     handleCloseTabsToRight,
+    handleCloseTabsToLeft,
     handleCloseAllFileTabs,
     handleDiffFileSelect,
     handleCommitSelect,
@@ -424,6 +425,7 @@ export function ProjectPage({
                 onCloseTab={handleFileTabClose}
                 onCloseOtherTabs={handleCloseOtherFileTabs}
                 onCloseTabsToRight={handleCloseTabsToRight}
+                onCloseTabsToLeft={handleCloseTabsToLeft}
                 onCloseAllTabs={handleCloseAllFileTabs}
                 themeVariant={themeVariant}
                 onRunMakeTarget={handleRunMakeTarget}

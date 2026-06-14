@@ -57,6 +57,13 @@ export const LIGHT_THEME = {
   brightWhite: "#8c959f",
 };
 
+// Midnight dark: same syntax palette as DARK_THEME, but a neutral near-black
+// background (#1A1B1D) to match the `html.midnight` --bg-panel surface.
+export const MIDNIGHT_THEME = {
+  ...DARK_THEME,
+  background: "#1a1b1d",
+};
+
 // Solarized Light–inspired warm palette to match the eyecare CSS tokens.
 export const EYECARE_THEME = {
   background: "#fdf6e3",
@@ -83,6 +90,7 @@ export const EYECARE_THEME = {
 
 export function themeFor(variant: ThemeVariant) {
   if (variant === "dark") return DARK_THEME;
+  if (variant === "midnight") return MIDNIGHT_THEME;
   if (variant === "eyecare") return EYECARE_THEME;
   return LIGHT_THEME;
 }

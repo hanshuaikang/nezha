@@ -140,7 +140,11 @@ function getSystemPrefersDark() {
 
 function getInitialThemeMode(): ThemeMode {
   const stored = localStorage.getItem("nezha:theme");
-  return stored === "dark" || stored === "light" || stored === "system" || stored === "eyecare"
+  return stored === "dark" ||
+    stored === "light" ||
+    stored === "system" ||
+    stored === "eyecare" ||
+    stored === "midnight"
     ? stored
     : "system";
 }
@@ -266,7 +270,12 @@ function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("dark", themeVariant === "dark");
+    // The midnight variant layers on top of the dark token set: it keeps the
+    // `dark` class (so it inherits every dark token) and adds `midnight` for the
+    // few near-black overrides (menu border / surface backgrounds) declared later
+    // in themes.css, which win by source order at equal specificity.
+    root.classList.toggle("dark", themeVariant === "dark" || themeVariant === "midnight");
+    root.classList.toggle("midnight", themeVariant === "midnight");
     root.classList.toggle("eyecare", themeVariant === "eyecare");
     localStorage.setItem("nezha:theme", themeMode);
   }, [themeVariant, themeMode]);
@@ -275,7 +284,11 @@ function App() {
     // Tauri window theme only understands light/dark/null; map eyecare to light
     // so the native chrome (titlebar, scrollbars) stays in the light family.
     const nativeTheme =
-      themeMode === "system" ? null : themeMode === "dark" ? "dark" : "light";
+      themeMode === "system"
+        ? null
+        : themeMode === "dark" || themeMode === "midnight"
+          ? "dark"
+          : "light";
     getCurrentWindow()
       .setTheme(nativeTheme)
       .catch(console.error);

@@ -284,7 +284,7 @@ function FilePreviewPane({
   previewMode: boolean;
 }) {
   const editorTheme =
-    themeVariant === "dark"
+    themeVariant === "dark" || themeVariant === "midnight"
       ? githubDark
       : themeVariant === "eyecare"
         ? solarizedLight
@@ -545,6 +545,7 @@ export function FileViewer({
   onCloseTab,
   onCloseOtherTabs,
   onCloseTabsToRight,
+  onCloseTabsToLeft,
   onCloseAllTabs,
   themeVariant,
   onRunMakeTarget: _onRunMakeTarget,
@@ -556,6 +557,7 @@ export function FileViewer({
   onCloseTab: (path: string) => void;
   onCloseOtherTabs: (path: string) => void;
   onCloseTabsToRight: (path: string) => void;
+  onCloseTabsToLeft: (path: string) => void;
   onCloseAllTabs: () => void;
   themeVariant: ThemeVariant;
   onRunMakeTarget?: (target: string) => void;
@@ -563,6 +565,33 @@ export function FileViewer({
   const { t } = useI18n();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+  // Right-click context menu for a tab: anchored at the cursor, scoped to the
+  // tab that was right-clicked (which may differ from the active tab).
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const tabMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!tabMenu) return;
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && tabMenuRef.current?.contains(event.target)) return;
+      setTabMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTabMenu(null);
+    };
+    const close = () => setTabMenu(null);
+    // Capture phase so a click anywhere (incl. another tab) closes first.
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [tabMenu]);
 
   useEffect(() => {
     setPreviewModes((prev) => {
@@ -586,6 +615,13 @@ export function FileViewer({
   const canCloseOtherTabs = tabs.length > 1;
   const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
   const canCloseTabsToRight = activeTabIndex !== -1 && activeTabIndex < tabs.length - 1;
+  const canCloseTabsToLeft = activeTabIndex > 0;
+
+  // Context-menu actions are scoped to the right-clicked tab, not the active one.
+  const tabMenuIndex = tabMenu ? tabs.findIndex((tab) => tab.path === tabMenu.path) : -1;
+  const tabMenuCanCloseOthers = tabs.length > 1;
+  const tabMenuCanCloseRight = tabMenuIndex !== -1 && tabMenuIndex < tabs.length - 1;
+  const tabMenuCanCloseLeft = tabMenuIndex > 0;
 
   return (
     <div
@@ -630,6 +666,14 @@ export function FileViewer({
               <button
                 key={tab.path}
                 onClick={() => onSelectTab(tab.path)}
+                onContextMenu={(event) => {
+                  // Replace the webview's native menu (Reload / Save As / Print)
+                  // with tab-scoped close actions.
+                  event.preventDefault();
+                  setMenuOpen(false);
+                  onSelectTab(tab.path);
+                  setTabMenu({ x: event.clientX, y: event.clientY, path: tab.path });
+                }}
                 title={tab.path}
                 style={{
                   height: "100%",
@@ -786,6 +830,17 @@ export function FileViewer({
                 </button>
                 <button
                   type="button"
+                  disabled={!canCloseTabsToLeft}
+                  onClick={() => {
+                    onCloseTabsToLeft(activeTab.path);
+                    setMenuOpen(false);
+                  }}
+                  className="file-viewer-tab-menu-item"
+                >
+                  {t("file.closeTabsToLeft")}
+                </button>
+                <button
+                  type="button"
                   disabled={tabs.length === 0}
                   onClick={() => {
                     onCloseAllTabs();
@@ -834,6 +889,73 @@ export function FileViewer({
           );
         })}
       </div>
+
+      {tabMenu && tabMenuIndex !== -1 && (
+        <div
+          ref={tabMenuRef}
+          className="file-viewer-tab-menu"
+          style={{
+            position: "fixed",
+            left: Math.min(tabMenu.x, window.innerWidth - 196),
+            top: Math.min(tabMenu.y, window.innerHeight - 208),
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onCloseTab(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeThisTab")}
+          </button>
+          <button
+            type="button"
+            disabled={!tabMenuCanCloseOthers}
+            onClick={() => {
+              onCloseOtherTabs(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeOtherTabs")}
+          </button>
+          <button
+            type="button"
+            disabled={!tabMenuCanCloseRight}
+            onClick={() => {
+              onCloseTabsToRight(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeTabsToRight")}
+          </button>
+          <button
+            type="button"
+            disabled={!tabMenuCanCloseLeft}
+            onClick={() => {
+              onCloseTabsToLeft(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeTabsToLeft")}
+          </button>
+          <button
+            type="button"
+            disabled={tabs.length === 0}
+            onClick={() => {
+              onCloseAllTabs();
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeAllTabs")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -90,6 +90,19 @@ export function useProjectPanels() {
     });
   }, []);
 
+  const handleCloseTabsToLeft = useCallback((path: string) => {
+    setOpenFilesState((prev) => {
+      const activeIndex = prev.tabs.findIndex((tab) => tab.path === path);
+      if (activeIndex <= 0) return prev;
+
+      const nextTabs = prev.tabs.slice(activeIndex);
+      return {
+        tabs: nextTabs,
+        activePath: nextTabs.some((tab) => tab.path === prev.activePath) ? prev.activePath : path,
+      };
+    });
+  }, []);
+
   const handleCloseAllFileTabs = useCallback(() => {
     setOpenFilesState({
       tabs: [],
@@ -172,6 +185,7 @@ export function useProjectPanels() {
     handleFileTabClose,
     handleCloseOtherFileTabs,
     handleCloseTabsToRight,
+    handleCloseTabsToLeft,
     handleCloseAllFileTabs,
     handleDiffFileSelect,
     handleCommitSelect,
