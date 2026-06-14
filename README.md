@@ -40,7 +40,8 @@
 
 Nezha 是一款专为 AI 编程打造的跨平台轻量级 IDE。它把多项目管理、任务生命周期追踪、原生终端体验、Skill 管理、Git Worktree、会话回放、代码浏览和完整 Git 工作流整合到同一个界面里，让你不必在终端、编辑器、Git 工具和会话记录之间来回切换。只需要通过鼠标点击，就可以瞬间切换到不同的项目或任务。安装包只有 7M 大小。
 
-[**English (English Documentation)**](./README_EN.md)
+
+[**English Documentation**](./README_EN.md)
 
 ## 为什么是 Nezha
 
