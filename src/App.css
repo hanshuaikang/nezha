@@ -330,16 +330,11 @@ body {
   width: 12px !important;
   right: calc(-1 * var(--xterm-scrollbar-edge-offset)) !important;
   background: transparent !important;
+  transition: opacity 140ms ease-out;
 }
 
-/* xterm 6 (VSCode ScrollableElement) 的 vertical scrollbar 默认 visibility:Auto，
- * 非 hover/非滚动时类名为 "invisible scrollbar vertical fade"，xterm 内置 CSS
- * 把 .invisible 设为 opacity:0 + pointer-events:none。Mac WKWebView 上看似没问题
- * 是因为浏览器原生 overlay scrollbar 在底下补位；Windows Chromium 严格隐藏原生
- * 滚动条后整条都不见了。这里强制让 invisible 状态也保持可见。 */
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical.invisible {
-  opacity: 1;
-  pointer-events: auto;
+.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical.invisible.fade {
+  transition-duration: 520ms;
 }
 
 .nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
