@@ -74,7 +74,7 @@ export const terminal = {
     cursor: "pointer",
     flexShrink: 0,
   },
-  terminalContainer: { flex: 1, overflow: "hidden" as const, padding: "14px 16px 16px" },
+  terminalContainer: { flex: 1, overflow: "hidden" as const, padding: 10 },
   interruptedSessionWrap: {
     flex: 1,
     minHeight: 0,
