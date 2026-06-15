@@ -8,12 +8,15 @@ import { APP_PLATFORM } from "../../platform";
 import {
   DEFAULT_SEND_SHORTCUT,
   DEFAULT_SHIFT_ENTER_NEWLINE,
+  DEFAULT_VIEW_TOGGLE_SHORTCUT,
   getAltEnterNewlineKeys,
   getNewlineShortcutKeys,
   getSendShortcutKeys,
   getShiftEnterNewlineKeys,
+  getViewToggleShortcutKeys,
   normalizeSendShortcut,
   normalizeShiftEnterNewline,
+  normalizeViewToggleShortcut,
 } from "../../shortcuts";
 import s from "../../styles";
 import { renderShortcutKeys } from "./shared";
@@ -68,9 +71,7 @@ function ShortcutSelect({
                   aria-label={option.ariaLabel}
                   className="radix-select-item"
                   style={
-                    option.value === value
-                      ? s.settingsSelectOptionSelected
-                      : s.settingsSelectOption
+                    option.value === value ? s.settingsSelectOptionSelected : s.settingsSelectOption
                   }
                 >
                   <Select.ItemText>{renderShortcutKeys(option.keys)}</Select.ItemText>
@@ -93,6 +94,7 @@ function normalizeSettings(loaded: AppSettings): AppSettings {
     ...loaded,
     send_shortcut: normalizeSendShortcut(loaded.send_shortcut),
     terminal_shift_enter_newline: normalizeShiftEnterNewline(loaded.terminal_shift_enter_newline),
+    view_toggle_shortcut: normalizeViewToggleShortcut(loaded.view_toggle_shortcut),
   };
 }
 
@@ -103,6 +105,7 @@ export function ShortcutsPanel() {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    view_toggle_shortcut: DEFAULT_VIEW_TOGGLE_SHORTCUT,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -148,6 +151,12 @@ export function ShortcutsPanel() {
     void persist("save_shift_enter_newline", { enabled });
   }
 
+  function handleViewToggleShortcutChange(value: string) {
+    const viewToggleShortcut = normalizeViewToggleShortcut(value);
+    setSettings((prev) => ({ ...prev, view_toggle_shortcut: viewToggleShortcut }));
+    void persist("save_view_toggle_shortcut", { viewToggleShortcut });
+  }
+
   const sendShortcutOptions: ShortcutOption[] = [
     {
       value: "mod_enter",
@@ -163,6 +172,18 @@ export function ShortcutsPanel() {
   const sendShortcutKeys = getSendShortcutKeys(settings.send_shortcut, APP_PLATFORM);
   const newlineShortcutKeys = getNewlineShortcutKeys(settings.send_shortcut, APP_PLATFORM);
   const shiftEnterEnabled = settings.terminal_shift_enter_newline;
+  const viewToggleShortcutOptions: ShortcutOption[] = [
+    {
+      value: "mod+shift+e",
+      keys: getViewToggleShortcutKeys("mod+shift+e", APP_PLATFORM),
+      ariaLabel: t("appSettings.viewToggleShortcutModShiftE"),
+    },
+    {
+      value: "mod+shift+space",
+      keys: getViewToggleShortcutKeys("mod+shift+space", APP_PLATFORM),
+      ariaLabel: t("appSettings.viewToggleShortcutModShiftSpace"),
+    },
+  ];
 
   const terminalNewlineHint = (
     <>
@@ -206,17 +227,27 @@ export function ShortcutsPanel() {
               aria-label={t("appSettings.terminalNewlineShiftEnter")}
               disabled={saving}
               onClick={handleShiftEnterNewlineToggle}
-              style={saving ? { ...s.shortcutToggle, ...s.shortcutToggleDisabled } : s.shortcutToggle}
+              style={
+                saving ? { ...s.shortcutToggle, ...s.shortcutToggleDisabled } : s.shortcutToggle
+              }
             >
-              <span style={s.shortcutToggleKeys}>{renderShortcutKeys(getShiftEnterNewlineKeys())}</span>
+              <span style={s.shortcutToggleKeys}>
+                {renderShortcutKeys(getShiftEnterNewlineKeys())}
+              </span>
               <span style={shiftEnterEnabled ? s.shortcutSwitchTrackOn : s.shortcutSwitchTrack}>
-                <span
-                  style={shiftEnterEnabled ? s.shortcutSwitchThumbOn : s.shortcutSwitchThumb}
-                />
+                <span style={shiftEnterEnabled ? s.shortcutSwitchThumbOn : s.shortcutSwitchThumb} />
               </span>
             </button>
             <div style={s.shortcutHint}>{terminalNewlineHint}</div>
           </div>
+          <ShortcutSelect
+            label={t("appSettings.viewToggleShortcut")}
+            value={settings.view_toggle_shortcut}
+            options={viewToggleShortcutOptions}
+            onValueChange={handleViewToggleShortcutChange}
+            disabled={saving}
+            hint={<span>{t("appSettings.viewToggleShortcutHint")}</span>}
+          />
         </div>
       )}
     </div>

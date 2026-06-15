@@ -11,6 +11,12 @@ export interface PromptKeyEventLike {
   shiftKey: boolean;
 }
 
+export interface GlobalShortcutKeyEventLike extends PromptKeyEventLike {
+  altKey: boolean;
+  isComposing?: boolean;
+  keyCode?: number;
+}
+
 export function normalizeSendShortcut(value: unknown): SendShortcut {
   return value === "enter" || value === "mod_enter" ? value : DEFAULT_SEND_SHORTCUT;
 }
@@ -41,19 +47,109 @@ export function getNewlineShortcutKeys(shortcut: SendShortcut, platform: AppPlat
  * Cmd+W (macOS) / Ctrl+W (其他平台) —— 收起窗口（隐藏到 Dock/任务栏）。
  * 在全局 keydown 捕获阶段匹配，绕过 webview 默认的关闭行为。
  */
-export function isHideWindowShortcut(
-  event: PromptKeyEventLike,
-  platform: AppPlatform,
-): boolean {
+export function isHideWindowShortcut(event: PromptKeyEventLike, platform: AppPlatform): boolean {
   if (event.key !== "w" && event.key !== "W") {
     return false;
   }
   if (event.shiftKey) {
     return false;
   }
-  return platform === "macos"
-    ? event.metaKey && !event.ctrlKey
-    : event.ctrlKey && !event.metaKey;
+  return platform === "macos" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+}
+
+export type ViewToggleShortcut = "mod+shift+e" | "mod+shift+space";
+export const DEFAULT_VIEW_TOGGLE_SHORTCUT: ViewToggleShortcut = "mod+shift+e";
+
+function normalizeShortcutKey(key: string): string | null {
+  if (key === " ") return "space";
+  const lower = key.trim().toLowerCase();
+  if (!lower) return null;
+  switch (lower) {
+    case "spacebar":
+      return "space";
+    case "esc":
+      return "escape";
+    case "arrowup":
+    case "up":
+      return "arrowup";
+    case "arrowdown":
+    case "down":
+      return "arrowdown";
+    case "arrowleft":
+    case "left":
+      return "arrowleft";
+    case "arrowright":
+    case "right":
+      return "arrowright";
+    default:
+      return lower;
+  }
+}
+
+export function normalizeViewToggleShortcut(value: unknown): ViewToggleShortcut {
+  if (value === "mod_shift_e" || value === "mod+shift+e") return "mod+shift+e";
+  if (value === "mod_shift_space" || value === "mod+shift+space") return "mod+shift+space";
+  return DEFAULT_VIEW_TOGGLE_SHORTCUT;
+}
+
+export function getIndexedNavigationShortcutKeys(platform: AppPlatform): string[] {
+  return [platform === "macos" ? "⌘" : "Ctrl", "1-9"];
+}
+
+/**
+ * Global task/file-tab navigation. The numeric shortcuts are intentionally
+ * scoped to the current view: task view selects task rows, file preview selects
+ * file tabs.
+ */
+export function matchIndexedNavigationShortcut(
+  event: GlobalShortcutKeyEventLike,
+  platform: AppPlatform,
+): number | null {
+  if (event.isComposing || event.keyCode === 229 || event.altKey) {
+    return null;
+  }
+
+  const platformModifier =
+    platform === "macos" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (!platformModifier) {
+    return null;
+  }
+
+  const key = event.key.toLowerCase();
+  if (!event.shiftKey && /^[1-9]$/.test(key)) {
+    return Number(key) - 1;
+  }
+
+  return null;
+}
+
+export function getViewToggleShortcutKeys(
+  shortcut: ViewToggleShortcut,
+  platform: AppPlatform,
+): string[] {
+  const normalized = normalizeViewToggleShortcut(shortcut);
+  const modifier = platform === "macos" ? "⌘" : "Ctrl";
+  return normalized === "mod+shift+space" ? [modifier, "⇧", "Space"] : [modifier, "⇧", "E"];
+}
+
+export function matchViewToggleShortcut(
+  event: GlobalShortcutKeyEventLike,
+  platform: AppPlatform,
+  shortcut: ViewToggleShortcut,
+): boolean {
+  if (event.isComposing || event.keyCode === 229 || event.altKey) {
+    return false;
+  }
+  const normalized = normalizeViewToggleShortcut(shortcut);
+  const wantsMeta = platform === "macos";
+  const wantsCtrl = platform !== "macos";
+  const key = normalized === "mod+shift+space" ? "space" : "e";
+  return (
+    event.metaKey === wantsMeta &&
+    event.ctrlKey === wantsCtrl &&
+    event.shiftKey &&
+    normalizeShortcutKey(event.key) === key
+  );
 }
 
 export function shouldInsertPromptNewlineKey(
@@ -67,9 +163,7 @@ export function shouldInsertPromptNewlineKey(
   if (shortcut !== "enter" || event.shiftKey) {
     return false;
   }
-  return platform === "macos"
-    ? event.metaKey && !event.ctrlKey
-    : event.ctrlKey && !event.metaKey;
+  return platform === "macos" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
 
 export function shouldSubmitPromptKey(

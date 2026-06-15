@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   Project,
   Task,
@@ -28,7 +29,19 @@ import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTermin
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useProjectPanels } from "../hooks/useProjectPanels";
 import { useI18n } from "../i18n";
+import { APP_PLATFORM } from "../platform";
+import {
+  DEFAULT_VIEW_TOGGLE_SHORTCUT,
+  matchIndexedNavigationShortcut,
+  matchViewToggleShortcut,
+  normalizeViewToggleShortcut,
+  type ViewToggleShortcut,
+} from "../shortcuts";
+import { APP_SETTINGS_CHANGED_EVENT } from "./app-settings/types";
+import { getTaskListShortcutTasks } from "./task-panel/taskListModel";
 import s from "../styles";
+
+type MainContentView = "task" | "preview";
 
 export function ProjectPage({
   project,
@@ -168,7 +181,6 @@ export function ProjectPage({
     handleDiffFileSelect,
     handleCommitSelect,
     handleCommitFileClick,
-    clearFileAndDiff,
     handleRightResizeStart,
     handleTerminalResizeStart,
   } = useProjectPanels();
@@ -177,6 +189,11 @@ export function ProjectPage({
   const [showSettings, setShowSettings] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
+  const [taskQuery, setTaskQuery] = useState("");
+  const [mainContentView, setMainContentView] = useState<MainContentView>("task");
+  const [viewToggleShortcut, setViewToggleShortcut] = useState<ViewToggleShortcut>(
+    DEFAULT_VIEW_TOGGLE_SHORTCUT,
+  );
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
@@ -197,13 +214,32 @@ export function ProjectPage({
     selectedTask?.worktreePath && !selectedTask.worktreeDiscarded
       ? selectedTask.worktreePath
       : project.path;
+  const hasPreviewContent = openFiles.length > 0 || Boolean(openDiff);
+  const showingPreview = hasPreviewContent && mainContentView === "preview";
+  const shortcutTasks = useMemo(
+    () =>
+      getTaskListShortcutTasks({
+        tasks: projectTasks,
+        taskDisplayWindow,
+        query: taskQuery,
+      }),
+    [projectTasks, taskDisplayWindow, taskQuery],
+  );
+
+  const handlePreviewFileSelect = useCallback(
+    (path: string, name: string) => {
+      handleFileSelect(path, name);
+      setMainContentView("preview");
+    },
+    [handleFileSelect],
+  );
 
   const handleSearchFileSelect = useCallback(
     (path: string, name: string) => {
-      handleFileSelect(path, name);
+      handlePreviewFileSelect(path, name);
       openRightPanel("files");
     },
-    [handleFileSelect, openRightPanel],
+    [handlePreviewFileSelect, openRightPanel],
   );
 
   // 只挂载当前选中的任务的 xterm 实例，其他任务通过 snapshot 序列化后卸载。
@@ -228,12 +264,82 @@ export function ProjectPage({
     }
   }, [openDiff]);
 
+  useEffect(() => {
+    if (!hasPreviewContent && mainContentView === "preview") {
+      setMainContentView("task");
+    }
+  }, [hasPreviewContent, mainContentView]);
+
+  useEffect(() => {
+    function loadViewToggleShortcut() {
+      invoke<{ view_toggle_shortcut?: unknown }>("load_app_settings")
+        .then((settings) => {
+          setViewToggleShortcut(normalizeViewToggleShortcut(settings.view_toggle_shortcut));
+        })
+        .catch(() => setViewToggleShortcut(DEFAULT_VIEW_TOGGLE_SHORTCUT));
+    }
+
+    loadViewToggleShortcut();
+    window.addEventListener(APP_SETTINGS_CHANGED_EVENT, loadViewToggleShortcut);
+    return () => window.removeEventListener(APP_SETTINGS_CHANGED_EVENT, loadViewToggleShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    const handleProjectShortcut = (event: KeyboardEvent) => {
+      const index = matchIndexedNavigationShortcut(event, APP_PLATFORM);
+      if (index !== null) {
+        if (showingPreview) {
+          if (index >= openFiles.length) return;
+          const tab = openFiles[index];
+          event.preventDefault();
+          event.stopPropagation();
+          setOpenDiff(null);
+          handleFileTabSelect(tab.path);
+          return;
+        }
+
+        if (index >= shortcutTasks.length) return;
+        const task = shortcutTasks[index];
+        event.preventDefault();
+        event.stopPropagation();
+        setMainContentView("task");
+        onSelectTask(task.id);
+        return;
+      }
+
+      if (!hasPreviewContent || !matchViewToggleShortcut(event, APP_PLATFORM, viewToggleShortcut)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setMainContentView((current) => {
+        return current === "preview" ? "task" : "preview";
+      });
+    };
+
+    window.addEventListener("keydown", handleProjectShortcut, true);
+    return () => window.removeEventListener("keydown", handleProjectShortcut, true);
+  }, [
+    handleFileTabSelect,
+    hasPreviewContent,
+    onSelectTask,
+    openFiles,
+    shortcutTasks,
+    setOpenDiff,
+    showingPreview,
+    viewToggleShortcut,
+    visible,
+  ]);
+
   const handleSelectTask = useCallback(
     (id: string) => {
-      clearFileAndDiff();
+      setMainContentView("task");
       onSelectTask(id);
     },
-    [onSelectTask, clearFileAndDiff],
+    [onSelectTask],
   );
 
   const handleRunMakeTarget = useCallback(
@@ -257,9 +363,9 @@ export function ProjectPage({
   }, []);
 
   const handleNewTask = useCallback(() => {
-    clearFileAndDiff();
+    setMainContentView("task");
     onNewTask();
-  }, [onNewTask, clearFileAndDiff]);
+  }, [onNewTask]);
 
   const collapseTaskPanelForNewDiff = useCallback(() => {
     if (!openDiff) {
@@ -270,6 +376,7 @@ export function ProjectPage({
   const handleDiffFileSelectWithCollapse = useCallback(
     (filePath: string, staged: boolean, label: string) => {
       collapseTaskPanelForNewDiff();
+      setMainContentView("preview");
       handleDiffFileSelect(filePath, staged, label);
     },
     [collapseTaskPanelForNewDiff, handleDiffFileSelect],
@@ -278,6 +385,7 @@ export function ProjectPage({
   const handleCommitSelectWithCollapse = useCallback(
     (hash: string, message: string) => {
       collapseTaskPanelForNewDiff();
+      setMainContentView("preview");
       handleCommitSelect(hash, message);
     },
     [collapseTaskPanelForNewDiff, handleCommitSelect],
@@ -286,6 +394,7 @@ export function ProjectPage({
   const handleCommitFileClickWithCollapse = useCallback(
     (hash: string, filePath: string, label: string) => {
       collapseTaskPanelForNewDiff();
+      setMainContentView("preview");
       handleCommitFileClick(hash, filePath, label);
     },
     [collapseTaskPanelForNewDiff, handleCommitFileClick],
@@ -324,6 +433,8 @@ export function ProjectPage({
         tasks={projectTasks}
         selectedId={selectedTaskId}
         isNewTask={isNewTask}
+        query={taskQuery}
+        onQueryChange={setTaskQuery}
         onNewTask={handleNewTask}
         onSelectTask={handleSelectTask}
         onDeleteTask={onDeleteTask}
@@ -376,7 +487,7 @@ export function ProjectPage({
                   </button>
                   <button
                     onClick={() => {
-                      clearFileAndDiff();
+                      setMainContentView("task");
                       reset();
                     }}
                     style={s.errorBoundaryBtn}
@@ -387,7 +498,7 @@ export function ProjectPage({
               </div>
             )}
           >
-            {openDiff ? (
+            {showingPreview && openDiff ? (
               openDiff.kind === "file" ? (
                 <GitDiffViewer
                   projectPath={gitContextPath}
@@ -415,7 +526,7 @@ export function ProjectPage({
                   onClose={() => setOpenDiff(null)}
                 />
               )
-            ) : openFiles.length > 0 ? (
+            ) : showingPreview && openFiles.length > 0 ? (
               <FileViewer
                 tabs={openFiles}
                 activeFilePath={activeFilePath}
@@ -450,8 +561,7 @@ export function ProjectPage({
             .filter((t) => mountedTaskIds.has(t.id))
             .map((task) => {
               const isVisible =
-                openFiles.length === 0 &&
-                !openDiff &&
+                !showingPreview &&
                 !isNewTask &&
                 !!selectedTask &&
                 task.id === selectedTaskId &&
@@ -521,7 +631,7 @@ export function ProjectPage({
               <FileExplorer
                 projectPath={project.path}
                 projectName={project.name}
-                onFileSelect={handleFileSelect}
+                onFileSelect={handlePreviewFileSelect}
                 active={visible}
                 width={rightPanelWidth}
               />

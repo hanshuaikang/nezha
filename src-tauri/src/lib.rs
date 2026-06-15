@@ -208,6 +208,7 @@ pub fn run() {
             app_settings::save_agent_paths,
             app_settings::save_send_shortcut,
             app_settings::save_shift_enter_newline,
+            app_settings::save_view_toggle_shortcut,
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions_for_settings,
             app_settings::get_system_fonts,

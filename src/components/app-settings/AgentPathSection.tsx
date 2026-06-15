@@ -6,10 +6,17 @@ import { useI18n } from "../../i18n";
 import {
   DEFAULT_SEND_SHORTCUT,
   DEFAULT_SHIFT_ENTER_NEWLINE,
+  DEFAULT_VIEW_TOGGLE_SHORTCUT,
   normalizeSendShortcut,
+  normalizeViewToggleShortcut,
 } from "../../shortcuts";
 import s from "../../styles";
-import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings, type AgentKey } from "./types";
+import {
+  APP_SETTINGS_CHANGED_EVENT,
+  type AgentVersions,
+  type AppSettings,
+  type AgentKey,
+} from "./types";
 import { getAgentExecutablePlaceholder } from "./shared";
 
 const AUTO_VERSION_DETECT_DELAY_MS = 350;
@@ -66,13 +73,16 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   const versionField: keyof AgentVersions =
     agentKey === "claude" ? "claude_version" : "codex_version";
   const pathLabel = t(agentKey === "claude" ? "appSettings.claudePath" : "appSettings.codexPath");
-  const pathHint = t(agentKey === "claude" ? "appSettings.claudePathHint" : "appSettings.codexPathHint");
+  const pathHint = t(
+    agentKey === "claude" ? "appSettings.claudePathHint" : "appSettings.codexPathHint",
+  );
 
   const emptySettings: AppSettings = {
     claude_path: "",
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    view_toggle_shortcut: DEFAULT_VIEW_TOGGLE_SHORTCUT,
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);
@@ -168,6 +178,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
         ...settings,
         [pathField]: detected[pathField],
         send_shortcut: normalizeSendShortcut(detected.send_shortcut),
+        view_toggle_shortcut: normalizeViewToggleShortcut(detected.view_toggle_shortcut),
       };
       setSettings(nextSettings);
       await loadVersions(nextSettings);

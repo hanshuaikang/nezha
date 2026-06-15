@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Search,
   ChevronLeft,
@@ -9,7 +8,15 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type {
+  Project,
+  Task,
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TaskDisplayWindow,
+  FontFamily,
+} from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -22,6 +29,8 @@ export function TaskPanel({
   tasks,
   selectedId,
   isNewTask,
+  query,
+  onQueryChange,
   onNewTask,
   onSelectTask,
   onDeleteTask,
@@ -53,6 +62,8 @@ export function TaskPanel({
   tasks: Task[];
   selectedId: string | null;
   isNewTask: boolean;
+  query: string;
+  onQueryChange: (query: string) => void;
   onNewTask: () => void;
   onSelectTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
@@ -81,7 +92,6 @@ export function TaskPanel({
   onToggleCollapsed?: () => void;
 }) {
   const { t } = useI18n();
-  const [query, setQuery] = useState("");
   const isDark = themeVariant === "dark";
   const hasAttention = tasks.some(
     (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
@@ -156,7 +166,7 @@ export function TaskPanel({
           style={s.panelSearchInput}
           placeholder={t("task.searchTasks")}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => onQueryChange(e.target.value)}
         />
       </div>
 
@@ -177,7 +187,9 @@ export function TaskPanel({
       </button>
 
       <div style={s.taskActionsRow}>
-        <div style={s.taskActionsMeta}>{tasks.length} {t("task.tasks")}</div>
+        <div style={s.taskActionsMeta}>
+          {tasks.length} {t("task.tasks")}
+        </div>
         <button
           type="button"
           style={{

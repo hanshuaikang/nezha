@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { SendShortcut } from "../../shortcuts";
+import type { SendShortcut, ViewToggleShortcut } from "../../shortcuts";
 
 export type NavKey =
   | "general"
@@ -37,6 +37,7 @@ export interface AppSettings {
   codex_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
+  view_toggle_shortcut: ViewToggleShortcut;
 }
 
 export interface AgentVersions {

@@ -1,11 +1,17 @@
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_SEND_SHORTCUT,
+  DEFAULT_VIEW_TOGGLE_SHORTCUT,
+  getIndexedNavigationShortcutKeys,
   getNewlineShortcutKeys,
   getNewlineShortcutLabel,
   getSendShortcutKeys,
   getSendShortcutLabel,
+  getViewToggleShortcutKeys,
+  matchIndexedNavigationShortcut,
+  matchViewToggleShortcut,
   normalizeSendShortcut,
+  normalizeViewToggleShortcut,
   shouldInsertPromptNewlineKey,
   shouldSubmitPromptKey,
 } from "../shortcuts";
@@ -15,6 +21,16 @@ describe("send shortcut helpers", () => {
     expect(DEFAULT_SEND_SHORTCUT).toBe("mod_enter");
     expect(normalizeSendShortcut(undefined)).toBe("mod_enter");
     expect(normalizeSendShortcut("unexpected")).toBe("mod_enter");
+  });
+
+  test("defaults to Cmd/Ctrl+Shift+E for task preview toggling", () => {
+    expect(DEFAULT_VIEW_TOGGLE_SHORTCUT).toBe("mod+shift+e");
+    expect(normalizeViewToggleShortcut(undefined)).toBe("mod+shift+e");
+    expect(normalizeViewToggleShortcut("mod_shift_e")).toBe("mod+shift+e");
+    expect(normalizeViewToggleShortcut("mod_shift_space")).toBe("mod+shift+space");
+    expect(normalizeViewToggleShortcut("ctrl+alt+p")).toBe("mod+shift+e");
+    expect(normalizeViewToggleShortcut("shift+p")).toBe("mod+shift+e");
+    expect(normalizeViewToggleShortcut("unexpected")).toBe("mod+shift+e");
   });
 
   test("submits with Cmd+Enter on macOS modifier mode", () => {
@@ -140,5 +156,102 @@ describe("send shortcut helpers", () => {
     expect(getNewlineShortcutKeys("mod_enter", "macos")).toEqual(["↵"]);
     expect(getNewlineShortcutKeys("enter", "macos")).toEqual(["⌘", "↵"]);
     expect(getNewlineShortcutKeys("enter", "windows")).toEqual(["Ctrl", "↵"]);
+    expect(getIndexedNavigationShortcutKeys("macos")).toEqual(["⌘", "1-9"]);
+    expect(getIndexedNavigationShortcutKeys("windows")).toEqual(["Ctrl", "1-9"]);
+    expect(getViewToggleShortcutKeys("mod+shift+e", "macos")).toEqual(["⌘", "⇧", "E"]);
+    expect(getViewToggleShortcutKeys("mod+shift+space", "windows")).toEqual(["Ctrl", "⇧", "Space"]);
+  });
+
+  test("matches indexed navigation shortcuts", () => {
+    expect(
+      matchIndexedNavigationShortcut(
+        {
+          key: "1",
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+        },
+        "macos",
+      ),
+    ).toBe(0);
+    expect(
+      matchIndexedNavigationShortcut(
+        {
+          key: "9",
+          metaKey: false,
+          ctrlKey: true,
+          shiftKey: false,
+          altKey: false,
+        },
+        "windows",
+      ),
+    ).toBe(8);
+    expect(
+      matchIndexedNavigationShortcut(
+        {
+          key: "0",
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+        },
+        "macos",
+      ),
+    ).toBeNull();
+    expect(
+      matchIndexedNavigationShortcut(
+        {
+          key: "1",
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: true,
+        },
+        "macos",
+      ),
+    ).toBeNull();
+    expect(
+      matchIndexedNavigationShortcut(
+        {
+          key: "2",
+          metaKey: false,
+          ctrlKey: true,
+          shiftKey: false,
+          altKey: false,
+          isComposing: true,
+        },
+        "windows",
+      ),
+    ).toBeNull();
+  });
+
+  test("matches configurable task preview toggle shortcut", () => {
+    expect(
+      matchViewToggleShortcut(
+        {
+          key: "E",
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: true,
+          altKey: false,
+        },
+        "macos",
+        "mod+shift+e",
+      ),
+    ).toBe(true);
+    expect(
+      matchViewToggleShortcut(
+        {
+          key: " ",
+          metaKey: false,
+          ctrlKey: true,
+          shiftKey: true,
+          altKey: false,
+        },
+        "windows",
+        "mod+shift+space",
+      ),
+    ).toBe(true);
   });
 });

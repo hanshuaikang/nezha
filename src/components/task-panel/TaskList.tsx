@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import type { Task, TaskDisplayWindow } from "../../types";
 import { TaskListItem } from "./TaskListItem";
+import { getTaskListGroups } from "./taskListModel";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
 
@@ -77,94 +78,41 @@ export function TaskList({
     setScrollTop(event.currentTarget.scrollTop);
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return tasks;
-    const q = query.toLowerCase();
-    return tasks.filter((t) => t.prompt.toLowerCase().includes(q));
-  }, [tasks, query]);
-
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const aNeedsAttention =
-        a.status === "input_required" || a.status === "detached" || a.status === "interrupted";
-      const bNeedsAttention =
-        b.status === "input_required" || b.status === "detached" || b.status === "interrupted";
-      if (aNeedsAttention && !bNeedsAttention) return -1;
-      if (!aNeedsAttention && bNeedsAttention) return 1;
-      if (aNeedsAttention && bNeedsAttention) {
-        return (b.attentionRequestedAt ?? b.createdAt) - (a.attentionRequestedAt ?? a.createdAt);
-      }
-      return b.createdAt - a.createdAt;
-    });
-  }, [filtered]);
-
-  const { todayTs, cutoffTs } = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    const todayTs = d.getTime();
-    const cutoffTs =
-      taskDisplayWindow === "all"
-        ? Number.NEGATIVE_INFINITY
-        : todayTs - taskDisplayWindow * 24 * 60 * 60 * 1000;
-    return { todayTs, cutoffTs };
-  }, [taskDisplayWindow]);
+  const labels = useMemo(
+    () => ({
+      attention: t("task.needsAttention"),
+      pendingMerge: t("task.pendingMerge"),
+      starred: t("task.starred"),
+      todo: t("status.todo"),
+      today: t("task.today"),
+      earlier: t("task.earlier"),
+    }),
+    [t],
+  );
 
   const rows = useMemo<VirtualRow[]>(() => {
-    const attentionTasks: Task[] = [];
-    const pendingMergeTasks: Task[] = [];
-    const starredTasks: Task[] = [];
-    const todoTasks: Task[] = [];
-    const todayTasks: Task[] = [];
-    const earlierTasks: Task[] = [];
-
-    for (const task of sorted) {
-      if (
-        task.status === "input_required" ||
-        task.status === "detached" ||
-        task.status === "interrupted"
-      ) {
-        attentionTasks.push(task);
-      } else if (
-        task.status === "done" &&
-        !!task.worktreePath &&
-        !task.worktreeDiscarded
-      ) {
-        pendingMergeTasks.push(task);
-      } else if (task.starred) {
-        starredTasks.push(task);
-      } else if (task.status === "todo") {
-        todoTasks.push(task);
-      } else if (task.createdAt >= todayTs) {
-        todayTasks.push(task);
-      } else if (task.createdAt >= cutoffTs) {
-        earlierTasks.push(task);
-      }
-    }
-
     const nextRows: VirtualRow[] = [];
-    const appendGroup = (key: string, label: string, groupTasks: Task[], showRunTodo = false) => {
-      if (groupTasks.length === 0) return;
-      nextRows.push({ type: "group", key, label, height: GROUP_ROW_HEIGHT });
-      groupTasks.forEach((task) => {
+    const groups = getTaskListGroups({ tasks, taskDisplayWindow, query, labels });
+    groups.forEach((group) => {
+      nextRows.push({
+        type: "group",
+        key: group.key,
+        label: group.label,
+        height: GROUP_ROW_HEIGHT,
+      });
+      group.tasks.forEach((task) => {
         nextRows.push({
           type: "task",
           key: task.id,
           task,
-          showRunTodo: showRunTodo || task.status === "todo",
+          showRunTodo: group.showRunTodo || task.status === "todo",
           height: TASK_ROW_HEIGHT,
         });
       });
-    };
-
-    appendGroup("attention", t("task.needsAttention"), attentionTasks);
-    appendGroup("pending_merge", t("task.pendingMerge"), pendingMergeTasks);
-    appendGroup("starred", t("task.starred"), starredTasks);
-    appendGroup("todo", t("status.todo"), todoTasks, true);
-    appendGroup("today", t("task.today"), todayTasks);
-    appendGroup("earlier", t("task.earlier"), earlierTasks);
+    });
 
     return nextRows;
-  }, [cutoffTs, sorted, t, todayTs]);
+  }, [labels, query, taskDisplayWindow, tasks]);
 
   const offsets = useMemo(() => {
     const nextOffsets = [0];
