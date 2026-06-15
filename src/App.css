@@ -305,6 +305,11 @@ body {
   --xterm-scrollbar-thumb-hover: rgba(148, 158, 176, 0.68);
 }
 
+.nezha-xterm-host:not(.nezha-shell-xterm-host) .xterm-screen {
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .nezha-xterm-host.nezha-shell-xterm-host {
   --xterm-scrollbar-edge-offset: 6px;
 }
@@ -330,7 +335,16 @@ body {
   width: 12px !important;
   right: calc(-1 * var(--xterm-scrollbar-edge-offset)) !important;
   background: transparent !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
   transition: opacity 140ms ease-out;
+}
+
+.nezha-xterm-host.nezha-xterm-scrolling .xterm .xterm-scrollable-element > .scrollbar.vertical,
+.nezha-xterm-host.nezha-xterm-scrollbar-hover .xterm .xterm-scrollable-element > .scrollbar.vertical,
+.nezha-xterm-host.nezha-xterm-scrollbar-active .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 .nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical.invisible.fade {

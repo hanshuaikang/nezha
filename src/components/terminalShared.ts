@@ -370,6 +370,130 @@ export function loadWebglAddon(term: Terminal): void {
   }
 }
 
+export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLElement): () => void {
+  const ownerDocument = container.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView ?? window;
+  let scrollHideTimer: number | null = null;
+  let hoverFrame: number | null = null;
+  let lastPointer: { x: number; y: number } | null = null;
+  let scrollbar: Element | null = null;
+  let scrollbarRect: DOMRect | null = null;
+  let scrollbarActive = false;
+
+  const clearScrollHideTimer = () => {
+    if (scrollHideTimer === null) return;
+    ownerWindow.clearTimeout(scrollHideTimer);
+    scrollHideTimer = null;
+  };
+
+  const clearHoverFrame = () => {
+    if (hoverFrame === null) return;
+    ownerWindow.cancelAnimationFrame(hoverFrame);
+    hoverFrame = null;
+  };
+
+  const refreshScrollbarRect = () => {
+    scrollbar ??= container.querySelector(".xterm-scrollable-element > .scrollbar.vertical");
+    scrollbarRect = scrollbar?.getBoundingClientRect() ?? null;
+  };
+
+  const hideAfterScroll = () => {
+    clearScrollHideTimer();
+    scrollHideTimer = ownerWindow.setTimeout(() => {
+      container.classList.remove("nezha-xterm-scrolling");
+      scrollHideTimer = null;
+    }, 700);
+  };
+
+  const handleScroll = () => {
+    container.classList.add("nezha-xterm-scrolling");
+    refreshScrollbarRect();
+    hideAfterScroll();
+  };
+
+  const updateScrollbarHover = () => {
+    hoverFrame = null;
+    if (!lastPointer || !scrollbarRect) {
+      container.classList.remove("nezha-xterm-scrollbar-hover");
+      return;
+    }
+    const isHovering =
+      lastPointer.x >= scrollbarRect.left &&
+      lastPointer.x <= scrollbarRect.right &&
+      lastPointer.y >= scrollbarRect.top &&
+      lastPointer.y <= scrollbarRect.bottom;
+    container.classList.toggle("nezha-xterm-scrollbar-hover", isHovering);
+  };
+
+  const scheduleScrollbarHoverUpdate = () => {
+    if (hoverFrame !== null) return;
+    hoverFrame = ownerWindow.requestAnimationFrame(updateScrollbarHover);
+  };
+
+  const endScrollbarDrag = () => {
+    if (!scrollbarActive) return;
+    scrollbarActive = false;
+    container.classList.remove("nezha-xterm-scrollbar-active");
+  };
+
+  const handlePointerDown = (event: PointerEvent) => {
+    refreshScrollbarRect();
+    if (
+      !scrollbarRect ||
+      event.clientX < scrollbarRect.left ||
+      event.clientX > scrollbarRect.right ||
+      event.clientY < scrollbarRect.top ||
+      event.clientY > scrollbarRect.bottom
+    ) {
+      return;
+    }
+    scrollbarActive = true;
+    container.classList.add("nezha-xterm-scrollbar-active");
+  };
+
+  const handlePointerMove = (event: PointerEvent) => {
+    lastPointer = { x: event.clientX, y: event.clientY };
+    if (!scrollbarRect) refreshScrollbarRect();
+    scheduleScrollbarHoverUpdate();
+  };
+
+  const handlePointerLeave = () => {
+    lastPointer = null;
+    container.classList.remove("nezha-xterm-scrollbar-hover");
+  };
+
+  const resizeObserver = new ResizeObserver(() => {
+    scrollbarRect = null;
+    if (lastPointer) scheduleScrollbarHoverUpdate();
+  });
+  resizeObserver.observe(container);
+  refreshScrollbarRect();
+
+  const scrollDisposable = term.onScroll(handleScroll);
+  container.addEventListener("pointermove", handlePointerMove);
+  container.addEventListener("pointerleave", handlePointerLeave);
+  container.addEventListener("pointerdown", handlePointerDown);
+  ownerDocument.addEventListener("pointerup", endScrollbarDrag);
+  ownerDocument.addEventListener("pointercancel", endScrollbarDrag);
+
+  return () => {
+    clearScrollHideTimer();
+    clearHoverFrame();
+    resizeObserver.disconnect();
+    container.classList.remove(
+      "nezha-xterm-scrolling",
+      "nezha-xterm-scrollbar-hover",
+      "nezha-xterm-scrollbar-active",
+    );
+    scrollDisposable.dispose();
+    container.removeEventListener("pointermove", handlePointerMove);
+    container.removeEventListener("pointerleave", handlePointerLeave);
+    container.removeEventListener("pointerdown", handlePointerDown);
+    ownerDocument.removeEventListener("pointerup", endScrollbarDrag);
+    ownerDocument.removeEventListener("pointercancel", endScrollbarDrag);
+  };
+}
+
 /**
  * 安全地执行 fitAddon.fit() 并返回 { cols, rows }，失败/容器不可见时返回 null。
  *
