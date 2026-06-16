@@ -347,6 +347,7 @@ pub fn run() {
             fs::list_project_files,
             fs::search_project_files,
             git::generate_commit_message,
+            git::discover_git_roots,
             agent_assist::generate_task_name,
             git::git_status,
             git::git_list_branches,

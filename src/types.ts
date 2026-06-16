@@ -8,6 +8,17 @@ export interface Project {
   hiddenFromRail?: boolean;
 }
 
+/** 单个 git 工作目录。
+ * - 单仓库项目：根目录自身即 git，roots = [{ path: project.path, name: ".", isRoot: true }]
+ * - 多仓库工作区（如根目录非 git，但下面有多个子 git 目录）：roots = 每个子目录一项
+ * - 完全不是 git：roots = []
+ */
+export interface GitRoot {
+  path: string;
+  name: string;
+  isRoot: boolean;
+}
+
 export type AgentType = "claude" | "codex";
 export type ThemeMode = "system" | "dark" | "light" | "eyecare" | "midnight";
 export type ThemeVariant = "dark" | "light" | "eyecare" | "midnight";
@@ -127,6 +138,9 @@ export interface Task {
   worktreePath?: string;
   worktreeBranch?: string;
   baseBranch?: string;
+  /** worktree 所属的 sub-repo 路径（多仓库工作区中追踪 worktree 归属于哪个 git 根）。
+   *  缺省视为与项目根相同，向后兼容旧 worktree。 */
+  worktreeRepo?: string;
   /** worktree 已被合并或丢弃后置 true：保留分支/路径用于审计，但禁用 resume / 合并 / 丢弃 */
   worktreeDiscarded?: boolean;
   /** 任务完成时计算的相对 baseBranch merge-base 的累计新增行数（仅 worktree 任务） */

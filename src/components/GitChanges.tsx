@@ -28,7 +28,8 @@ interface GitFileChange {
 }
 
 interface Props {
-  projectPath: string;
+  projectRoot: string;
+  repoPath: string;
   currentTaskCreatedAt: number | null;
   onFileSelect: (filePath: string, staged: boolean, label: string) => void;
   width?: number;
@@ -39,7 +40,8 @@ function fileName(path: string): string {
 }
 
 export function GitChanges({
-  projectPath,
+  projectRoot,
+  repoPath,
   currentTaskCreatedAt,
   onFileSelect,
   width = 280,
@@ -85,7 +87,10 @@ export function GitChanges({
       setLoading(true);
       if (options?.clearError !== false) setError(null);
       try {
-        const result = await safeInvoke<GitFileChange[]>("git_status", { projectPath });
+        const result = await safeInvoke<GitFileChange[]>("git_status", {
+          projectPath: projectRoot,
+          repoPath,
+        });
         if (result === null) return; // Component unmounted
         setChanges(result);
       } catch (e) {
@@ -94,7 +99,7 @@ export function GitChanges({
         if (!isCancelled()) setLoading(false);
       }
     },
-    [projectPath, safeInvoke, isCancelled],
+    [projectRoot, repoPath, safeInvoke, isCancelled],
   );
 
   useEffect(() => {
@@ -152,9 +157,9 @@ export function GitChanges({
     e.stopPropagation();
     try {
       if (c.staged) {
-        await invoke("git_unstage", { projectPath, filePath: c.path });
+        await invoke("git_unstage", { projectPath: projectRoot, repoPath, filePath: c.path });
       } else {
-        await invoke("git_stage", { projectPath, filePath: c.path });
+        await invoke("git_stage", { projectPath: projectRoot, repoPath, filePath: c.path });
       }
       refresh();
     } catch (err) {
@@ -171,9 +176,17 @@ export function GitChanges({
     try {
       setError(null);
       if (directory.staged) {
-        await invoke("git_unstage_files", { projectPath, filePaths: directory.filePaths });
+        await invoke("git_unstage_files", {
+          projectPath: projectRoot,
+          repoPath,
+          filePaths: directory.filePaths,
+        });
       } else {
-        await invoke("git_stage_files", { projectPath, filePaths: directory.filePaths });
+        await invoke("git_stage_files", {
+          projectPath: projectRoot,
+          repoPath,
+          filePaths: directory.filePaths,
+        });
       }
       refresh();
     } catch (err) {
@@ -184,7 +197,7 @@ export function GitChanges({
   const handleStageAll = async () => {
     try {
       setError(null);
-      await invoke("git_stage_all", { projectPath });
+      await invoke("git_stage_all", { projectPath: projectRoot, repoPath });
       refresh();
     } catch (err) {
       setError(String(err));
@@ -194,7 +207,7 @@ export function GitChanges({
   const handleUnstageAll = async () => {
     try {
       setError(null);
-      await invoke("git_unstage_all", { projectPath });
+      await invoke("git_unstage_all", { projectPath: projectRoot, repoPath });
       refresh();
     } catch (err) {
       setError(String(err));
@@ -218,7 +231,8 @@ export function GitChanges({
     try {
       setError(null);
       await invoke("git_discard_file", {
-        projectPath,
+        projectPath: projectRoot,
+        repoPath,
         filePath: c.path,
         untracked,
       });
@@ -249,7 +263,8 @@ export function GitChanges({
     try {
       setError(null);
       await invoke("git_discard_files", {
-        projectPath,
+        projectPath: projectRoot,
+        repoPath,
         filePaths: directory.filePaths,
         untracked: directory.untracked,
       });
@@ -269,7 +284,7 @@ export function GitChanges({
     if (!ok) return;
     try {
       setError(null);
-      await invoke("git_discard_all", { projectPath });
+      await invoke("git_discard_all", { projectPath: projectRoot, repoPath });
     } catch (err) {
       setError(t("git.discardFailed", { error: String(err) }));
     } finally {
@@ -281,7 +296,10 @@ export function GitChanges({
     setGeneratingMsg(true);
     setError(null);
     try {
-      const msg = await safeInvoke<string>("generate_commit_message", { projectPath });
+      const msg = await safeInvoke<string>("generate_commit_message", {
+        projectPath: projectRoot,
+        repoPath,
+      });
       if (msg === null) return; // Component unmounted
       setCommitMsg(msg);
       if (commitMsgError) setCommitMsgError(false);
@@ -301,7 +319,11 @@ export function GitChanges({
     setCommitting(true);
     setError(null);
     try {
-      await invoke("git_commit", { projectPath, message: commitMsg.trim() });
+      await invoke("git_commit", {
+        projectPath: projectRoot,
+        repoPath,
+        message: commitMsg.trim(),
+      });
       setCommitMsg("");
       refresh();
     } catch (err) {

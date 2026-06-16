@@ -542,6 +542,21 @@ export function initTerminal(
     macOptionClickForcesSelection: true,
   });
 
+  // Claude Code v2.1.150+ 在 default(inline) 模式下把滚轮上报当成 ↑↓ 翻 prompt
+  // 历史（见 anthropics/claude-code#65833 / #66601），Windows/Linux 用户因此无法
+  // 滚动查看任务日志。这里在主屏幕缓冲区下接管 wheel：直接滚 xterm.js 自己的
+  // scrollback，return false 阻止把 wheel 上报给 PTY；alt 缓冲区（vim/less/`/tui
+  // fullscreen`）保留默认行为，避免破坏需要 wheel 的全屏 TUI。
+  term.attachCustomWheelEventHandler((e) => {
+    if (term.buffer.active.type === "alternate") return true;
+    const lines =
+      e.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? e.deltaY
+        : Math.sign(e.deltaY) * 3;
+    if (lines !== 0) term.scrollLines(Math.round(lines));
+    return false;
+  });
+
   const fitAddon = new FitAddon();
   const unicode11Addon = new Unicode11Addon();
   term.loadAddon(fitAddon);

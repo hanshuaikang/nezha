@@ -184,6 +184,33 @@ fn git_path_args(base_args: &[&str], file_paths: Vec<String>) -> Result<Vec<Stri
     Ok(args)
 }
 
+/// Resolve the actual working directory for a git command.
+///
+/// `project_path` is always the project root (Project.path). `repo_path` is an optional sub-repo
+/// or worktree path that must live inside the project. When omitted, falls back to project_path
+/// (single-repo project, legacy behavior).
+fn resolve_repo_path(project_path: &str, repo_path: Option<&str>) -> Result<String, String> {
+    let Some(repo) = repo_path else {
+        return Ok(project_path.to_string());
+    };
+    let repo_trimmed = repo.trim();
+    if repo_trimmed.is_empty() {
+        return Ok(project_path.to_string());
+    }
+    validate_project_path(repo_trimmed)?;
+
+    let project = Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    let repo_canonical = Path::new(repo_trimmed)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve repo path: {}", e))?;
+    if !repo_canonical.starts_with(&project) {
+        return Err("Repo path is outside the project directory".to_string());
+    }
+    Ok(repo_trimmed.to_string())
+}
+
 fn git_worktree_root(project_path: &str) -> Result<PathBuf, String> {
     let output = run_git(project_path, &["rev-parse", "--show-toplevel"])?;
     if !output.status.success() {
@@ -274,10 +301,78 @@ fn create_empty_temp_file() -> Result<PathBuf, String> {
 
 // ── Tauri 命令 ───────────────────────────────────────────────────────────────
 
+#[derive(serde::Serialize)]
+pub(crate) struct GitRoot {
+    /// 绝对路径（与 Project.path 相同含义）
+    path: String,
+    /// 用于 UI 切换器显示的名字：单仓库项目时为 "."，多仓库时为子目录名
+    name: String,
+    /// 是否就是 project_path 自身
+    #[serde(rename = "isRoot")]
+    is_root: bool,
+}
+
+fn dir_is_git_repo(path: &Path) -> bool {
+    // `.git` 可能是普通目录（regular checkout）或文件（worktree 的 gitdir 文件 / submodule）
+    path.join(".git").exists()
+}
+
+/// 发现给定 project_path 下所有 git 工作目录。
+/// - 如果 project_path 自身是 git → 返回单元素 vec（单仓库路径）
+/// - 否则扫描第一层子目录中含 `.git` 的，按名字排序后返回
+/// - 都不是 → 返回空 vec（前端识别为非 git 项目）
 #[tauri::command]
-pub async fn generate_commit_message(project_path: String) -> Result<String, String> {
+pub async fn discover_git_roots(project_path: String) -> Result<Vec<GitRoot>, String> {
+    validate_project_path(&project_path)?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<GitRoot>, String> {
+        let root = Path::new(&project_path);
+        if dir_is_git_repo(root) {
+            return Ok(vec![GitRoot {
+                path: project_path.clone(),
+                name: ".".to_string(),
+                is_root: true,
+            }]);
+        }
+
+        let mut found: Vec<GitRoot> = Vec::new();
+        let entries = std::fs::read_dir(root)
+            .map_err(|e| format!("Cannot read project directory: {}", e))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // 跳过隐藏目录和 nezha 自身的目录
+                if name.starts_with('.') || name == "node_modules" {
+                    continue;
+                }
+                if dir_is_git_repo(&path) {
+                    if let Some(path_str) = path.to_str() {
+                        found.push(GitRoot {
+                            path: path_str.to_string(),
+                            name: name.to_string(),
+                            is_root: false,
+                        });
+                    }
+                }
+            }
+        }
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(found)
+    })
+    .await
+    .map_err(|e| format!("discover_git_roots task panicked: {}", e))?
+}
+
+#[tauri::command]
+pub async fn generate_commit_message(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<String, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     // 1. Get staged diff
-    let diff_output = run_git(&project_path, &["diff", "--staged"])?;
+    let diff_output = run_git(&cwd, &["diff", "--staged"])?;
     let diff = String::from_utf8_lossy(&diff_output.stdout).into_owned();
     if diff.trim().is_empty() {
         return Err("No staged changes to generate a commit message for.".to_string());
@@ -290,7 +385,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         diff
     };
 
-    // 2. Read project config for prompt and default agent
+    // 2. Read project config for prompt and default agent（配置始终在项目根）
     let config = crate::config::read_project_config(project_path.clone())?;
     let commit_prompt = config.git.commit_prompt;
     let timeout_secs = config.git.commit_message_timeout_secs.clamp(1, 120);
@@ -306,7 +401,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     let output = tokio::time::timeout(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            run_agent_commit_message_command(&agent, &project_path, &full_prompt)
+            run_agent_commit_message_command(&agent, &cwd, &full_prompt)
         }),
     )
     .await
@@ -380,7 +475,11 @@ fn parse_porcelain_z_status(stdout: &[u8]) -> Vec<GitFileChange> {
 }
 
 #[tauri::command]
-pub async fn git_status(project_path: String) -> Result<Vec<GitFileChange>, String> {
+pub async fn git_status(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<Vec<GitFileChange>, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let args = vec![
         "-c".to_string(),
         "core.quotePath=false".to_string(),
@@ -390,7 +489,7 @@ pub async fn git_status(project_path: String) -> Result<Vec<GitFileChange>, Stri
         "--untracked-files=all".to_string(),
     ];
 
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(5)).await?;
+    let output = run_git_with_timeout(cwd, args, Duration::from_secs(5)).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -425,9 +524,13 @@ pub(crate) struct GitBranchInfo {
 }
 
 #[tauri::command]
-pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo>, String> {
+pub async fn git_list_branches(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<Vec<GitBranchInfo>, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let output = run_git_with_timeout(
-        project_path,
+        cwd,
         vec!["branch".to_string(), "-a".to_string()],
         Duration::from_secs(5),
     )
@@ -467,9 +570,11 @@ pub async fn git_list_branches(project_path: String) -> Result<Vec<GitBranchInfo
 #[tauri::command]
 pub async fn git_checkout_branch(
     project_path: String,
+    repo_path: Option<String>,
     branch_name: String,
     is_remote: bool,
 ) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let args: Vec<String> = if is_remote {
         // "origin/main" -> local name "main", track remote
         let local_name = branch_name
@@ -486,31 +591,35 @@ pub async fn git_checkout_branch(
     } else {
         vec!["checkout".into(), branch_name.clone()]
     };
-    run_git_check(&project_path, &args)
+    run_git_check(&cwd, &args)
 }
 
 #[tauri::command]
 pub async fn git_create_branch(
     project_path: String,
+    repo_path: Option<String>,
     branch_name: String,
     from_branch: String,
     checkout: bool,
 ) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let args: &[&str] = if checkout {
         &["checkout", "-b", &branch_name, &from_branch]
     } else {
         &["branch", &branch_name, &from_branch]
     };
-    run_git_check(&project_path, args)
+    run_git_check(&cwd, args)
 }
 
 #[tauri::command]
 pub async fn git_log(
     project_path: String,
+    repo_path: Option<String>,
     limit: u32,
     search: Option<String>,
     branch: Option<String>,
 ) -> Result<Vec<GitCommit>, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let limit_str = limit.to_string();
     let format = "COMMIT:%H%nSHORT:%h%nAUTHOR:%an%nDATE:%ar%nSUBJECT:%s%nREFS:%D%nEND_RECORD";
     let mut args: Vec<String> = vec![
@@ -530,7 +639,7 @@ pub async fn git_log(
         }
     }
 
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout(cwd, args, Duration::from_secs(10)).await?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let mut commits = Vec::new();
@@ -601,10 +710,12 @@ pub(crate) struct GitCommitDetail {
 #[tauri::command]
 pub async fn git_commit_detail(
     project_path: String,
+    repo_path: Option<String>,
     commit_hash: String,
 ) -> Result<GitCommitDetail, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let info_out = run_git(
-        &project_path,
+        &cwd,
         &[
             "show",
             "--no-patch",
@@ -634,7 +745,7 @@ pub async fn git_commit_detail(
     }
 
     let ns_out = run_git(
-        &project_path,
+        &cwd,
         &[
             "diff-tree",
             "--no-commit-id",
@@ -673,7 +784,7 @@ pub async fn git_commit_detail(
     }
 
     let num_out = run_git(
-        &project_path,
+        &cwd,
         &[
             "diff-tree",
             "--no-commit-id",
@@ -724,9 +835,14 @@ pub async fn git_commit_detail(
 }
 
 #[tauri::command]
-pub async fn git_show_diff(project_path: String, commit_hash: String) -> Result<String, String> {
+pub async fn git_show_diff(
+    project_path: String,
+    repo_path: Option<String>,
+    commit_hash: String,
+) -> Result<String, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let args = vec!["show".to_string(), "--format=".to_string(), commit_hash];
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout(cwd, args, Duration::from_secs(10)).await?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).into_owned());
     }
@@ -743,9 +859,11 @@ pub async fn git_show_diff(project_path: String, commit_hash: String) -> Result<
 #[tauri::command]
 pub async fn git_file_diff(
     project_path: String,
+    repo_path: Option<String>,
     file_path: String,
     staged: bool,
 ) -> Result<String, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let mut args = vec!["diff".to_string()];
     if staged {
         args.push("--cached".to_string());
@@ -753,12 +871,12 @@ pub async fn git_file_diff(
     args.push("--".to_string());
     args.push(file_path.clone());
 
-    let output = run_git_with_timeout(project_path.clone(), args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout(cwd.clone(), args, Duration::from_secs(10)).await?;
     let raw = output.stdout;
 
     // For untracked files, git diff returns nothing — fall back to --no-index diff
     if raw.is_empty() && !staged {
-        let abs_path = std::path::Path::new(&project_path).join(&file_path);
+        let abs_path = std::path::Path::new(&cwd).join(&file_path);
         let abs_path_str = abs_path.to_string_lossy().into_owned();
         let empty_file = create_empty_temp_file()?;
         let fallback_args = vec![
@@ -767,8 +885,7 @@ pub async fn git_file_diff(
             empty_file.to_string_lossy().into_owned(),
             abs_path_str,
         ];
-        let fallback =
-            run_git_with_timeout(project_path, fallback_args, Duration::from_secs(10)).await;
+        let fallback = run_git_with_timeout(cwd, fallback_args, Duration::from_secs(10)).await;
         let _ = std::fs::remove_file(&empty_file);
         let fallback = fallback?;
         let fallback_raw = fallback.stdout;
@@ -791,28 +908,43 @@ pub async fn git_file_diff(
 }
 
 #[tauri::command]
-pub async fn git_stage(project_path: String, file_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["add", "--", &file_path])
+pub async fn git_stage(
+    project_path: String,
+    repo_path: Option<String>,
+    file_path: String,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    run_git_check(&cwd, &["add", "--", &file_path])
 }
 
 #[tauri::command]
-pub async fn git_unstage(project_path: String, file_path: String) -> Result<(), String> {
-    if git_has_head(&project_path)? {
-        run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
+pub async fn git_unstage(
+    project_path: String,
+    repo_path: Option<String>,
+    file_path: String,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    if git_has_head(&cwd)? {
+        run_git_check(&cwd, &["restore", "--staged", "--", &file_path])
     } else {
         // 首次提交前无 HEAD，改用 `git reset` 将暂存项退回。
-        run_git_check(&project_path, &["reset", "--", &file_path])
+        run_git_check(&cwd, &["reset", "--", &file_path])
     }
 }
 
 #[tauri::command]
-pub async fn git_stage_files(project_path: String, file_paths: Vec<String>) -> Result<(), String> {
+pub async fn git_stage_files(
+    project_path: String,
+    repo_path: Option<String>,
+    file_paths: Vec<String>,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let args = git_path_args(&["add"], file_paths)?;
     if args.is_empty() {
         return Ok(());
     }
 
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout(cwd, args, Duration::from_secs(10)).await?;
     if !output.status.success() {
         return Err(git_command_error(&output, "Failed to stage files"));
     }
@@ -822,12 +954,14 @@ pub async fn git_stage_files(project_path: String, file_paths: Vec<String>) -> R
 #[tauri::command]
 pub async fn git_unstage_files(
     project_path: String,
+    repo_path: Option<String>,
     file_paths: Vec<String>,
 ) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     // 首次提交前无 HEAD，`git restore --staged` 会失败，退回到不依赖 HEAD 的 `git reset`。
     // 此处用异步 run_git_with_timeout（而非同步 git_has_head）做检测，避免阻塞 Tokio 运行时。
     let head_check = run_git_with_timeout(
-        project_path.clone(),
+        cwd.clone(),
         vec![
             "rev-parse".to_string(),
             "--verify".to_string(),
@@ -847,7 +981,7 @@ pub async fn git_unstage_files(
         return Ok(());
     }
 
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
+    let output = run_git_with_timeout(cwd, args, Duration::from_secs(10)).await?;
     if !output.status.success() {
         return Err(git_command_error(&output, "Failed to unstage files"));
     }
@@ -855,18 +989,31 @@ pub async fn git_unstage_files(
 }
 
 #[tauri::command]
-pub async fn git_stage_all(project_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["add", "-A"])
+pub async fn git_stage_all(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    run_git_check(&cwd, &["add", "-A"])
 }
 
 #[tauri::command]
-pub async fn git_unstage_all(project_path: String) -> Result<(), String> {
-    run_git_check(&project_path, &["restore", "--staged", "."])
+pub async fn git_unstage_all(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    run_git_check(&cwd, &["restore", "--staged", "."])
 }
 
 #[tauri::command]
-pub async fn git_commit(project_path: String, message: String) -> Result<(), String> {
-    run_git_check(&project_path, &["commit", "-m", &message])
+pub async fn git_commit(
+    project_path: String,
+    repo_path: Option<String>,
+    message: String,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    run_git_check(&cwd, &["commit", "-m", &message])
 }
 
 fn untracked_files_under_directory<'a>(
@@ -1077,15 +1224,16 @@ fn list_untracked_files(project_path: &str) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn git_discard_file(
     project_path: String,
+    repo_path: Option<String>,
     file_path: String,
     untracked: bool,
 ) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        validate_project_path(&project_path)?;
-        let worktree_root = git_worktree_root(&project_path)?;
+        let worktree_root = git_worktree_root(&cwd)?;
         let worktree_root_string = path_to_string(&worktree_root)?;
         if untracked {
-            discard_untracked_file(&project_path, &worktree_root, &file_path)
+            discard_untracked_file(&cwd, &worktree_root, &file_path)
         } else {
             run_git_check(&worktree_root_string, &["restore", "--", &file_path])
         }
@@ -1097,23 +1245,24 @@ pub async fn git_discard_file(
 #[tauri::command]
 pub async fn git_discard_files(
     project_path: String,
+    repo_path: Option<String>,
     file_paths: Vec<String>,
     untracked: bool,
 ) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        validate_project_path(&project_path)?;
         let file_paths = unique_git_file_paths(file_paths)?;
         if file_paths.is_empty() {
             return Ok(());
         }
 
-        let worktree_root = git_worktree_root(&project_path)?;
+        let worktree_root = git_worktree_root(&cwd)?;
         let worktree_root_string = path_to_string(&worktree_root)?;
         if untracked {
             let untracked_files = list_untracked_files(&worktree_root_string)?;
             for file_path in file_paths {
                 discard_untracked_path(
-                    &project_path,
+                    &cwd,
                     &worktree_root,
                     &file_path,
                     &untracked_files,
@@ -1131,10 +1280,13 @@ pub async fn git_discard_files(
 }
 
 #[tauri::command]
-pub async fn git_discard_all(project_path: String) -> Result<(), String> {
+pub async fn git_discard_all(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<(), String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        validate_project_path(&project_path)?;
-        let worktree_root = git_worktree_root(&project_path)?;
+        let worktree_root = git_worktree_root(&cwd)?;
         let worktree_root_string = path_to_string(&worktree_root)?;
         // Reset every tracked file (staged + worktree) back to HEAD.
         // Staged-only adds become untracked after this; they are cleaned in the second pass.
@@ -1151,10 +1303,10 @@ pub async fn git_discard_all(project_path: String) -> Result<(), String> {
         }
 
         for rel in list_untracked_files(&worktree_root_string)? {
-            if is_protected_worktree_relative_path(&worktree_root, &project_path, &rel) {
+            if is_protected_worktree_relative_path(&worktree_root, &cwd, &rel) {
                 continue;
             }
-            trash_worktree_relative_path(&worktree_root, &project_path, &rel)?;
+            trash_worktree_relative_path(&worktree_root, &cwd, &rel)?;
         }
         Ok(())
     })
@@ -1165,11 +1317,13 @@ pub async fn git_discard_all(project_path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn git_show_file_diff(
     project_path: String,
+    repo_path: Option<String>,
     commit_hash: String,
     file_path: String,
 ) -> Result<String, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let output = run_git(
-        &project_path,
+        &cwd,
         &["show", "--format=", &commit_hash, "--", &file_path],
     )?;
     if !output.status.success() {
@@ -1186,13 +1340,18 @@ pub async fn git_show_file_diff(
 }
 
 #[tauri::command]
-pub async fn git_push(project_path: String, branch: Option<String>) -> Result<String, String> {
+pub async fn git_push(
+    project_path: String,
+    repo_path: Option<String>,
+    branch: Option<String>,
+) -> Result<String, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let mut args = vec!["push".to_string()];
     if let Some(ref b) = branch.filter(|s| !s.is_empty()) {
         args.push("origin".to_string());
         args.push(b.clone());
     }
-    let output = run_git(&project_path, &args)?;
+    let output = run_git(&cwd, &args)?;
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -1205,8 +1364,12 @@ pub async fn git_push(project_path: String, branch: Option<String>) -> Result<St
 }
 
 #[tauri::command]
-pub async fn git_pull(project_path: String) -> Result<String, String> {
-    let output = run_git(&project_path, &["pull"])?;
+pub async fn git_pull(
+    project_path: String,
+    repo_path: Option<String>,
+) -> Result<String, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    let output = run_git(&cwd, &["pull"])?;
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -1228,12 +1391,14 @@ pub(crate) struct GitRemoteCounts {
 #[tauri::command]
 pub async fn git_remote_counts(
     project_path: String,
+    repo_path: Option<String>,
     branch: Option<String>,
 ) -> Result<GitRemoteCounts, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     let branch = if let Some(b) = branch.filter(|s| !s.is_empty()) {
         b
     } else {
-        let branch_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        let branch_out = run_git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         String::from_utf8_lossy(&branch_out.stdout)
             .trim()
             .to_string()
@@ -1241,7 +1406,7 @@ pub async fn git_remote_counts(
 
     let rev_str = format!("{}...@{{u}}", branch);
     let rev_out = run_git(
-        &project_path,
+        &cwd,
         &["rev-list", "--count", "--left-right", &rev_str],
     );
 
@@ -1286,13 +1451,14 @@ fn task_worktree_branch_name(task_id: &str) -> String {
     format!("nezha/task-{}", short)
 }
 
-/// 校验 worktree 路径必须落在 `<project>/.nezha/worktrees/` 之下，
-/// 防止 remove_task_worktree 被传入任意路径。
-fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> Result<(), String> {
-    let project = Path::new(project_path)
+/// 校验 worktree 路径必须落在 `<repo_root>/.nezha/worktrees/` 之下，
+/// 防止 remove_task_worktree 被传入任意路径。多 sub-repo 项目中 repo_root 为 sub-repo
+/// 根；单仓库时与 project_path 一致（向后兼容旧 worktree 数据）。
+fn ensure_path_under_worktrees_root(repo_root: &str, worktree_path: &str) -> Result<(), String> {
+    let root = Path::new(repo_root)
         .canonicalize()
-        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
-    let expected_root = project.join(".nezha").join("worktrees");
+        .map_err(|e| format!("Cannot resolve repo path: {}", e))?;
+    let expected_root = root.join(".nezha").join("worktrees");
     let target = Path::new(worktree_path)
         .canonicalize()
         .map_err(|e| format!("Cannot resolve worktree path: {}", e))?;
@@ -1305,10 +1471,11 @@ fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> 
 #[tauri::command]
 pub async fn create_task_worktree(
     project_path: String,
+    repo_path: Option<String>,
     task_id: String,
     base_branch: String,
 ) -> Result<WorktreeCreated, String> {
-    validate_project_path(&project_path)?;
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     if task_id.trim().is_empty() {
         return Err("Task id is required".to_string());
     }
@@ -1317,7 +1484,7 @@ pub async fn create_task_worktree(
     }
 
     tokio::task::spawn_blocking(move || -> Result<WorktreeCreated, String> {
-        let worktrees_dir = Path::new(&project_path).join(".nezha").join("worktrees");
+        let worktrees_dir = Path::new(&cwd).join(".nezha").join("worktrees");
         std::fs::create_dir_all(&worktrees_dir)
             .map_err(|e| format!("Failed to create worktrees dir: {}", e))?;
 
@@ -1333,7 +1500,7 @@ pub async fn create_task_worktree(
         let branch = task_worktree_branch_name(&task_id);
 
         let output = run_git(
-            &project_path,
+            &cwd,
             &["worktree", "add", &wt_path_str, "-b", &branch, &base_branch],
         )?;
         if !output.status.success() {
@@ -1353,12 +1520,13 @@ pub async fn create_task_worktree(
 #[tauri::command]
 pub async fn merge_task_worktree(
     project_path: String,
+    repo_path: Option<String>,
     worktree_path: String,
     branch: String,
     base_branch: String,
 ) -> Result<String, String> {
-    validate_project_path(&project_path)?;
-    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    ensure_path_under_worktrees_root(&cwd, &worktree_path)?;
     if branch.trim().is_empty() || base_branch.trim().is_empty() {
         return Err("Branch and base branch are required".to_string());
     }
@@ -1378,7 +1546,7 @@ pub async fn merge_task_worktree(
         }
 
         // 拿主仓当前 HEAD：HEAD == base 时直接 merge，否则用 fetch ff（不切走 HEAD）。
-        let head_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        let head_out = run_git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         if !head_out.status.success() {
             return Err(String::from_utf8_lossy(&head_out.stderr).trim().to_string());
         }
@@ -1386,7 +1554,7 @@ pub async fn merge_task_worktree(
 
         if original_branch == base_branch {
             // 主仓正在 base 上，直接合并（保留 merge commit 让历史可追溯）
-            let merge_out = run_git(&project_path, &["merge", "--no-ff", &branch])?;
+            let merge_out = run_git(&cwd, &["merge", "--no-ff", &branch])?;
             let combined = format!(
                 "{}{}",
                 String::from_utf8_lossy(&merge_out.stdout),
@@ -1404,7 +1572,7 @@ pub async fn merge_task_worktree(
         // 主仓不在 base：用 `git fetch . <src>:<dst>` 把 worktree 分支 ff 到 base ref，不动主仓 HEAD。
         // git fetch 默认仅允许 fast-forward 更新（用 `+` 前缀才强制），刚好阻止误覆盖 base 的提交。
         let refspec = format!("{}:{}", branch, base_branch);
-        let ff_out = run_git(&project_path, &["fetch", ".", &refspec])?;
+        let ff_out = run_git(&cwd, &["fetch", ".", &refspec])?;
         if !ff_out.status.success() {
             let err = String::from_utf8_lossy(&ff_out.stderr);
             return Err(format!(
@@ -1423,16 +1591,17 @@ pub async fn merge_task_worktree(
 #[tauri::command]
 pub async fn remove_task_worktree(
     project_path: String,
+    repo_path: Option<String>,
     worktree_path: String,
     branch: String,
 ) -> Result<(), String> {
-    validate_project_path(&project_path)?;
-    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
+    ensure_path_under_worktrees_root(&cwd, &worktree_path)?;
 
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         // worktree remove --force 既可移除有未提交修改的工作树，也会清理元数据。
         let remove_out = run_git(
-            &project_path,
+            &cwd,
             &["worktree", "remove", "--force", &worktree_path],
         )?;
         if !remove_out.status.success() {
@@ -1443,7 +1612,7 @@ pub async fn remove_task_worktree(
 
         if !branch.trim().is_empty() {
             // -D 允许删除未合并分支（丢弃语义）。已合并分支也能成功。
-            let branch_out = run_git(&project_path, &["branch", "-D", &branch])?;
+            let branch_out = run_git(&cwd, &["branch", "-D", &branch])?;
             if !branch_out.status.success() {
                 return Err(String::from_utf8_lossy(&branch_out.stderr)
                     .trim()
@@ -1467,17 +1636,18 @@ pub(crate) struct WorktreeDiffStats {
 #[tauri::command]
 pub async fn worktree_diff_stats(
     project_path: String,
+    repo_path: Option<String>,
     worktree_path: String,
     base_branch: String,
 ) -> Result<WorktreeDiffStats, String> {
+    let cwd = resolve_repo_path(&project_path, repo_path.as_deref())?;
     if base_branch.trim().is_empty() {
         return Err("Base branch is required".to_string());
     }
 
     tokio::task::spawn_blocking(move || -> Result<WorktreeDiffStats, String> {
         // 路径校验包含同步 canonicalize，必须留在 spawn_blocking 内，避免阻塞 Tokio 运行时。
-        validate_project_path(&project_path)?;
-        ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+        ensure_path_under_worktrees_root(&cwd, &worktree_path)?;
 
         // 1) 已跟踪改动（含已 stage / 未 stage）：working tree vs merge-base
         let mb_out = run_git(&worktree_path, &["merge-base", &base_branch, "HEAD"])?;
@@ -1540,9 +1710,9 @@ fn accumulate_numstat(stdout: &[u8], additions: &mut i32, deletions: &mut i32) {
 #[cfg(test)]
 mod tests {
     use super::{
-        git_has_head, git_worktree_root, is_protected_project_relative_path, list_untracked_files,
-        parse_porcelain_z_status, path_to_string, run_git_check, untracked_files_under_directory,
-        GitFileChange,
+        dir_is_git_repo, git_has_head, git_worktree_root, is_protected_project_relative_path,
+        list_untracked_files, parse_porcelain_z_status, path_to_string, resolve_repo_path,
+        run_git_check, untracked_files_under_directory, GitFileChange,
     };
     use std::{fs, path::PathBuf, process::Command};
 
@@ -1662,6 +1832,82 @@ mod tests {
         let resolved = git_worktree_root(nested_project.to_str().unwrap()).unwrap();
 
         assert_eq!(resolved, repo.path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_repo_path_falls_back_to_project_when_omitted() {
+        let repo = TempRepo::new();
+        let project_path = repo.path_string();
+        let resolved = resolve_repo_path(&project_path, None).unwrap();
+        assert_eq!(resolved, project_path);
+
+        // Empty string treated as None (前端传 "" 时不应当作真有效路径).
+        let resolved_empty = resolve_repo_path(&project_path, Some("")).unwrap();
+        assert_eq!(resolved_empty, project_path);
+    }
+
+    #[test]
+    fn resolve_repo_path_accepts_sub_path_inside_project() {
+        let project_dir = std::env::temp_dir().join(format!(
+            "nezha-resolve-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let sub_dir = project_dir.join("sub-repo");
+        fs::create_dir_all(&sub_dir).unwrap();
+        let project_str = path_to_string(&project_dir.canonicalize().unwrap()).unwrap();
+        let sub_str = path_to_string(&sub_dir.canonicalize().unwrap()).unwrap();
+
+        let resolved = resolve_repo_path(&project_str, Some(&sub_str)).unwrap();
+        assert_eq!(resolved, sub_str);
+
+        let _ = fs::remove_dir_all(&project_dir);
+    }
+
+    #[test]
+    fn resolve_repo_path_rejects_path_outside_project() {
+        let project_dir = std::env::temp_dir().join(format!(
+            "nezha-resolve-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let outside_dir = std::env::temp_dir().join(format!(
+            "nezha-outside-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&project_dir).unwrap();
+        fs::create_dir_all(&outside_dir).unwrap();
+        let project_str = path_to_string(&project_dir.canonicalize().unwrap()).unwrap();
+        let outside_str = path_to_string(&outside_dir.canonicalize().unwrap()).unwrap();
+
+        let result = resolve_repo_path(&project_str, Some(&outside_str));
+        assert!(result.is_err(), "outside-project repo path should be rejected");
+
+        let _ = fs::remove_dir_all(&project_dir);
+        let _ = fs::remove_dir_all(&outside_dir);
+    }
+
+    #[test]
+    fn dir_is_git_repo_detects_both_dot_git_dir_and_file() {
+        let repo = TempRepo::new();
+        assert!(dir_is_git_repo(&repo.path));
+
+        // Worktree case: .git is a file rather than directory.
+        let worktree_like = std::env::temp_dir().join(format!(
+            "nezha-worktree-dir-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&worktree_like).unwrap();
+        fs::write(worktree_like.join(".git"), "gitdir: /tmp/elsewhere\n").unwrap();
+        assert!(dir_is_git_repo(&worktree_like));
+
+        let plain = std::env::temp_dir().join(format!(
+            "nezha-non-git-dir-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&plain).unwrap();
+        assert!(!dir_is_git_repo(&plain));
+
+        let _ = fs::remove_dir_all(&worktree_like);
+        let _ = fs::remove_dir_all(&plain);
     }
 
     #[test]

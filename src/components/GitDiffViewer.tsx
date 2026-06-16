@@ -12,7 +12,8 @@ import s from "../styles";
 const VIEW_MODE_KEY = "nezha.diffViewMode";
 
 interface Props {
-  projectPath: string;
+  projectRoot: string;
+  repoPath: string;
   // "commit" = full commit diff, "file" = working-tree file diff, "commit-file" = single file in a commit
   mode: "commit" | "file" | "commit-file";
   commitHash?: string;
@@ -52,7 +53,8 @@ function ViewToggleButton({
 }
 
 export function GitDiffViewer({
-  projectPath,
+  projectRoot,
+  repoPath,
   mode,
   commitHash,
   filePath,
@@ -80,16 +82,22 @@ export function GitDiffViewer({
       try {
         let result: string;
         if (mode === "commit" && commitHash) {
-          result = await invoke<string>("git_show_diff", { projectPath, commitHash });
+          result = await invoke<string>("git_show_diff", {
+            projectPath: projectRoot,
+            repoPath,
+            commitHash,
+          });
         } else if (mode === "commit-file" && commitHash && filePath !== undefined) {
           result = await invoke<string>("git_show_file_diff", {
-            projectPath,
+            projectPath: projectRoot,
+            repoPath,
             commitHash,
             filePath,
           });
         } else if (mode === "file" && filePath !== undefined) {
           result = await invoke<string>("git_file_diff", {
-            projectPath,
+            projectPath: projectRoot,
+            repoPath,
             filePath,
             staged: staged ?? false,
           });
@@ -105,10 +113,10 @@ export function GitDiffViewer({
     };
 
     loadDiff();
-  }, [projectPath, mode, commitHash, filePath, staged]);
+  }, [projectRoot, repoPath, mode, commitHash, filePath, staged]);
 
   const { parsedFiles, totalAdditions, totalDeletions } = useMemo(() => {
-    const files = parseDiff(diff, projectPath);
+    const files = parseDiff(diff, repoPath);
     let add = 0;
     let del = 0;
     for (const f of files) {
@@ -116,7 +124,7 @@ export function GitDiffViewer({
       del += f.deletions;
     }
     return { parsedFiles: files, totalAdditions: add, totalDeletions: del };
-  }, [diff, projectPath]);
+  }, [diff, repoPath]);
 
   return (
     <div style={s.diffViewer}>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TriangleAlert, Sparkles } from "lucide-react";
-import type { Project, AgentType, PermissionMode } from "../types";
+import type { Project, AgentType, PermissionMode, GitRoot } from "../types";
 import type { HookAgentReadiness } from "./app-settings/types";
 import { useToast } from "./Toast";
 import {
@@ -67,12 +67,21 @@ function parseCrossProject(search: string, projects: Project[]): CrossProjectRef
 
 export function NewTaskView({
   project,
+  repoPath,
+  roots,
+  onSetRepoPath,
   otherProjects = [],
   onSubmit,
   initialDraft,
   onCacheDraft,
 }: {
   project: Project;
+  /** 当前活动 git 根的绝对路径（单仓库 = project.path，多仓库 = 选中的 sub-repo） */
+  repoPath: string;
+  /** 项目下所有 git 根，用于 worktree 模式下的 sub-repo picker 与校验 */
+  roots: GitRoot[];
+  /** 切换 sub-repo —— 直接代理到全局 useGitRoots.setSelectedRoot，让 BranchBar / Git 面板跟着切 */
+  onSetRepoPath: (path: string) => void;
   otherProjects?: Project[];
   onSubmit: (t: {
     prompt: string;
@@ -380,6 +389,20 @@ export function NewTaskView({
       showToast(t("newTask.worktreeMustSend"), "warning");
       return;
     }
+    if (launchMode === "worktree") {
+      // sub-repo 必须落在 roots 中：项目无 git 根（roots = []）或选错路径都拒绝启动。
+      // 单仓库（roots.length === 1）路径自然等于 project.path / 唯一 root，校验通过。
+      const hasValidRepo = roots.length > 0 && roots.some((r) => r.path === repoPath);
+      if (!hasValidRepo) {
+        showToast(
+          roots.length === 0
+            ? t("newTask.noGitRepoForWorktree")
+            : t("newTask.subRepoRequired"),
+          "warning",
+        );
+        return;
+      }
+    }
     submittedRef.current = true;
     const finalPrompt = planMode && text ? `${text}\n\nPlease use plan mode.` : text;
     onSubmit({
@@ -600,11 +623,14 @@ export function NewTaskView({
       {/* Launch mode + base branch (compose card 外、独立一栏) */}
       <div style={s.launchModeBar}>
         <LaunchModeSelector
-          projectPath={project.path}
+          projectRoot={project.path}
+          repoPath={repoPath}
+          roots={roots}
           launchMode={launchMode}
           baseBranch={baseBranch}
           onSetLaunchMode={setLaunchMode}
           onSetBaseBranch={setBaseBranch}
+          onSetRepoPath={onSetRepoPath}
         />
       </div>
     </div>

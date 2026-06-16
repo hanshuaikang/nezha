@@ -57,13 +57,20 @@ interface GitBranchInfo {
 }
 
 interface Props {
-  projectPath: string;
+  projectRoot: string;
+  repoPath: string;
   onCommitSelect: (hash: string, message: string) => void;
   onFileClick?: (hash: string, filePath: string, label: string) => void;
   width?: number;
 }
 
-export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 280 }: Props) {
+export function GitHistory({
+  projectRoot,
+  repoPath,
+  onCommitSelect,
+  onFileClick,
+  width = 280,
+}: Props) {
   const { t } = useI18n();
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GitRemoteCounts>({
@@ -106,7 +113,10 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const loadBranches = useCallback(async () => {
     try {
-      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", { projectPath });
+      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", {
+        projectPath: projectRoot,
+        repoPath,
+      });
       if (list === null) return; // Component unmounted
       setBranches(list);
       // Set initial branch to current if not yet set
@@ -117,7 +127,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     } catch {
       // ignore
     }
-  }, [projectPath, safeInvoke]);
+  }, [projectRoot, repoPath, safeInvoke]);
 
   const refresh = useCallback(
     async (query?: string, branch?: string) => {
@@ -127,13 +137,15 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       try {
         const [log, remote] = await Promise.all([
           safeInvoke<GitCommit[]>("git_log", {
-            projectPath,
+            projectPath: projectRoot,
+            repoPath,
             limit: 50,
             search: query ?? searchQuery,
             branch: activeBranch || null,
           }),
           safeInvoke<GitRemoteCounts>("git_remote_counts", {
-            projectPath,
+            projectPath: projectRoot,
+            repoPath,
             branch: activeBranch || null,
           }).catch(() => ({ ahead: 0, behind: 0, branch: "" })),
         ]);
@@ -146,7 +158,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         if (!isCancelled()) setLoading(false);
       }
     },
-    [projectPath, searchQuery, selectedBranch, safeInvoke, isCancelled],
+    [projectRoot, repoPath, searchQuery, selectedBranch, safeInvoke, isCancelled],
   );
 
   useEffect(() => {
@@ -155,7 +167,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     loadBranches();
     setSelectedHash(null);
     setSelectedDetail(null);
-  }, [projectPath, loadBranches]);
+  }, [projectRoot, repoPath, loadBranches]);
 
   useEffect(() => {
     if (selectedBranch !== "") {
@@ -180,7 +192,8 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       setLoadingDetail(true);
       try {
         const detail = await safeInvoke<GitCommitDetail>("git_commit_detail", {
-          projectPath,
+          projectPath: projectRoot,
+          repoPath,
           commitHash: commit.hash,
         });
         if (detail === null) return; // Component unmounted
@@ -191,14 +204,14 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         if (!isCancelled()) setLoadingDetail(false);
       }
     },
-    [projectPath, onCommitSelect, safeInvoke, isCancelled],
+    [projectRoot, repoPath, onCommitSelect, safeInvoke, isCancelled],
   );
 
   const handlePull = async () => {
     setPulling(true);
     setError(null);
     try {
-      await safeInvoke("git_pull", { projectPath });
+      await safeInvoke("git_pull", { projectPath: projectRoot, repoPath });
       if (!isCancelled()) refresh();
     } catch (e) {
       if (!isCancelled()) setError(String(e));
@@ -211,7 +224,11 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     setPushing(true);
     setError(null);
     try {
-      await safeInvoke("git_push", { projectPath, branch: selectedBranch || null });
+      await safeInvoke("git_push", {
+        projectPath: projectRoot,
+        repoPath,
+        branch: selectedBranch || null,
+      });
       if (!isCancelled()) {
         refresh();
         await loadBranches();

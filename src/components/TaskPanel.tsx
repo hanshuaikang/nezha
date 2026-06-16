@@ -18,16 +18,21 @@ import type {
   TerminalScrollback,
   TaskDisplayWindow,
   FontFamily,
+  GitRoot,
 } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
+import { RepoSelector } from "./task-panel/RepoSelector";
 import { TaskList } from "./task-panel/TaskList";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
 export function TaskPanel({
   project,
+  repoPath,
+  gitRoots,
+  onSelectRoot,
   tasks,
   selectedId,
   isNewTask,
@@ -61,6 +66,11 @@ export function TaskPanel({
   onToggleCollapsed,
 }: {
   project: Project;
+  /** 当前活动 git 根（用于 BranchBar / 多仓库工作区切换） */
+  repoPath: string;
+  /** 项目下所有 git 根。仅当 length > 1 时渲染 RepoSelector。 */
+  gitRoots: GitRoot[];
+  onSelectRoot: (path: string) => void;
   tasks: Task[];
   selectedId: string | null;
   isNewTask: boolean;
@@ -177,8 +187,13 @@ export function TaskPanel({
         />
       </div>
 
+      {/* Repo selector (only multi-repo workspaces) */}
+      {gitRoots.length > 1 && (
+        <RepoSelector roots={gitRoots} selectedPath={repoPath} onSelect={onSelectRoot} />
+      )}
+
       {/* Branch bar */}
-      <BranchBar projectPath={project.path} active={active} />
+      <BranchBar projectRoot={project.path} repoPath={repoPath} active={active} />
 
       {/* New Task row */}
       <button

@@ -58,6 +58,8 @@ pub struct Task {
     pub worktree_path: Option<String>,
     #[serde(rename = "worktreeBranch", skip_serializing_if = "Option::is_none")]
     pub worktree_branch: Option<String>,
+    #[serde(rename = "worktreeRepo", skip_serializing_if = "Option::is_none")]
+    pub worktree_repo: Option<String>,
     #[serde(rename = "baseBranch", skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
     #[serde(rename = "worktreeDiscarded", skip_serializing_if = "Option::is_none")]

@@ -29,6 +29,7 @@ import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTermin
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useToast } from "./Toast";
 import { useProjectPanels } from "../hooks/useProjectPanels";
+import { useGitRoots } from "../hooks/useGitRoots";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
@@ -112,6 +113,8 @@ export function ProjectPage({
     immediate: boolean;
     launchMode: "local" | "worktree";
     baseBranch: string;
+    /** 任务关联的 git 根（worktree 创建于此） */
+    repoPath: string;
   }) => void;
   onRunTodoTask: (task: Task) => void;
   onUpdateTodo: (
@@ -206,12 +209,17 @@ export function ProjectPage({
     [tasks, project.id],
   );
   const selectedTask = projectTasks.find((t) => t.id === selectedTaskId) ?? null;
-  // GitChanges/GitHistory 的 cwd：worktree 任务用 worktree 路径，否则用主仓。
+
+  // 工作区项目可能包含多个 sub-repo，selectedRoot.path 为当前活动的 git 根（缺省回落 project.path）。
+  const { roots: gitRoots, selectedRoot, setSelectedRoot } = useGitRoots(project.id, project.path);
+  const subRepoPath = selectedRoot?.path ?? project.path;
+
+  // GitChanges/GitHistory 的 cwd：worktree 任务用 worktree 路径，否则用 sub-repo（或单仓库的 project.path）。
   // 主仓 git status 看不到 worktree 内未提交修改，必须切到 worktree cwd 才能查看 / 暂存 / 提交。
   const gitContextPath =
     selectedTask?.worktreePath && !selectedTask.worktreeDiscarded
       ? selectedTask.worktreePath
-      : project.path;
+      : subRepoPath;
 
   const handleSearchFileSelect = useCallback(
     (path: string, name: string) => {
@@ -375,6 +383,9 @@ export function ProjectPage({
       />
       <TaskPanel
         project={project}
+        repoPath={subRepoPath}
+        gitRoots={gitRoots}
+        onSelectRoot={setSelectedRoot}
         tasks={projectTasks}
         selectedId={selectedTaskId}
         isNewTask={isNewTask}
@@ -446,7 +457,8 @@ export function ProjectPage({
             {openDiff ? (
               openDiff.kind === "file" ? (
                 <GitDiffViewer
-                  projectPath={gitContextPath}
+                  projectRoot={project.path}
+                  repoPath={gitContextPath}
                   mode="file"
                   filePath={openDiff.filePath}
                   staged={openDiff.staged}
@@ -455,7 +467,8 @@ export function ProjectPage({
                 />
               ) : openDiff.kind === "commit-file" ? (
                 <GitDiffViewer
-                  projectPath={gitContextPath}
+                  projectRoot={project.path}
+                  repoPath={gitContextPath}
                   mode="commit-file"
                   commitHash={openDiff.hash}
                   filePath={openDiff.filePath}
@@ -464,7 +477,8 @@ export function ProjectPage({
                 />
               ) : (
                 <GitDiffViewer
-                  projectPath={gitContextPath}
+                  projectRoot={project.path}
+                  repoPath={gitContextPath}
                   mode="commit"
                   commitHash={openDiff.hash}
                   title={openDiff.message}
@@ -488,8 +502,11 @@ export function ProjectPage({
             ) : isNewTask || !selectedTask ? (
               <NewTaskView
                 project={project}
+                repoPath={subRepoPath}
+                roots={gitRoots}
+                onSetRepoPath={setSelectedRoot}
                 otherProjects={otherProjects}
-                onSubmit={onSubmitTask}
+                onSubmit={(t) => onSubmitTask({ ...t, repoPath: subRepoPath })}
                 initialDraft={newTaskDraftRef.current}
                 onCacheDraft={handleCacheNewTaskDraft}
               />
@@ -593,7 +610,8 @@ export function ProjectPage({
           {rightPanel === "git-changes" && (
             <ErrorBoundary label="Git 变更">
               <GitChanges
-                projectPath={gitContextPath}
+                projectRoot={project.path}
+                repoPath={gitContextPath}
                 currentTaskCreatedAt={currentTaskCreatedAt}
                 onFileSelect={handleDiffFileSelectWithCollapse}
                 width={rightPanelWidth}
@@ -603,7 +621,8 @@ export function ProjectPage({
           {rightPanel === "git-history" && (
             <ErrorBoundary label="Git 历史">
               <GitHistory
-                projectPath={gitContextPath}
+                projectRoot={project.path}
+                repoPath={gitContextPath}
                 onCommitSelect={handleCommitSelectWithCollapse}
                 onFileClick={handleCommitFileClickWithCollapse}
                 width={rightPanelWidth}

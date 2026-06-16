@@ -42,6 +42,7 @@ export function useWorktreeDiffStats({ projects, tasks, setTasks, persistTasks }
       pendingRef.current.add(task.id);
       invoke<{ additions: number; deletions: number }>("worktree_diff_stats", {
         projectPath: project.path,
+        repoPath: task.worktreeRepo ?? project.path,
         worktreePath: task.worktreePath,
         baseBranch: task.baseBranch,
       })

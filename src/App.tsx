@@ -726,6 +726,7 @@ function App() {
       immediate,
       launchMode,
       baseBranch,
+      repoPath,
     }: {
       prompt: string;
       agent: AgentType;
@@ -735,8 +736,12 @@ function App() {
       immediate: boolean;
       launchMode: "local" | "worktree";
       baseBranch: string;
+      /** 任务关联的 git 根（worktree 创建于此目录的 .nezha/worktrees）。
+       *  缺省时回落 project.path，向后兼容老调用方。 */
+      repoPath?: string;
     },
   ) {
+    const effectiveRepoPath = repoPath ?? project.path;
     const taskId = `${Date.now()}`;
 
     if (launchMode === "worktree" && !baseBranch) {
@@ -785,6 +790,7 @@ function App() {
           baseBranch: string;
         }>("create_task_worktree", {
           projectPath: project.path,
+          repoPath: effectiveRepoPath,
           taskId,
           baseBranch,
         });
@@ -795,7 +801,13 @@ function App() {
         setTasks((prev) => {
           const next = prev.map((tk) =>
             tk.id === taskId
-              ? { ...tk, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch }
+              ? {
+                  ...tk,
+                  worktreePath,
+                  worktreeBranch,
+                  baseBranch: resolvedBaseBranch,
+                  worktreeRepo: effectiveRepoPath,
+                }
               : tk,
           );
           persistProjectTasks(baseTask.projectId, next, showToast, formatSaveTasksError);
@@ -815,8 +827,14 @@ function App() {
     }
 
     invokeRunTask(
-      { ...baseTask, worktreePath, worktreeBranch, baseBranch: resolvedBaseBranch },
-      worktreePath ?? project.path,
+      {
+        ...baseTask,
+        worktreePath,
+        worktreeBranch,
+        baseBranch: resolvedBaseBranch,
+        worktreeRepo: worktreePath ? effectiveRepoPath : undefined,
+      },
+      worktreePath ?? effectiveRepoPath,
       images,
       texts,
     );
@@ -865,6 +883,7 @@ function App() {
     try {
       await invoke("merge_task_worktree", {
         projectPath: project.path,
+        repoPath: task.worktreeRepo ?? project.path,
         worktreePath: task.worktreePath,
         branch: task.worktreeBranch,
         baseBranch: task.baseBranch,
@@ -872,6 +891,7 @@ function App() {
       // 合并成功后顺手把 worktree 与分支清掉，避免遗留残留
       await invoke("remove_task_worktree", {
         projectPath: project.path,
+        repoPath: task.worktreeRepo ?? project.path,
         worktreePath: task.worktreePath,
         branch: task.worktreeBranch,
       }).catch(() => {});
@@ -894,6 +914,7 @@ function App() {
     try {
       await invoke("remove_task_worktree", {
         projectPath: project.path,
+        repoPath: task.worktreeRepo ?? project.path,
         worktreePath: task.worktreePath,
         branch: task.worktreeBranch,
       });
@@ -1011,6 +1032,7 @@ function App() {
     if (!task.worktreePath || !task.worktreeBranch || task.worktreeDiscarded) return;
     invoke("remove_task_worktree", {
       projectPath,
+      repoPath: task.worktreeRepo ?? projectPath,
       worktreePath: task.worktreePath,
       branch: task.worktreeBranch,
     }).catch((e: unknown) => {

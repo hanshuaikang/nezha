@@ -12,12 +12,14 @@ interface GitBranchInfo {
 }
 
 function BranchDialog({
-  projectPath,
+  projectRoot,
+  repoPath,
   branches,
   onClose,
   onCreated,
 }: {
-  projectPath: string;
+  projectRoot: string;
+  repoPath: string;
   branches: GitBranchInfo[];
   onClose: () => void;
   onCreated: () => void;
@@ -61,7 +63,8 @@ function BranchDialog({
       setError("");
       try {
         await invoke("git_create_branch", {
-          projectPath,
+          projectPath: projectRoot,
+          repoPath,
           branchName: name,
           fromBranch,
           checkout,
@@ -73,7 +76,7 @@ function BranchDialog({
         setLoading(false);
       }
     },
-    [branchName, fromBranch, projectPath, onCreated],
+    [branchName, fromBranch, projectRoot, repoPath, onCreated],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -312,10 +315,12 @@ function BranchDialog({
 }
 
 export function BranchBar({
-  projectPath,
+  projectRoot,
+  repoPath,
   active = true,
 }: {
-  projectPath: string;
+  projectRoot: string;
+  repoPath: string;
   active?: boolean;
 }) {
   const { t } = useI18n();
@@ -333,7 +338,10 @@ export function BranchBar({
     if (inflightRef.current) return inflightRef.current;
     const p = (async () => {
       try {
-        const result = await invoke<GitBranchInfo[]>("git_list_branches", { projectPath });
+        const result = await invoke<GitBranchInfo[]>("git_list_branches", {
+          projectPath: projectRoot,
+          repoPath,
+        });
         setBranches(result);
       } catch {
         // not a git repo or git not available
@@ -343,7 +351,7 @@ export function BranchBar({
     })();
     inflightRef.current = p;
     return p;
-  }, [projectPath]);
+  }, [projectRoot, repoPath]);
 
   useEffect(() => {
     if (!active) return;
@@ -388,7 +396,8 @@ export function BranchBar({
     setSwitchError("");
     try {
       await invoke("git_checkout_branch", {
-        projectPath,
+        projectPath: projectRoot,
+        repoPath,
         branchName: branch.name,
         isRemote: branch.remote !== null,
       });
@@ -588,7 +597,8 @@ export function BranchBar({
 
       {showDialog && (
         <BranchDialog
-          projectPath={projectPath}
+          projectRoot={projectRoot}
+          repoPath={repoPath}
           branches={branches}
           onClose={() => setShowDialog(false)}
           onCreated={() => {
