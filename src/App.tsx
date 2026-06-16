@@ -150,7 +150,7 @@ function getInitialThemeMode(): ThemeMode {
 }
 
 function resolveThemeVariant(mode: ThemeMode, systemPrefersDark: boolean): ThemeVariant {
-  if (mode === "system") return systemPrefersDark ? "dark" : "light";
+  if (mode === "system") return systemPrefersDark ? "midnight" : "light";
   return mode;
 }
 
@@ -335,12 +335,13 @@ function App() {
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
-      // Toggle only cycles between the two standard variants. Special themes
-      // (eyecare and any future opt-in variants) retreat to "light" so the
-      // shortcut remains a one-tap escape hatch back to the canonical pair.
-      if (currentMode === "dark") return "light";
-      if (currentMode === "light") return "dark";
-      if (currentMode === "system") return systemPrefersDark ? "light" : "dark";
+      // Toggle only cycles between the canonical light/dark pair. The dark side
+      // defaults to midnight (neutral near-black surfaces); eyecare and any
+      // future opt-in variants retreat to "light" so the shortcut remains a
+      // one-tap escape hatch.
+      if (currentMode === "dark" || currentMode === "midnight") return "light";
+      if (currentMode === "light") return "midnight";
+      if (currentMode === "system") return systemPrefersDark ? "light" : "midnight";
       return "light";
     });
   }, [systemPrefersDark]);

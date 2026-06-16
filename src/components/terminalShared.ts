@@ -96,7 +96,12 @@ export function themeFor(variant: ThemeVariant) {
 }
 
 export function minimumContrastRatioFor(variant: ThemeVariant): number {
-  return variant === "dark" ? 1 : 4.5;
+  // Dark-family variants (dark / midnight) ship a hand-tuned palette already
+  // readable on their backgrounds, so we skip xterm's auto contrast lift to
+  // preserve the original ANSI hues. Light-family variants (light / eyecare)
+  // pair light surfaces with high-saturation ANSI defaults that fall below
+  // WCAG AA — there we let xterm bump foregrounds until they hit 4.5:1.
+  return variant === "dark" || variant === "midnight" ? 1 : 4.5;
 }
 
 export function applyTerminalTheme(term: Terminal, variant: ThemeVariant): void {
