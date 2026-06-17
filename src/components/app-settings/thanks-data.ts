@@ -8,9 +8,12 @@
 
 // 贡献者头像
 import shouzi23333 from "../../assets/thanks/contributors/shouzi23333-rgb.jpg";
-import Mr54233 from "../../assets/thanks/contributors/Mr54233.jpg";
 import NAMEWTA from "../../assets/thanks/contributors/NAMEWTA.jpg";
+import Mr54233 from "../../assets/thanks/contributors/Mr54233.jpg";
+import lizhian from "../../assets/thanks/contributors/lizhian.png";
+import suntianc from "../../assets/thanks/contributors/suntianc.jpg";
 import leafyoung from "../../assets/thanks/contributors/leafyoung.jpg";
+import IvanYang9527 from "../../assets/thanks/contributors/IvanYang9527.jpg";
 import ZhiAo1120 from "../../assets/thanks/contributors/ZhiAo1120.jpg";
 import yixinshark from "../../assets/thanks/contributors/yixinshark.png";
 
@@ -25,6 +28,8 @@ import jaywcjlove from "../../assets/thanks/supporters/jaywcjlove.png";
 import vincentLogic from "../../assets/thanks/supporters/VincentLogic.png";
 import githubDaily from "../../assets/thanks/supporters/github_daily.png";
 import wwtlitee from "../../assets/thanks/supporters/wwtlitee.png";
+import guanggangGithub from "../../assets/thanks/supporters/guanggang_github.png";
+import amiaoapp from "../../assets/thanks/supporters/amiaoapp.png";
 
 export interface Contributor {
   /** GitHub 用户名，同时作为展示名 */
@@ -52,9 +57,12 @@ export interface Supporter {
 
 export const CONTRIBUTORS: Contributor[] = [
   { login: "shouzi23333-rgb", avatar: shouzi23333, profile: "https://github.com/shouzi23333-rgb" },
-  { login: "Mr54233", avatar: Mr54233, profile: "https://github.com/Mr54233" },
   { login: "NAMEWTA", avatar: NAMEWTA, profile: "https://github.com/NAMEWTA" },
+  { login: "Mr54233", avatar: Mr54233, profile: "https://github.com/Mr54233" },
+  { login: "lizhian", avatar: lizhian, profile: "https://github.com/lizhian" },
+  { login: "suntianc", avatar: suntianc, profile: "https://github.com/suntianc" },
   { login: "leafyoung", avatar: leafyoung, profile: "https://github.com/leafyoung" },
+  { login: "IvanYang9527", avatar: IvanYang9527, profile: "https://github.com/IvanYang9527" },
   { login: "ZhiAo1120", avatar: ZhiAo1120, profile: "https://github.com/ZhiAo1120" },
   { login: "yixinshark", avatar: yixinshark, profile: "https://github.com/yixinshark" },
 ];
@@ -70,4 +78,6 @@ export const SUPPORTERS: Supporter[] = [
   { name: "Vincent | 信号＞噪音", avatar: vincentLogic, link: "https://x.com/VincentLogic", action: "open" },
   { name: "GitHubDaily", avatar: githubDaily, link: "https://x.com/GitHub_Daily", action: "open" },
   { name: "奶牛叔", avatar: wwtlitee, link: "https://x.com/WWTLitee", action: "open" },
+  { name: "逛逛Github", avatar: guanggangGithub, action: "copy" },
+  { name: "APP喵", avatar: amiaoapp, link: "https://x.com/amiaoapp", action: "open" },
 ];
