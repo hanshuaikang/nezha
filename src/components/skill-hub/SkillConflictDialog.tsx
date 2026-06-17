@@ -25,7 +25,7 @@ export function SkillConflictDialog({ conflict, onChoose, onClose }: Props) {
 
   return (
     <div style={s.skillConflictOverlay} onClick={handleOverlayClick}>
-      <div style={s.skillConflictBox}>
+      <div style={s.skillConflictBox} data-shortcut-scope="ignore">
         <div style={s.skillConflictHeader}>
           <AlertTriangle size={18} strokeWidth={2} color="var(--warning)" />
           <span>{t("skill.conflict.title")}</span>

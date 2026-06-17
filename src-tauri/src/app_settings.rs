@@ -26,6 +26,153 @@ fn default_shift_enter_newline() -> bool {
     true
 }
 
+fn default_enabled() -> bool {
+    true
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShortcutModifiers {
+    #[serde(default)]
+    pub meta: bool,
+    #[serde(default)]
+    pub ctrl: bool,
+    #[serde(default)]
+    pub alt: bool,
+    #[serde(default)]
+    pub shift: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutBinding {
+    pub action: String,
+    pub key: String,
+    #[serde(default)]
+    pub modifiers: ShortcutModifiers,
+    #[serde(default)]
+    pub slot_range: Option<[u8; 2]>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_shortcuts() -> Vec<ShortcutBinding> {
+    let (project_modifiers, task_modifiers) = if cfg!(target_os = "macos") {
+        (
+            ShortcutModifiers {
+                meta: true,
+                ..Default::default()
+            },
+            ShortcutModifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+        )
+    } else {
+        (
+            ShortcutModifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+            ShortcutModifiers {
+                alt: true,
+                ..Default::default()
+            },
+        )
+    };
+
+    vec![
+        ShortcutBinding {
+            action: "switch_project_slot".to_string(),
+            key: "Digit1".to_string(),
+            modifiers: project_modifiers.clone(),
+            slot_range: Some([1, 9]),
+            enabled: true,
+        },
+        ShortcutBinding {
+            action: "switch_task_slot".to_string(),
+            key: "Digit1".to_string(),
+            modifiers: task_modifiers,
+            slot_range: Some([1, 9]),
+            enabled: true,
+        },
+        ShortcutBinding {
+            action: "new_task".to_string(),
+            key: "KeyN".to_string(),
+            modifiers: project_modifiers.clone(),
+            slot_range: None,
+            enabled: true,
+        },
+        ShortcutBinding {
+            action: "open_project_switcher".to_string(),
+            key: "Digit0".to_string(),
+            modifiers: project_modifiers,
+            slot_range: None,
+            enabled: true,
+        },
+    ]
+}
+
+fn is_supported_shortcut_action(action: &str) -> bool {
+    matches!(
+        action,
+        "switch_project_slot" | "switch_task_slot" | "new_task" | "open_project_switcher"
+    )
+}
+
+fn normalize_shortcut_key(key: &str, fallback: &str) -> String {
+    if matches!(key, "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9")
+        || matches!(key, "Numpad0" | "Numpad1" | "Numpad2" | "Numpad3" | "Numpad4" | "Numpad5" | "Numpad6" | "Numpad7" | "Numpad8" | "Numpad9")
+        || (key.len() == 4
+            && key.starts_with("Key")
+            && key.as_bytes()[3].is_ascii_uppercase())
+    {
+        key.to_string()
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn normalize_slot_range(value: Option<[u8; 2]>) -> Option<[u8; 2]> {
+    let [start, end] = value?;
+    if !(1..=9).contains(&start) || !(1..=9).contains(&end) || start > end {
+        return None;
+    }
+    Some([start, end])
+}
+
+fn normalize_shortcuts(shortcuts: Vec<ShortcutBinding>) -> Vec<ShortcutBinding> {
+    let defaults = default_shortcuts();
+    let mut normalized = defaults.clone();
+
+    for incoming in shortcuts {
+        if !is_supported_shortcut_action(&incoming.action) {
+            continue;
+        }
+        if let Some(index) = normalized
+            .iter()
+            .position(|binding| binding.action == incoming.action)
+        {
+            let default = &defaults[index];
+            let slot_range = if incoming.action == "switch_project_slot"
+                || incoming.action == "switch_task_slot"
+            {
+                normalize_slot_range(incoming.slot_range).or(default.slot_range)
+            } else {
+                None
+            };
+            normalized[index] = ShortcutBinding {
+                action: incoming.action,
+                key: normalize_shortcut_key(&incoming.key, &default.key),
+                modifiers: incoming.modifiers,
+                slot_range,
+                enabled: incoming.enabled,
+            };
+        }
+    }
+
+    normalized
+}
+
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static CACHED_CODEX_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static SETTINGS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -48,6 +195,8 @@ pub struct AppSettings {
     pub send_shortcut: String,
     #[serde(default = "default_shift_enter_newline")]
     pub terminal_shift_enter_newline: bool,
+    #[serde(default = "default_shortcuts")]
+    pub shortcuts: Vec<ShortcutBinding>,
 }
 
 impl Default for AppSettings {
@@ -57,6 +206,7 @@ impl Default for AppSettings {
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
+            shortcuts: default_shortcuts(),
         }
     }
 }
@@ -314,6 +464,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
         terminal_shift_enter_newline: settings.terminal_shift_enter_newline,
+        shortcuts: normalize_shortcuts(settings.shortcuts),
     }
 }
 
@@ -329,6 +480,7 @@ fn load_settings_unlocked() -> AppSettings {
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
+            shortcuts: default_shortcuts(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -360,14 +512,6 @@ pub fn load_settings_internal() -> AppSettings {
 
 pub fn get_agent_launch_spec(agent: &str) -> AgentLaunchSpec {
     get_agent_launch_spec_from_settings(&load_settings_internal(), agent)
-}
-
-/// codex 是否真正可用：实际执行 `codex --version` 成功才算（走全局带缓存的探测，
-/// 与 `hooks::usable_for` 同源）。不能用 launch spec 的 `program` 是否非空来判断——
-/// 路径解析在二进制缺失时会回退成裸名 `"codex"`，导致永远非空、永远误判为已安装。
-/// 注意：只验证二进制能否运行，不验证登录状态，未登录的 codex 调用仍会在运行时失败。
-pub fn codex_available() -> bool {
-    detect_codex_version().is_some()
 }
 
 #[tauri::command]
@@ -439,6 +583,25 @@ pub async fn save_shift_enter_newline(enabled: bool) -> Result<AppSettings, Stri
         let _guard = settings_lock().lock();
         let mut settings = load_settings_unlocked();
         settings.terminal_shift_enter_newline = enabled;
+
+        let dir = nezha_dir()?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = settings_path()?;
+        let normalized = normalize_settings(settings);
+        let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+        atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(normalized)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_shortcuts(shortcuts: Vec<ShortcutBinding>) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.shortcuts = normalize_shortcuts(shortcuts);
 
         let dir = nezha_dir()?;
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

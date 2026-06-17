@@ -187,18 +187,6 @@ body {
 .branch-popover-item:hover {
   background: var(--bg-hover);
 }
-/* 感谢页卡片：底色 / 描边 / hover（布局样式见 styles/panels.ts 的 thanksCard） */
-.thanks-card {
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-dim);
-  transition:
-    background 0.15s,
-    border-color 0.15s;
-}
-.thanks-card:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-medium);
-}
 .branch-popover-item-name {
   flex: 1;
   overflow: hidden;
@@ -241,32 +229,6 @@ body {
   animation: spin 1s linear infinite;
 }
 
-/* 待确认任务新增时,小人从头像背后探出头招手再缩回去 */
-/* 只做 translate3d + opacity(都走合成层,不触发重排/重绘);中段保持静止,
-   纯由 gif 自己播挥手,避免 CSS 位移与 gif 逐帧重绘互相打架导致的顿挫。 */
-@keyframes rail-mascot-wave {
-  0% {
-    transform: translate3d(-18px, 0, 0);
-    opacity: 0;
-  }
-  18% {
-    transform: translate3d(20px, 0, 0);
-    opacity: 1;
-  }
-  85% {
-    transform: translate3d(20px, 0, 0);
-    opacity: 1;
-  }
-  100% {
-    transform: translate3d(-18px, 0, 0);
-    opacity: 0;
-  }
-}
-.rail-mascot-wave {
-  animation: rail-mascot-wave 3.6s ease-in-out both;
-  will-change: transform, opacity;
-}
-
 @keyframes rail-active-breathe {
   0%,
   100% {
@@ -297,69 +259,6 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-hint);
-}
-
-.nezha-xterm-host {
-  --xterm-scrollbar-width: 12px;
-  --xterm-scrollbar-thumb: rgba(126, 136, 153, 0.48);
-  --xterm-scrollbar-thumb-hover: rgba(148, 158, 176, 0.68);
-}
-
-.nezha-xterm-host .xterm .xterm-screen {
-  margin-right: var(--xterm-scrollbar-width);
-}
-
-.nezha-xterm-host:not(.nezha-shell-xterm-host) .xterm-screen {
-  margin-left: auto;
-}
-
-.nezha-xterm-host .xterm .xterm-viewport {
-  scrollbar-width: none;
-}
-
-.nezha-xterm-host .xterm .xterm-viewport::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.nezha-xterm-host .xterm .xterm-decoration-overview-ruler {
-  display: none !important;
-}
-
-.nezha-xterm-host .xterm .xterm-scrollable-element {
-  overflow: visible;
-}
-
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical {
-  width: var(--xterm-scrollbar-width) !important;
-  right: 0 !important;
-  background: transparent !important;
-  pointer-events: auto !important;
-}
-
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical.invisible.fade {
-  transition-duration: 520ms;
-}
-
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
-  left: auto !important;
-  right: 0;
-  width: 6px !important;
-  border-radius: 999px;
-  background: var(--xterm-scrollbar-thumb) !important;
-  opacity: 0;
-  transition: opacity 140ms ease-out, background 140ms ease-out;
-}
-
-.nezha-xterm-host.nezha-xterm-scrolling .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider,
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
-  opacity: 1;
-}
-
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
-.nezha-xterm-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
-  background: var(--xterm-scrollbar-thumb-hover) !important;
 }
 
 .file-viewer-tab-strip {

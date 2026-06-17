@@ -101,7 +101,7 @@ export function SkillInstallDialog({
   return (
     <>
       <div style={s.skillInstallOverlay} onClick={handleOverlayClick}>
-        <div style={s.skillInstallDialogBox}>
+        <div style={s.skillInstallDialogBox} data-shortcut-scope="ignore">
           <div style={s.skillInstallDialogHeader}>
             <div style={s.skillInstallDialogTitle}>
               {t("skill.install.title", { name: skill.displayName || skill.name })}

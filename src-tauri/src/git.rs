@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -123,67 +123,6 @@ fn run_git_check<S: AsRef<std::ffi::OsStr>>(project_path: &str, args: &[S]) -> R
     Ok(())
 }
 
-fn git_command_error(output: &Output, fallback: &str) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let message = format!("{}{}", stderr, stdout).trim().to_string();
-    if message.is_empty() {
-        fallback.to_string()
-    } else {
-        message
-    }
-}
-
-fn validate_git_relative_path(relative_path: &str) -> Result<(), String> {
-    if relative_path.is_empty() {
-        return Err("File path must not be empty".to_string());
-    }
-
-    let path = Path::new(relative_path);
-    if path.is_absolute() {
-        return Err("File path must be relative".to_string());
-    }
-
-    for component in path.components() {
-        match component {
-            std::path::Component::ParentDir
-            | std::path::Component::RootDir
-            | std::path::Component::Prefix(_) => {
-                return Err("File path must stay inside the git worktree".to_string());
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-fn unique_git_file_paths(file_paths: Vec<String>) -> Result<Vec<String>, String> {
-    let mut seen = HashSet::new();
-    let mut paths = Vec::new();
-
-    for file_path in file_paths {
-        validate_git_relative_path(&file_path)?;
-        if seen.insert(file_path.clone()) {
-            paths.push(file_path);
-        }
-    }
-
-    Ok(paths)
-}
-
-fn git_path_args(base_args: &[&str], file_paths: Vec<String>) -> Result<Vec<String>, String> {
-    let paths = unique_git_file_paths(file_paths)?;
-    if paths.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut args: Vec<String> = base_args.iter().map(|arg| (*arg).to_string()).collect();
-    args.push("--".to_string());
-    args.extend(paths);
-    Ok(args)
-}
-
 fn git_worktree_root(project_path: &str) -> Result<PathBuf, String> {
     let output = run_git(project_path, &["rev-parse", "--show-toplevel"])?;
     if !output.status.success() {
@@ -293,15 +232,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     // 2. Read project config for prompt and default agent
     let config = crate::config::read_project_config(project_path.clone())?;
     let commit_prompt = config.git.commit_prompt;
-    let timeout_secs = config.git.commit_message_timeout_secs.clamp(1, 120);
-    // 临时策略：claude `-p` 计费变动期间，提交信息一律改用 codex（headless）生成，
-    // 规避 claude headless 额度消耗。codex 未安装则直接报错——不回落项目默认 agent
-    // （claude -p 当前不可用，回落也无意义）。
-    let agent = if crate::app_settings::codex_available() {
-        "codex".to_string()
-    } else {
-        return Err("codex 未安装，无法生成提交信息。请安装 codex 后重试。".to_string());
-    };
+    let agent = config.agent.default;
 
     // 3. Build full prompt
     let full_prompt = format!(
@@ -309,15 +240,15 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
         commit_prompt, diff
     );
 
-    // 4. Run agent in non-interactive exec mode with configurable timeout
+    // 4. Run agent in non-interactive exec mode with 15 second timeout
     let output = tokio::time::timeout(
-        Duration::from_secs(timeout_secs),
+        Duration::from_secs(15),
         tokio::task::spawn_blocking(move || {
             run_agent_commit_message_command(&agent, &project_path, &full_prompt)
         }),
     )
     .await
-    .map_err(|_| format!("生成提交信息超时（{}秒）", timeout_secs))?
+    .map_err(|_| "生成提交信息超时（15秒）".to_string())?
     .map_err(|e| format!("生成提交信息线程错误: {}", e))??;
 
     if !output.status.success() {
@@ -804,61 +735,7 @@ pub async fn git_stage(project_path: String, file_path: String) -> Result<(), St
 
 #[tauri::command]
 pub async fn git_unstage(project_path: String, file_path: String) -> Result<(), String> {
-    if git_has_head(&project_path)? {
-        run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
-    } else {
-        // 首次提交前无 HEAD，改用 `git reset` 将暂存项退回。
-        run_git_check(&project_path, &["reset", "--", &file_path])
-    }
-}
-
-#[tauri::command]
-pub async fn git_stage_files(project_path: String, file_paths: Vec<String>) -> Result<(), String> {
-    let args = git_path_args(&["add"], file_paths)?;
-    if args.is_empty() {
-        return Ok(());
-    }
-
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
-    if !output.status.success() {
-        return Err(git_command_error(&output, "Failed to stage files"));
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn git_unstage_files(
-    project_path: String,
-    file_paths: Vec<String>,
-) -> Result<(), String> {
-    // 首次提交前无 HEAD，`git restore --staged` 会失败，退回到不依赖 HEAD 的 `git reset`。
-    // 此处用异步 run_git_with_timeout（而非同步 git_has_head）做检测，避免阻塞 Tokio 运行时。
-    let head_check = run_git_with_timeout(
-        project_path.clone(),
-        vec![
-            "rev-parse".to_string(),
-            "--verify".to_string(),
-            "HEAD".to_string(),
-        ],
-        Duration::from_secs(5),
-    )
-    .await?;
-    let base: &[&str] = if head_check.status.success() {
-        &["restore", "--staged"]
-    } else {
-        &["reset"]
-    };
-
-    let args = git_path_args(base, file_paths)?;
-    if args.is_empty() {
-        return Ok(());
-    }
-
-    let output = run_git_with_timeout(project_path, args, Duration::from_secs(10)).await?;
-    if !output.status.success() {
-        return Err(git_command_error(&output, "Failed to unstage files"));
-    }
-    Ok(())
+    run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
 }
 
 #[tauri::command]
@@ -994,11 +871,10 @@ fn trash_worktree_relative_path(
     trash::delete(&resolved).map_err(|e| e.to_string())
 }
 
-fn discard_untracked_path(
+fn discard_untracked_file(
     project_path: &str,
     worktree_root: &Path,
     relative_path: &str,
-    untracked_files: &[String],
 ) -> Result<(), String> {
     let rel = Path::new(relative_path);
     if rel.is_absolute() {
@@ -1013,40 +889,27 @@ fn discard_untracked_path(
         .symlink_metadata()
         .map_err(|_| "Path does not exist".to_string())?;
 
-    if metadata.file_type().is_dir() {
-        for rel in untracked_files_under_directory(relative_path, untracked_files) {
-            if is_protected_worktree_relative_path(worktree_root, project_path, rel) {
-                continue;
-            }
-            trash_worktree_relative_path(worktree_root, project_path, rel)?;
-        }
-        return Ok(());
-    }
-
-    if !is_listed_untracked_file(relative_path, untracked_files) {
-        return Err("Path is not an untracked file".to_string());
-    }
-
-    trash_worktree_relative_path(worktree_root, project_path, relative_path)
-}
-
-fn discard_untracked_file(
-    project_path: &str,
-    worktree_root: &Path,
-    relative_path: &str,
-) -> Result<(), String> {
     let worktree_root = worktree_root
         .canonicalize()
         .map_err(|e| format!("Cannot resolve git worktree root: {}", e))?;
     let worktree_root_string = path_to_string(&worktree_root)?;
     let untracked_files = list_untracked_files(&worktree_root_string)?;
 
-    discard_untracked_path(
-        project_path,
-        &worktree_root,
-        relative_path,
-        &untracked_files,
-    )
+    if metadata.file_type().is_dir() {
+        for rel in untracked_files_under_directory(relative_path, &untracked_files) {
+            if is_protected_worktree_relative_path(&worktree_root, project_path, rel) {
+                continue;
+            }
+            trash_worktree_relative_path(&worktree_root, project_path, rel)?;
+        }
+        return Ok(());
+    }
+
+    if !is_listed_untracked_file(relative_path, &untracked_files) {
+        return Err("Path is not an untracked file".to_string());
+    }
+
+    trash_worktree_relative_path(&worktree_root, project_path, relative_path)
 }
 
 fn list_untracked_files(project_path: &str) -> Result<Vec<String>, String> {
@@ -1096,42 +959,6 @@ pub async fn git_discard_file(
         } else {
             run_git_check(&worktree_root_string, &["restore", "--", &file_path])
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn git_discard_files(
-    project_path: String,
-    file_paths: Vec<String>,
-    untracked: bool,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        validate_project_path(&project_path)?;
-        let file_paths = unique_git_file_paths(file_paths)?;
-        if file_paths.is_empty() {
-            return Ok(());
-        }
-
-        let worktree_root = git_worktree_root(&project_path)?;
-        let worktree_root_string = path_to_string(&worktree_root)?;
-        if untracked {
-            let untracked_files = list_untracked_files(&worktree_root_string)?;
-            for file_path in file_paths {
-                discard_untracked_path(
-                    &project_path,
-                    &worktree_root,
-                    &file_path,
-                    &untracked_files,
-                )?;
-            }
-            return Ok(());
-        }
-
-        let mut args = vec!["restore".to_string(), "--".to_string()];
-        args.extend(file_paths);
-        run_git_check(&worktree_root_string, &args)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1341,7 +1168,14 @@ pub async fn create_task_worktree(
 
         let output = run_git(
             &project_path,
-            &["worktree", "add", &wt_path_str, "-b", &branch, &base_branch],
+            &[
+                "worktree",
+                "add",
+                &wt_path_str,
+                "-b",
+                &branch,
+                &base_branch,
+            ],
         )?;
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
@@ -1374,9 +1208,7 @@ pub async fn merge_task_worktree(
         // 0) worktree 自身有未提交修改 → 拒绝合并，避免丢失工作进度
         let wt_status = run_git(&worktree_path, &["status", "--porcelain"])?;
         if !wt_status.status.success() {
-            return Err(String::from_utf8_lossy(&wt_status.stderr)
-                .trim()
-                .to_string());
+            return Err(String::from_utf8_lossy(&wt_status.stderr).trim().to_string());
         }
         if !wt_status.stdout.is_empty() {
             return Err(
@@ -1421,7 +1253,10 @@ pub async fn merge_task_worktree(
                 err.trim()
             ));
         }
-        Ok(format!("Fast-forwarded '{}' to '{}'", base_branch, branch))
+        Ok(format!(
+            "Fast-forwarded '{}' to '{}'",
+            base_branch, branch
+        ))
     })
     .await
     .map_err(|e| format!("Merge task panicked: {}", e))?

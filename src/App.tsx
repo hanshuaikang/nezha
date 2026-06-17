@@ -35,6 +35,7 @@ import { isHideWindowShortcut } from "./shortcuts";
 import { APP_PLATFORM } from "./platform";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
+import { useShortcutManager } from "./hooks/useShortcutManager";
 import { useI18n } from "./i18n";
 import s from "./styles";
 import "./App.css";
@@ -140,17 +141,13 @@ function getSystemPrefersDark() {
 
 function getInitialThemeMode(): ThemeMode {
   const stored = localStorage.getItem("nezha:theme");
-  return stored === "dark" ||
-    stored === "light" ||
-    stored === "system" ||
-    stored === "eyecare" ||
-    stored === "midnight"
+  return stored === "dark" || stored === "light" || stored === "system" || stored === "eyecare"
     ? stored
     : "system";
 }
 
 function resolveThemeVariant(mode: ThemeMode, systemPrefersDark: boolean): ThemeVariant {
-  if (mode === "system") return systemPrefersDark ? "midnight" : "light";
+  if (mode === "system") return systemPrefersDark ? "dark" : "light";
   return mode;
 }
 
@@ -204,6 +201,8 @@ function App() {
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
   const [skillHubConfig, setSkillHubConfig] = useState<SkillHubConfig | null>(null);
   const [hubMode, setHubMode] = useState(false);
+  const [activeTaskShortcutIds, setActiveTaskShortcutIds] = useState<string[]>([]);
+  const [openProjectSwitcherRequest, setOpenProjectSwitcherRequest] = useState(0);
 
   const tm = useTerminalManager();
   const pendingResumeStartsRef = useRef<Record<string, () => void>>({});
@@ -270,12 +269,7 @@ function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    // The midnight variant layers on top of the dark token set: it keeps the
-    // `dark` class (so it inherits every dark token) and adds `midnight` for the
-    // few near-black overrides (menu border / surface backgrounds) declared later
-    // in themes.css, which win by source order at equal specificity.
-    root.classList.toggle("dark", themeVariant === "dark" || themeVariant === "midnight");
-    root.classList.toggle("midnight", themeVariant === "midnight");
+    root.classList.toggle("dark", themeVariant === "dark");
     root.classList.toggle("eyecare", themeVariant === "eyecare");
     localStorage.setItem("nezha:theme", themeMode);
   }, [themeVariant, themeMode]);
@@ -284,11 +278,7 @@ function App() {
     // Tauri window theme only understands light/dark/null; map eyecare to light
     // so the native chrome (titlebar, scrollbars) stays in the light family.
     const nativeTheme =
-      themeMode === "system"
-        ? null
-        : themeMode === "dark" || themeMode === "midnight"
-          ? "dark"
-          : "light";
+      themeMode === "system" ? null : themeMode === "dark" ? "dark" : "light";
     getCurrentWindow()
       .setTheme(nativeTheme)
       .catch(console.error);
@@ -335,13 +325,12 @@ function App() {
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
-      // Toggle only cycles between the canonical light/dark pair. The dark side
-      // defaults to midnight (neutral near-black surfaces); eyecare and any
-      // future opt-in variants retreat to "light" so the shortcut remains a
-      // one-tap escape hatch.
-      if (currentMode === "dark" || currentMode === "midnight") return "light";
-      if (currentMode === "light") return "midnight";
-      if (currentMode === "system") return systemPrefersDark ? "light" : "midnight";
+      // Toggle only cycles between the two standard variants. Special themes
+      // (eyecare and any future opt-in variants) retreat to "light" so the
+      // shortcut remains a one-tap escape hatch back to the canonical pair.
+      if (currentMode === "dark") return "light";
+      if (currentMode === "light") return "dark";
+      if (currentMode === "system") return systemPrefersDark ? "light" : "dark";
       return "light";
     });
   }, [systemPrefersDark]);
@@ -463,7 +452,7 @@ function App() {
     });
   }
 
-  function handleProjectClick(project: Project) {
+  const handleProjectClick = useCallback((project: Project) => {
     const updated = { ...project, lastOpenedAt: Date.now() };
     setProjects((prev) => {
       const next = prev.map((p) => (p.id === project.id ? updated : p));
@@ -476,7 +465,7 @@ function App() {
     invoke("init_project_config", { projectPath: project.path }).catch((e: unknown) => {
       showToast(t("toast.initProjectConfigFailed", { error: String(e) }), "warning");
     });
-  }
+  }, [formatSaveProjectsError, mountProject, showToast, t]);
 
   function handleBack() {
     setActiveProject(null);
@@ -1084,6 +1073,44 @@ function App() {
     () => sortedProjects.filter((p) => p.id !== hubProjectId),
     [sortedProjects, hubProjectId],
   );
+  const activeRailProjects = useMemo(() => {
+    if (!activeProject) return [];
+    if (hubMode && activeProject.id === hubProjectId) return [activeProject];
+    return railProjects
+      .filter((p) => p.id !== hubProjectId)
+      .filter((p) => !p.hiddenFromRail || p.id === activeProject.id);
+  }, [activeProject, hubMode, hubProjectId, railProjects]);
+  const projectShortcutSlots = useMemo(
+    () =>
+      activeRailProjects.slice(0, 9).map((project) => ({
+        id: project.id,
+        onSwitch: () => handleProjectClick(project),
+      })),
+    [activeRailProjects, handleProjectClick],
+  );
+  const taskShortcutSlots = useMemo(
+    () =>
+      activeProject
+        ? activeTaskShortcutIds.slice(0, 9).map((taskId) => ({
+            id: taskId,
+            onSelect: () => updateProjectView(activeProject.id, { selectedTaskId: taskId, isNewTask: false }),
+          }))
+        : [],
+    [activeProject, activeTaskShortcutIds, updateProjectView],
+  );
+  const shortcutHints = useShortcutManager({
+    platform: APP_PLATFORM,
+    enabled: !!activeProject,
+    projectSlots: projectShortcutSlots,
+    taskSlots: taskShortcutSlots,
+    onNewTask: () => {
+      if (!activeProject) return;
+      updateProjectView(activeProject.id, { selectedTaskId: null, isNewTask: true });
+    },
+    onOpenProjectSwitcher: () => {
+      setOpenProjectSwitcherRequest((value) => value + 1);
+    },
+  });
 
   const handleEnterSkillHub = useCallback(() => {
     if (!hubProjectId) return;
@@ -1135,6 +1162,12 @@ function App() {
               otherProjects={otherProjectsFiltered}
               hubMode={isHubActive}
               onExitSkillHub={handleExitSkillHub}
+              shortcutLabelsByProjectId={shortcutHints.labelsByProjectId}
+              projectShortcutHintsVisible={shortcutHints.visibleGroup === "projects"}
+              shortcutLabelsByTaskId={shortcutHints.labelsByTaskId}
+              taskShortcutHintsVisible={shortcutHints.visibleGroup === "tasks"}
+              openProjectSwitcherRequest={activeProject?.id === project.id ? openProjectSwitcherRequest : 0}
+              onTaskShortcutIdsChange={setActiveTaskShortcutIds}
               tasks={tasks}
               getTaskRestoreState={tm.getTaskRestoreState}
               taskRunCounts={taskRunCounts}

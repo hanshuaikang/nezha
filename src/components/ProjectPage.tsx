@@ -12,6 +12,11 @@ import type {
   FontFamily,
 } from "../types";
 import { TaskPanel } from "./TaskPanel";
+import {
+  buildTaskListRows,
+  getTaskListShortcutIds,
+  type TaskListLabels,
+} from "./task-panel/TaskList";
 import { NewTaskView, type NewTaskDraft } from "./NewTaskView";
 import { RunningView } from "./RunningView";
 import { FileExplorer } from "./FileExplorer";
@@ -81,6 +86,12 @@ export function ProjectPage({
   onMonoFontFamilyChange,
   hubMode = false,
   onExitSkillHub,
+  shortcutLabelsByProjectId,
+  projectShortcutHintsVisible,
+  shortcutLabelsByTaskId,
+  taskShortcutHintsVisible,
+  openProjectSwitcherRequest = 0,
+  onTaskShortcutIdsChange,
 }: {
   project: Project;
   visible?: boolean;
@@ -147,6 +158,12 @@ export function ProjectPage({
   onMonoFontFamilyChange: (family: FontFamily) => void;
   hubMode?: boolean;
   onExitSkillHub?: () => void;
+  shortcutLabelsByProjectId?: Record<string, string>;
+  projectShortcutHintsVisible?: boolean;
+  shortcutLabelsByTaskId?: Record<string, string>;
+  taskShortcutHintsVisible?: boolean;
+  openProjectSwitcherRequest?: number;
+  onTaskShortcutIdsChange?: (taskIds: string[]) => void;
 }) {
   const { t } = useI18n();
   const {
@@ -164,7 +181,6 @@ export function ProjectPage({
     handleFileTabClose,
     handleCloseOtherFileTabs,
     handleCloseTabsToRight,
-    handleCloseTabsToLeft,
     handleCloseAllFileTabs,
     handleDiffFileSelect,
     handleCommitSelect,
@@ -178,6 +194,7 @@ export function ProjectPage({
   const [showSettings, setShowSettings] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
+  const [taskQuery, setTaskQuery] = useState("");
   const [mountedTaskIds, setMountedTaskIds] = useState<Set<string>>(() => new Set());
   const shellRef = useRef<ShellTerminalPanelHandle>(null);
   const pendingCmdRef = useRef<string | null>(null);
@@ -190,6 +207,29 @@ export function ProjectPage({
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId === project.id),
     [tasks, project.id],
+  );
+  const taskListLabels = useMemo<TaskListLabels>(
+    () => ({
+      needsAttention: t("task.needsAttention"),
+      pendingMerge: t("task.pendingMerge"),
+      starred: t("task.starred"),
+      todo: t("status.todo"),
+      today: t("task.today"),
+      earlier: t("task.earlier"),
+    }),
+    [t],
+  );
+  const taskShortcutIds = useMemo(
+    () =>
+      getTaskListShortcutIds(
+        buildTaskListRows({
+          tasks: projectTasks,
+          taskDisplayWindow,
+          query: taskQuery,
+          labels: taskListLabels,
+        }),
+      ),
+    [projectTasks, taskDisplayWindow, taskListLabels, taskQuery],
   );
   const selectedTask = projectTasks.find((t) => t.id === selectedTaskId) ?? null;
   // GitChanges/GitHistory 的 cwd：worktree 任务用 worktree 路径，否则用主仓。
@@ -229,6 +269,11 @@ export function ProjectPage({
     }
   }, [openDiff]);
 
+  useEffect(() => {
+    if (!visible) return;
+    onTaskShortcutIdsChange?.(taskShortcutIds);
+  }, [onTaskShortcutIdsChange, taskShortcutIds, visible]);
+
   const handleSelectTask = useCallback(
     (id: string) => {
       clearFileAndDiff();
@@ -262,36 +307,6 @@ export function ProjectPage({
     onNewTask();
   }, [onNewTask, clearFileAndDiff]);
 
-  const collapseTaskPanelForNewDiff = useCallback(() => {
-    if (!openDiff) {
-      setTaskPanelCollapsed(true);
-    }
-  }, [openDiff]);
-
-  const handleDiffFileSelectWithCollapse = useCallback(
-    (filePath: string, staged: boolean, label: string) => {
-      collapseTaskPanelForNewDiff();
-      handleDiffFileSelect(filePath, staged, label);
-    },
-    [collapseTaskPanelForNewDiff, handleDiffFileSelect],
-  );
-
-  const handleCommitSelectWithCollapse = useCallback(
-    (hash: string, message: string) => {
-      collapseTaskPanelForNewDiff();
-      handleCommitSelect(hash, message);
-    },
-    [collapseTaskPanelForNewDiff, handleCommitSelect],
-  );
-
-  const handleCommitFileClickWithCollapse = useCallback(
-    (hash: string, filePath: string, label: string) => {
-      collapseTaskPanelForNewDiff();
-      handleCommitFileClick(hash, filePath, label);
-    },
-    [collapseTaskPanelForNewDiff, handleCommitFileClick],
-  );
-
   const currentTaskCreatedAt = selectedTask?.createdAt ?? null;
 
   return (
@@ -319,12 +334,19 @@ export function ProjectPage({
         onSwitch={onSwitchProject}
         onOpen={onOpen}
         singleProjectMode={hubMode}
+        shortcutLabelsByProjectId={shortcutLabelsByProjectId}
+        shortcutHintsVisible={projectShortcutHintsVisible}
+        openDrawerRequest={openProjectSwitcherRequest}
       />
       <TaskPanel
         project={project}
         tasks={projectTasks}
         selectedId={selectedTaskId}
         isNewTask={isNewTask}
+        query={taskQuery}
+        onQueryChange={setTaskQuery}
+        shortcutLabelsByTaskId={shortcutLabelsByTaskId}
+        shortcutHintsVisible={taskShortcutHintsVisible}
         onNewTask={handleNewTask}
         onSelectTask={handleSelectTask}
         onDeleteTask={onDeleteTask}
@@ -425,7 +447,6 @@ export function ProjectPage({
                 onCloseTab={handleFileTabClose}
                 onCloseOtherTabs={handleCloseOtherFileTabs}
                 onCloseTabsToRight={handleCloseTabsToRight}
-                onCloseTabsToLeft={handleCloseTabsToLeft}
                 onCloseAllTabs={handleCloseAllFileTabs}
                 themeVariant={themeVariant}
                 onRunMakeTarget={handleRunMakeTarget}
@@ -534,7 +555,7 @@ export function ProjectPage({
               <GitChanges
                 projectPath={gitContextPath}
                 currentTaskCreatedAt={currentTaskCreatedAt}
-                onFileSelect={handleDiffFileSelectWithCollapse}
+                onFileSelect={handleDiffFileSelect}
                 width={rightPanelWidth}
               />
             </ErrorBoundary>
@@ -543,8 +564,8 @@ export function ProjectPage({
             <ErrorBoundary label="Git 历史">
               <GitHistory
                 projectPath={gitContextPath}
-                onCommitSelect={handleCommitSelectWithCollapse}
-                onFileClick={handleCommitFileClickWithCollapse}
+                onCommitSelect={handleCommitSelect}
+                onFileClick={handleCommitFileClick}
                 width={rightPanelWidth}
               />
             </ErrorBoundary>

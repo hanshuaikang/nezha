@@ -2,16 +2,6 @@ import type React from "react";
 
 import { ROW_HEIGHT } from "../components/file-explorer/types";
 
-// 感谢页卡片名称的共用排版，thanksName / thanksNameCopied 仅颜色不同。
-const thanksNameBase: React.CSSProperties = {
-  maxWidth: "100%",
-  fontSize: 11.5,
-  fontWeight: 600,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
 export const panels = {
   newTaskOuter: {
     flex: 1,
@@ -124,23 +114,6 @@ export const panels = {
     borderStyle: "solid" as const,
     borderWidth: 2,
     boxSizing: "border-box" as const,
-    // 必须高于 railAvatarStacked(zIndex:1),否则被抬层的头像盖住
-    zIndex: 2,
-  },
-  // 招手小人:绝对定位在头像右下,z-index 低于头像,缩回时被头像遮住
-  railMascot: {
-    position: "absolute" as const,
-    left: 14,
-    bottom: -3,
-    height: 40,
-    width: "auto" as const,
-    zIndex: 0,
-    pointerEvents: "none" as const,
-  },
-  // 头像抬到小人之上,使探头/缩回有被遮挡的层次
-  railAvatarStacked: {
-    position: "relative" as const,
-    zIndex: 1,
   },
   railAttentionBadge: {
     position: "absolute" as const,
@@ -162,8 +135,28 @@ export const panels = {
     borderWidth: 2,
     boxSizing: "border-box" as const,
     pointerEvents: "none" as const,
-    // 必须高于 railAvatarStacked(zIndex:1),否则被抬层的头像盖住
-    zIndex: 2,
+  },
+  railShortcutBadge: {
+    position: "absolute" as const,
+    bottom: -6,
+    left: -7,
+    minWidth: 22,
+    height: 16,
+    padding: "0 4px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 5,
+    border: "1px solid var(--border-medium)",
+    background: "var(--accent-subtle)",
+    color: "var(--accent)",
+    fontSize: 9.5,
+    fontWeight: 800,
+    lineHeight: 1,
+    boxSizing: "border-box" as const,
+    pointerEvents: "none" as const,
+    transition: "opacity 0.12s ease, transform 0.12s ease",
+    zIndex: 3,
   },
   // 通用设置：开关(toggle switch)
   settingToggle: {
@@ -1075,66 +1068,4 @@ export const panels = {
     whiteSpace: "nowrap" as const,
   },
   hooksPanelBtnDisabled: { opacity: 0.5, cursor: "not-allowed" as const },
-
-  // 感谢页（ThanksPanel）
-  thanksBody: {
-    flex: 1,
-    overflowY: "auto" as const,
-    padding: "18px 20px",
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 28,
-  },
-  thanksSection: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 12,
-  },
-  thanksSectionHeader: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 3,
-  },
-  thanksSectionTitle: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "var(--text-primary)",
-  },
-  thanksSectionDesc: {
-    fontSize: 12,
-    color: "var(--text-secondary)",
-    lineHeight: 1.5,
-  },
-  thanksGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
-    gap: 10,
-  },
-  // 卡片底色 / 描边 / hover 由 App.css 的 .thanks-card 负责，这里只管布局，
-  // 避免行内 background 覆盖样式表的 :hover。
-  thanksCard: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    gap: 7,
-    width: "100%",
-    minWidth: 0,
-    padding: "11px 8px",
-    borderRadius: 10,
-    cursor: "pointer",
-    font: "inherit",
-    color: "inherit",
-    appearance: "none" as const,
-    textAlign: "center" as const,
-  },
-  thanksAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: "50%",
-    objectFit: "cover" as const,
-    flexShrink: 0,
-    background: "var(--bg-card)",
-  },
-  thanksName: { ...thanksNameBase, color: "var(--text-primary)" },
-  thanksNameCopied: { ...thanksNameBase, color: "var(--accent)" },
 } satisfies Record<string, React.CSSProperties>;

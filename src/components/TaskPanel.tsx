@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Search,
   ChevronLeft,
@@ -22,6 +21,10 @@ export function TaskPanel({
   tasks,
   selectedId,
   isNewTask,
+  query,
+  onQueryChange,
+  shortcutLabelsByTaskId,
+  shortcutHintsVisible,
   onNewTask,
   onSelectTask,
   onDeleteTask,
@@ -53,6 +56,10 @@ export function TaskPanel({
   tasks: Task[];
   selectedId: string | null;
   isNewTask: boolean;
+  query: string;
+  onQueryChange: (query: string) => void;
+  shortcutLabelsByTaskId?: Record<string, string>;
+  shortcutHintsVisible?: boolean;
   onNewTask: () => void;
   onSelectTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
@@ -81,8 +88,7 @@ export function TaskPanel({
   onToggleCollapsed?: () => void;
 }) {
   const { t } = useI18n();
-  const [query, setQuery] = useState("");
-  const isDark = themeVariant === "dark" || themeVariant === "midnight";
+  const isDark = themeVariant === "dark";
   const hasAttention = tasks.some(
     (t) => t.status === "input_required" || t.status === "detached" || t.status === "interrupted",
   );
@@ -156,7 +162,7 @@ export function TaskPanel({
           style={s.panelSearchInput}
           placeholder={t("task.searchTasks")}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => onQueryChange(e.target.value)}
         />
       </div>
 
@@ -202,6 +208,8 @@ export function TaskPanel({
         query={query}
         selectedId={selectedId}
         isNewTask={isNewTask}
+        shortcutLabelsByTaskId={shortcutLabelsByTaskId}
+        shortcutHintsVisible={shortcutHintsVisible}
         onSelectTask={onSelectTask}
         onDeleteTask={onDeleteTask}
         onToggleTaskStar={onToggleTaskStar}

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { SendShortcut } from "../../shortcuts";
+import type { SendShortcut, ShortcutBinding } from "../../shortcuts";
 
 export type NavKey =
   | "general"
@@ -9,8 +9,6 @@ export type NavKey =
   | "hooks"
   | "skills"
   | "about"
-  | "thanks"
-  | "community"
   | "claude"
   | "codex";
 
@@ -37,6 +35,7 @@ export interface AppSettings {
   codex_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
+  shortcuts?: ShortcutBinding[];
 }
 
 export interface AgentVersions {
@@ -46,22 +45,16 @@ export interface AgentVersions {
 
 export type AgentKey = "claude" | "codex";
 
-export type NavSection = "application" | "agents" | "community" | "about";
+export type NavSection = "application" | "agents" | "about";
 
 export interface AppSettingsNavItem {
   key: NavKey;
   labelKey: string;
   section: NavSection;
   icon?: LucideIcon;
-  /** 覆盖图标描边颜色（默认 var(--text-secondary)） */
-  iconColor?: string;
-  /** 图标填充色（默认 "none"，传入颜色即为实心图标） */
-  iconFill?: string;
   logo?: string;
   filePath?: string;
   lang?: string;
-  /** 设置后点击该项不切换面板，而是用浏览器打开此外链 */
-  url?: string;
 }
 
 export const APP_SETTINGS_CHANGED_EVENT = "nezha:app-settings-changed";

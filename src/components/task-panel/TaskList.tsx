@@ -8,9 +8,18 @@ const GROUP_ROW_HEIGHT = 27;
 const TASK_ROW_HEIGHT = 47;
 const OVERSCAN_ROWS = 8;
 
-type VirtualRow =
+export type TaskListRow =
   | { type: "group"; key: string; label: string; height: number }
   | { type: "task"; key: string; task: Task; showRunTodo: boolean; height: number };
+
+export interface TaskListLabels {
+  needsAttention: string;
+  pendingMerge: string;
+  starred: string;
+  todo: string;
+  today: string;
+  earlier: string;
+}
 
 function findRowIndex(offsets: number[], value: number) {
   if (offsets.length <= 1) return 0;
@@ -30,12 +39,112 @@ function findRowIndex(offsets: number[], value: number) {
   return low;
 }
 
+export function buildTaskListRows({
+  tasks,
+  taskDisplayWindow,
+  query,
+  labels,
+  now = Date.now(),
+}: {
+  tasks: Task[];
+  taskDisplayWindow: TaskDisplayWindow;
+  query: string;
+  labels: TaskListLabels;
+  now?: number;
+}): TaskListRow[] {
+  const trimmedQuery = query.trim();
+  const filtered = trimmedQuery
+    ? tasks.filter((task) => task.prompt.toLowerCase().includes(trimmedQuery.toLowerCase()))
+    : tasks;
+
+  const sorted = [...filtered].sort((a, b) => {
+    const aNeedsAttention =
+      a.status === "input_required" || a.status === "detached" || a.status === "interrupted";
+    const bNeedsAttention =
+      b.status === "input_required" || b.status === "detached" || b.status === "interrupted";
+    if (aNeedsAttention && !bNeedsAttention) return -1;
+    if (!aNeedsAttention && bNeedsAttention) return 1;
+    if (aNeedsAttention && bNeedsAttention) {
+      return (b.attentionRequestedAt ?? b.createdAt) - (a.attentionRequestedAt ?? a.createdAt);
+    }
+    return b.createdAt - a.createdAt;
+  });
+
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  const todayTs = d.getTime();
+  const cutoffTs =
+    taskDisplayWindow === "all"
+      ? Number.NEGATIVE_INFINITY
+      : todayTs - taskDisplayWindow * 24 * 60 * 60 * 1000;
+
+  const attentionTasks: Task[] = [];
+  const pendingMergeTasks: Task[] = [];
+  const starredTasks: Task[] = [];
+  const todoTasks: Task[] = [];
+  const todayTasks: Task[] = [];
+  const earlierTasks: Task[] = [];
+
+  for (const task of sorted) {
+    if (
+      task.status === "input_required" ||
+      task.status === "detached" ||
+      task.status === "interrupted"
+    ) {
+      attentionTasks.push(task);
+    } else if (task.status === "done" && !!task.worktreePath && !task.worktreeDiscarded) {
+      pendingMergeTasks.push(task);
+    } else if (task.starred) {
+      starredTasks.push(task);
+    } else if (task.status === "todo") {
+      todoTasks.push(task);
+    } else if (task.createdAt >= todayTs) {
+      todayTasks.push(task);
+    } else if (task.createdAt >= cutoffTs) {
+      earlierTasks.push(task);
+    }
+  }
+
+  const rows: TaskListRow[] = [];
+  const appendGroup = (key: string, label: string, groupTasks: Task[], showRunTodo = false) => {
+    if (groupTasks.length === 0) return;
+    rows.push({ type: "group", key, label, height: GROUP_ROW_HEIGHT });
+    groupTasks.forEach((task) => {
+      rows.push({
+        type: "task",
+        key: task.id,
+        task,
+        showRunTodo: showRunTodo || task.status === "todo",
+        height: TASK_ROW_HEIGHT,
+      });
+    });
+  };
+
+  appendGroup("attention", labels.needsAttention, attentionTasks);
+  appendGroup("pending_merge", labels.pendingMerge, pendingMergeTasks);
+  appendGroup("starred", labels.starred, starredTasks);
+  appendGroup("todo", labels.todo, todoTasks, true);
+  appendGroup("today", labels.today, todayTasks);
+  appendGroup("earlier", labels.earlier, earlierTasks);
+
+  return rows;
+}
+
+export function getTaskListShortcutIds(rows: TaskListRow[], limit = 9): string[] {
+  return rows
+    .filter((row): row is Extract<TaskListRow, { type: "task" }> => row.type === "task")
+    .slice(0, limit)
+    .map((row) => row.task.id);
+}
+
 export function TaskList({
   tasks,
   taskDisplayWindow,
   query,
   selectedId,
   isNewTask,
+  shortcutLabelsByTaskId,
+  shortcutHintsVisible,
   onSelectTask,
   onDeleteTask,
   onToggleTaskStar,
@@ -46,6 +155,8 @@ export function TaskList({
   query: string;
   selectedId: string | null;
   isNewTask: boolean;
+  shortcutLabelsByTaskId?: Record<string, string>;
+  shortcutHintsVisible?: boolean;
   onSelectTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
   onToggleTaskStar: (id: string) => void;
@@ -77,94 +188,22 @@ export function TaskList({
     setScrollTop(event.currentTarget.scrollTop);
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return tasks;
-    const q = query.toLowerCase();
-    return tasks.filter((t) => t.prompt.toLowerCase().includes(q));
-  }, [tasks, query]);
+  const labels = useMemo<TaskListLabels>(
+    () => ({
+      needsAttention: t("task.needsAttention"),
+      pendingMerge: t("task.pendingMerge"),
+      starred: t("task.starred"),
+      todo: t("status.todo"),
+      today: t("task.today"),
+      earlier: t("task.earlier"),
+    }),
+    [t],
+  );
 
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const aNeedsAttention =
-        a.status === "input_required" || a.status === "detached" || a.status === "interrupted";
-      const bNeedsAttention =
-        b.status === "input_required" || b.status === "detached" || b.status === "interrupted";
-      if (aNeedsAttention && !bNeedsAttention) return -1;
-      if (!aNeedsAttention && bNeedsAttention) return 1;
-      if (aNeedsAttention && bNeedsAttention) {
-        return (b.attentionRequestedAt ?? b.createdAt) - (a.attentionRequestedAt ?? a.createdAt);
-      }
-      return b.createdAt - a.createdAt;
-    });
-  }, [filtered]);
-
-  const { todayTs, cutoffTs } = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    const todayTs = d.getTime();
-    const cutoffTs =
-      taskDisplayWindow === "all"
-        ? Number.NEGATIVE_INFINITY
-        : todayTs - taskDisplayWindow * 24 * 60 * 60 * 1000;
-    return { todayTs, cutoffTs };
-  }, [taskDisplayWindow]);
-
-  const rows = useMemo<VirtualRow[]>(() => {
-    const attentionTasks: Task[] = [];
-    const pendingMergeTasks: Task[] = [];
-    const starredTasks: Task[] = [];
-    const todoTasks: Task[] = [];
-    const todayTasks: Task[] = [];
-    const earlierTasks: Task[] = [];
-
-    for (const task of sorted) {
-      if (
-        task.status === "input_required" ||
-        task.status === "detached" ||
-        task.status === "interrupted"
-      ) {
-        attentionTasks.push(task);
-      } else if (
-        task.status === "done" &&
-        !!task.worktreePath &&
-        !task.worktreeDiscarded
-      ) {
-        pendingMergeTasks.push(task);
-      } else if (task.starred) {
-        starredTasks.push(task);
-      } else if (task.status === "todo") {
-        todoTasks.push(task);
-      } else if (task.createdAt >= todayTs) {
-        todayTasks.push(task);
-      } else if (task.createdAt >= cutoffTs) {
-        earlierTasks.push(task);
-      }
-    }
-
-    const nextRows: VirtualRow[] = [];
-    const appendGroup = (key: string, label: string, groupTasks: Task[], showRunTodo = false) => {
-      if (groupTasks.length === 0) return;
-      nextRows.push({ type: "group", key, label, height: GROUP_ROW_HEIGHT });
-      groupTasks.forEach((task) => {
-        nextRows.push({
-          type: "task",
-          key: task.id,
-          task,
-          showRunTodo: showRunTodo || task.status === "todo",
-          height: TASK_ROW_HEIGHT,
-        });
-      });
-    };
-
-    appendGroup("attention", t("task.needsAttention"), attentionTasks);
-    appendGroup("pending_merge", t("task.pendingMerge"), pendingMergeTasks);
-    appendGroup("starred", t("task.starred"), starredTasks);
-    appendGroup("todo", t("status.todo"), todoTasks, true);
-    appendGroup("today", t("task.today"), todayTasks);
-    appendGroup("earlier", t("task.earlier"), earlierTasks);
-
-    return nextRows;
-  }, [cutoffTs, sorted, t, todayTs]);
+  const rows = useMemo(
+    () => buildTaskListRows({ tasks, taskDisplayWindow, query, labels }),
+    [labels, query, taskDisplayWindow, tasks],
+  );
 
   const offsets = useMemo(() => {
     const nextOffsets = [0];
@@ -208,6 +247,8 @@ export function TaskList({
                 <TaskListItem
                   task={row.task}
                   selected={selectedId === row.task.id && !isNewTask}
+                  shortcutLabel={shortcutLabelsByTaskId?.[row.task.id]}
+                  shortcutHintsVisible={shortcutHintsVisible}
                   onClick={() => onSelectTask(row.task.id)}
                   onDelete={() => onDeleteTask(row.task.id)}
                   onToggleStar={() => onToggleTaskStar(row.task.id)}

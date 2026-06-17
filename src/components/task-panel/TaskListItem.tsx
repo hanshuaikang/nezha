@@ -34,6 +34,8 @@ export const TaskListItem = memo(
   function TaskListItem({
     task,
     selected,
+    shortcutLabel,
+    shortcutHintsVisible,
     onClick,
     onDelete,
     onToggleStar,
@@ -41,6 +43,8 @@ export const TaskListItem = memo(
   }: {
     task: Task;
     selected: boolean;
+    shortcutLabel?: string;
+    shortcutHintsVisible?: boolean;
     onClick: () => void;
     onDelete: () => void;
     onToggleStar: () => void;
@@ -97,6 +101,18 @@ export const TaskListItem = memo(
             zIndex: 1,
           }}
         />
+        {shortcutLabel && (
+          <span
+            aria-hidden="true"
+            style={{
+              ...s.taskShortcutBadge,
+              opacity: shortcutHintsVisible && !hov ? 1 : 0,
+              transform: shortcutHintsVisible && !hov ? "translateY(0)" : "translateY(2px)",
+            }}
+          >
+            {shortcutLabel}
+          </span>
+        )}
         {task.worktreePath && task.worktreeBranch && (
           <span
             title={t("task.worktreeBadge", { branch: task.worktreeBranch })}
@@ -158,5 +174,7 @@ export const TaskListItem = memo(
   (prev, next) =>
     prev.task === next.task &&
     prev.selected === next.selected &&
+    prev.shortcutLabel === next.shortcutLabel &&
+    prev.shortcutHintsVisible === next.shortcutHintsVisible &&
     (prev.onRunTodo !== undefined) === (next.onRunTodo !== undefined),
 );

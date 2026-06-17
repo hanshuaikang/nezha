@@ -4,7 +4,6 @@ import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { useI18n } from "../i18n";
 import s from "../styles";
-import claudeWaveGif from "../assets/gif/claude-wave.gif";
 
 type ProjectStatus = "attention" | "running" | null;
 
@@ -76,7 +75,8 @@ function RailItem({
   status,
   attentionCount,
   showBadge,
-  waveNonce,
+  shortcutLabel,
+  shortcutHintsVisible,
   onSwitch,
 }: {
   project: Project;
@@ -84,20 +84,11 @@ function RailItem({
   status: ProjectStatus;
   attentionCount: number;
   showBadge: boolean;
-  waveNonce: number;
+  shortcutLabel?: string;
+  shortcutHintsVisible?: boolean;
   onSwitch: (p: Project) => void;
 }) {
   const [hov, setHov] = useState(false);
-  const [waving, setWaving] = useState(false);
-
-  // waveNonce 每次递增(出现新的待确认任务)就触发一次性招手,3.6s 后卸载。
-  // 卸载+重新挂载可让 gif 从首帧重播,同时重启 CSS 探头/缩回动画。
-  useEffect(() => {
-    if (waveNonce <= 0) return;
-    setWaving(true);
-    const id = setTimeout(() => setWaving(false), 3600);
-    return () => clearTimeout(id);
-  }, [waveNonce]);
 
   return (
     <button
@@ -127,22 +118,25 @@ function RailItem({
         transition: isActive ? "none" : "outline-color 0.12s",
       }}
     >
-      {waving && (
-        <img
-          key={waveNonce}
-          src={claudeWaveGif}
-          alt=""
-          className="rail-mascot-wave"
-          style={s.railMascot}
-        />
-      )}
-      <ProjectAvatar name={project.name} size={28} style={s.railAvatarStacked} />
+      <ProjectAvatar name={project.name} size={28} />
       <AttentionIndicator
         status={status}
         count={attentionCount}
-        showBadge={showBadge}
+        showBadge={showBadge && !shortcutHintsVisible}
         borderColor="var(--bg-sidebar)"
       />
+      {shortcutLabel && (
+        <span
+          aria-hidden="true"
+          style={{
+            ...s.railShortcutBadge,
+            opacity: shortcutHintsVisible ? 1 : 0,
+            transform: shortcutHintsVisible ? "translateY(0)" : "translateY(2px)",
+          }}
+        >
+          {shortcutLabel}
+        </span>
+      )}
     </button>
   );
 }
@@ -329,6 +323,9 @@ export function ProjectRail({
   onSwitch,
   onOpen,
   singleProjectMode = false,
+  shortcutLabelsByProjectId,
+  shortcutHintsVisible,
+  openDrawerRequest = 0,
 }: {
   projects: Project[];
   allTasks: Task[];
@@ -337,6 +334,9 @@ export function ProjectRail({
   onSwitch: (project: Project) => void;
   onOpen: () => void;
   singleProjectMode?: boolean;
+  shortcutLabelsByProjectId?: Record<string, string>;
+  shortcutHintsVisible?: boolean;
+  openDrawerRequest?: number;
 }) {
   const { t } = useI18n();
   const [addHov, setAddHov] = useState(false);
@@ -349,28 +349,10 @@ export function ProjectRail({
     [projects, activeProjectId],
   );
 
-  // 招手触发:记录每个项目上一次的待确认数量,数量增加(0→≥1 或 n→n+1)时给该项目
-  // 递增一个 nonce,RailItem 据此播一次招手动画。首帧只做初始化播种,不为已有任务招手。
-  const prevAttentionRef = useRef<Map<string, number>>(new Map());
-  const seededRef = useRef(false);
-  const [waveNonces, setWaveNonces] = useState<Map<string, number>>(new Map());
-
   useEffect(() => {
-    const triggered: string[] = [];
-    for (const p of railProjects) {
-      const count = getAttentionCount(allTasks, p.id);
-      const prev = prevAttentionRef.current.get(p.id) ?? 0;
-      if (seededRef.current && count > prev) triggered.push(p.id);
-      prevAttentionRef.current.set(p.id, count);
-    }
-    seededRef.current = true;
-    if (triggered.length === 0) return;
-    setWaveNonces((prev) => {
-      const next = new Map(prev);
-      for (const id of triggered) next.set(id, (next.get(id) ?? 0) + 1);
-      return next;
-    });
-  }, [allTasks, railProjects]);
+    if (singleProjectMode || openDrawerRequest <= 0) return;
+    setDrawerOpen(true);
+  }, [openDrawerRequest, singleProjectMode]);
 
   return (
     <div
@@ -398,7 +380,8 @@ export function ProjectRail({
           status={getProjectStatus(allTasks, project.id)}
           attentionCount={getAttentionCount(allTasks, project.id)}
           showBadge={attentionBadge}
-          waveNonce={waveNonces.get(project.id) ?? 0}
+          shortcutLabel={shortcutLabelsByProjectId?.[project.id]}
+          shortcutHintsVisible={shortcutHintsVisible}
           onSwitch={(p) => {
             onSwitch(p);
             setDrawerOpen(false);

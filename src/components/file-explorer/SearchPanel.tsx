@@ -24,7 +24,6 @@ const FILE_FILTERS: FileFilter[] = [
   { id: "rust", label: "Rust", extensions: ["rs"] },
   { id: "py", label: "Python", extensions: ["py"] },
   { id: "go", label: "Go", extensions: ["go"] },
-  { id: "cpp", label: "C/C++", extensions: ["c", "h", "cpp", "cc", "cxx", "hpp", "hh", "hxx"] },
   { id: "web", label: "Web", extensions: ["html", "css", "scss"] },
   { id: "json", label: "JSON", extensions: ["json", "jsonc"] },
   { id: "yaml", label: "YAML", extensions: ["yml", "yaml"] },
@@ -130,7 +129,11 @@ export function FileSearchDialog({
 
   return (
     <div style={s.fileSearchDialogBackdrop} onMouseDown={onClose}>
-      <div style={s.fileSearchDialog} onMouseDown={(event) => event.stopPropagation()}>
+      <div
+        style={s.fileSearchDialog}
+        data-shortcut-scope="ignore"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <div style={s.fileSearchDialogHeader}>
           <span style={s.fileSearchDialogTitle}>{t("toolbar.search")}</span>
           <button

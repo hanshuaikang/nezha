@@ -430,12 +430,6 @@ fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_
 /// 为 Claude 命令构建 CommandBuilder，并根据 permission_mode 添加权限标志。
 fn build_claude_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
-    // 仅 macOS 注入：Claude Code v2.1.150+ 默认开 xterm 鼠标上报（mode 1002），
-    // 会吞掉 macOS 端 xterm.js 的原生拖动框选；关掉后滚轮回退到 xterm scrollback。
-    // Windows 上 xterm.js + Claude 默认就能框选+滚轮（v0.4.0 已验证），加这个反而
-    // 让滚轮失效（见 anthropics/claude-code#51393），所以只对 macOS 启用。
-    #[cfg(target_os = "macos")]
-    c.env("CLAUDE_CODE_DISABLE_MOUSE", "1");
     match permission_mode {
         "ask" => {
             c.arg("--permission-mode");
@@ -458,12 +452,7 @@ fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
     match permission_mode {
         "auto_edit" => {
-            // 等价于已弃用的 --full-auto（codex >= 0.128 已移除该别名）：
-            // 工作区内自动写、越界命令才升级审批。
-            c.arg("--sandbox");
-            c.arg("workspace-write");
-            c.arg("-a");
-            c.arg("on-request");
+            c.arg("--full-auto");
         }
         "full_access" => {
             c.arg("--dangerously-bypass-approvals-and-sandbox");

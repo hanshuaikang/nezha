@@ -88,7 +88,7 @@ function BranchDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div style={s.branchDialogBox} onKeyDown={handleKeyDown}>
+      <div style={s.branchDialogBox} data-shortcut-scope="ignore" onKeyDown={handleKeyDown}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <GitBranch size={16} strokeWidth={2} color="var(--text-hint)" />

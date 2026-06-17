@@ -4,12 +4,6 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
 import type { ThemeVariant } from "../types";
-// xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
-import type { XTermWithPrivates } from "./xterm-private";
-
-// xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
-// 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
-const XTERM_SCROLLBAR_WIDTH = 12;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -59,13 +53,6 @@ export const LIGHT_THEME = {
   brightWhite: "#8c959f",
 };
 
-// Midnight dark: same syntax palette as DARK_THEME, but a neutral near-black
-// background (#1A1B1D) to match the `html.midnight` --bg-panel surface.
-export const MIDNIGHT_THEME = {
-  ...DARK_THEME,
-  background: "#1a1b1d",
-};
-
 // Solarized Light–inspired warm palette to match the eyecare CSS tokens.
 export const EYECARE_THEME = {
   background: "#fdf6e3",
@@ -92,23 +79,8 @@ export const EYECARE_THEME = {
 
 export function themeFor(variant: ThemeVariant) {
   if (variant === "dark") return DARK_THEME;
-  if (variant === "midnight") return MIDNIGHT_THEME;
   if (variant === "eyecare") return EYECARE_THEME;
   return LIGHT_THEME;
-}
-
-export function minimumContrastRatioFor(variant: ThemeVariant): number {
-  // Dark-family variants (dark / midnight) ship a hand-tuned palette already
-  // readable on their backgrounds, so we skip xterm's auto contrast lift to
-  // preserve the original ANSI hues. Light-family variants (light / eyecare)
-  // pair light surfaces with high-saturation ANSI defaults that fall below
-  // WCAG AA — there we let xterm bump foregrounds until they hit 4.5:1.
-  return variant === "dark" || variant === "midnight" ? 1 : 4.5;
-}
-
-export function applyTerminalTheme(term: Terminal, variant: ThemeVariant): void {
-  term.options.theme = themeFor(variant);
-  term.options.minimumContrastRatio = minimumContrastRatioFor(variant);
 }
 
 // ── Watermark flow control ───────────────────────────────────────────────────
@@ -330,171 +302,12 @@ export function createSmartWriter(term: Terminal): SmartWriter {
 export interface InitTerminalResult {
   term: Terminal;
   fitAddon: FitAddon;
-  /** 字体 ready 后 resolve（1s 超时兜底），永不 reject。ready 时已 toggle
-   *  fontFamily 触发 xterm 重测 cell；调用方应在此之后再 safeFit 一次。 */
-  whenFontsReady: Promise<void>;
-}
-
-const fontReadyCache = new Set<string>();
-const FONT_READY_TIMEOUT_MS = 1000;
-
-function primaryFontFamily(fontFamily: string): string | null {
-  const first = fontFamily.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
-  if (!first) return null;
-  if (first === "monospace" || first === "serif" || first === "sans-serif" || first === "system-ui") {
-    return null;
-  }
-  return first;
-}
-
-function waitForFontReady(fontFamily: string, fontSize: number): Promise<void> {
-  const key = `${fontFamily}|${fontSize}`;
-  if (fontReadyCache.has(key)) return Promise.resolve();
-
-  const fonts = typeof document !== "undefined" ? document.fonts : undefined;
-  if (!fonts) {
-    fontReadyCache.add(key);
-    return Promise.resolve();
-  }
-
-  const primary = primaryFontFamily(fontFamily);
-  const spec = primary ? `${fontSize}px "${primary}"` : null;
-
-  // nezha 用的都是系统字体，fonts.load 不会触发网络下载——仅 spec 字符串
-  // 解析失败时 reject（开发者拼接 bug），warn 出来便于排查。
-  const load = spec
-    ? fonts.load(spec).catch((err) => {
-        console.warn(`[terminal] invalid font spec "${spec}"`, err);
-      })
-    : Promise.resolve();
-
-  const ready = load.then(() => fonts.ready).then(() => {});
-
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      fontReadyCache.add(key);
-      resolve();
-    };
-    ready.then(finish).catch(finish);
-    setTimeout(finish, FONT_READY_TIMEOUT_MS);
-  });
-}
-
-const domCellWidthCache = new Map<string, number>();
-
-function isFontLoaded(fontFamily: string, fontSize: number): boolean {
-  const primary = primaryFontFamily(fontFamily);
-  if (!primary) return true; // 通用关键字（monospace 等）总是 ready
-  const fonts = typeof document !== "undefined" ? document.fonts : undefined;
-  if (!fonts) return true;
-  try {
-    return fonts.check(`${fontSize}px "${primary}"`);
-  } catch {
-    return true; // spec 拼接异常时不阻止缓存，等同于 ready
-  }
-}
-
-function measureCellWidthInDOM(fontFamily: string, fontSize: number): number | null {
-  if (typeof document === "undefined" || !document.body) return null;
-  const key = `${fontFamily}|${fontSize}`;
-  const cached = domCellWidthCache.get(key);
-  if (cached !== undefined) return cached;
-
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:absolute;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;white-space:pre;font-kerning:none;";
-  probe.style.fontFamily = fontFamily;
-  probe.style.fontSize = `${fontSize}px`;
-  // 32 个 'W'：与 xterm 内置 DomMeasureStrategy 一致，平均消除 offsetWidth 取整误差。
-  probe.textContent = "W".repeat(32);
-  document.body.appendChild(probe);
-  try {
-    const width = probe.offsetWidth / 32;
-    if (!Number.isFinite(width) || width <= 0) return null;
-    // 字体未 ready 时测的是 fallback 宽度，禁止入缓存——否则 fonts.ready 后
-    // 走 override 仍命中旧值，cell 永远按 fallback 字体算（CJK 字体首次加载场景）。
-    if (isFontLoaded(fontFamily, fontSize)) {
-      domCellWidthCache.set(key, width);
-    }
-    return width;
-  } finally {
-    document.body.removeChild(probe);
-  }
 }
 
 /**
- * 用 DOM offsetWidth 替换 xterm 的 canvas cell width 测量，修复 WKWebView 下
- * CJK 等宽字体（如 Maple Mono CN）的 cell 被测成 fullwidth、英文字符被双宽
- * 渲染的 bug。只改 width，不动 height（与 DOM offsetHeight 是两套语义）。
- *
- * 必须在 `term.open()` 之后调用；私有 API 访问见 xterm-private.d.ts。
+ * 创建 xterm Terminal 实例并加载通用 addon（FitAddon, Unicode11, WebGL）。
+ * 调用方负责 term.open(container)。
  */
-export function applyDomCharSizeOverride(term: Terminal): () => void {
-  const core = (term as XTermWithPrivates)._core;
-  const css = core?._charSizeService;
-  if (!css) {
-    console.warn("[terminal] xterm _charSizeService inaccessible; skip DOM width override");
-    return () => {};
-  }
-  const strategy = css._measureStrategy;
-  if (!strategy || typeof strategy.measure !== "function") {
-    console.warn("[terminal] xterm _measureStrategy inaccessible; skip DOM width override");
-    return () => {};
-  }
-
-  const original = strategy.measure.bind(strategy);
-  let active = true;
-  let warnedMismatch = false;
-
-  strategy.measure = () => {
-    const result = original();
-    if (!active) return result;
-
-    const ff = term.options.fontFamily;
-    const fs = term.options.fontSize;
-    if (typeof ff !== "string" || typeof fs !== "number") return result;
-    if (result.width <= 0) return result;
-
-    const domWidth = measureCellWidthInDOM(ff, fs);
-    if (domWidth === null) return result;
-    if (Math.abs(result.width - domWidth) < 0.5) return result;
-
-    if (!warnedMismatch) {
-      warnedMismatch = true;
-      console.warn(
-        `[terminal] canvas measureText width=${result.width.toFixed(2)} != DOM measure=${domWidth.toFixed(2)} (font: ${ff}, ${fs}px) — using DOM width (CJK monospace fix)`,
-      );
-    }
-    return { width: domWidth, height: result.height };
-  };
-
-  // open 时 xterm 已经测过一次未 patch 的路径，需要立即重测覆盖错值。
-  try {
-    css.measure();
-  } catch {
-    /* term 未就绪：后续 fontFamily/fontSize 变更会重新触发 measure */
-  }
-
-  return () => {
-    active = false;
-    strategy.measure = original;
-  };
-}
-
-// xterm OptionsService 对同值 fontFamily 会 dirty-check 跳过，用 toggle 绕开。
-function refreshCharSizeAfterFontReady(term: Terminal, fontFamily: string): void {
-  try {
-    if (term.options.fontFamily !== fontFamily) return;
-    term.options.fontFamily = `${fontFamily}, monospace`;
-    term.options.fontFamily = fontFamily;
-  } catch {
-    /* term 已 dispose 的正常 race */
-  }
-}
-
 export function initTerminal(
   variant: ThemeVariant,
   scrollback = 1000,
@@ -508,13 +321,7 @@ export function initTerminal(
     fontFamily,
     fontSize,
     theme: themeFor(variant),
-    minimumContrastRatio: minimumContrastRatioFor(variant),
     allowProposedApi: true,
-    overviewRuler: { width: XTERM_SCROLLBAR_WIDTH },
-    // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
-    // 鼠标事件转发给程序并取消本地选区,导致 macOS 用户"运行时无法框选"。开启此项后
-    // 按住 ⌥ Option 拖动可强制本地选区（iTerm2 / Terminal.app 的标准约定）。
-    macOptionClickForcesSelection: true,
   });
 
   const fitAddon = new FitAddon();
@@ -523,43 +330,7 @@ export function initTerminal(
   term.loadAddon(unicode11Addon);
   term.unicode.activeVersion = "11";
 
-  const whenFontsReady = waitForFontReady(fontFamily, fontSize).then(() => {
-    refreshCharSizeAfterFontReady(term, fontFamily);
-  });
-
-  return { term, fitAddon, whenFontsReady };
-}
-
-export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLElement): () => void {
-  const ownerWindow = container.ownerDocument.defaultView ?? window;
-  let scrollHideTimer: number | null = null;
-
-  const clearScrollHideTimer = () => {
-    if (scrollHideTimer === null) return;
-    ownerWindow.clearTimeout(scrollHideTimer);
-    scrollHideTimer = null;
-  };
-
-  const hideAfterScroll = () => {
-    clearScrollHideTimer();
-    scrollHideTimer = ownerWindow.setTimeout(() => {
-      container.classList.remove("nezha-xterm-scrolling");
-      scrollHideTimer = null;
-    }, 700);
-  };
-
-  const handleScroll = () => {
-    container.classList.add("nezha-xterm-scrolling");
-    hideAfterScroll();
-  };
-
-  const scrollDisposable = term.onScroll(handleScroll);
-
-  return () => {
-    clearScrollHideTimer();
-    container.classList.remove("nezha-xterm-scrolling");
-    scrollDisposable.dispose();
-  };
+  return { term, fitAddon };
 }
 
 /**
@@ -639,26 +410,13 @@ export function applyTerminalFontSize(
   return safeFit(fitAddon, term, container);
 }
 
-export interface FontFamilyApplyResult {
-  /** 同步 fit 的结果。新字体未加载时是 fallback 字体的尺寸，先反馈给用户。 */
-  immediate: { cols: number; rows: number } | null;
-  /** 字体 ready 后重测并 fit 的结果。CJK 等宽字体首次加载需要这一步纠正 cols/rows。 */
-  whenSettled: Promise<{ cols: number; rows: number } | null>;
-}
-
 export function applyTerminalFontFamily(
   term: Terminal,
   fitAddon: FitAddon,
   fontFamily: string,
   container?: HTMLElement,
-): FontFamilyApplyResult | null {
+): { cols: number; rows: number } | null {
   if (term.options.fontFamily === fontFamily) return null;
   term.options.fontFamily = fontFamily;
-  const fontSize = typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
-  const immediate = safeFit(fitAddon, term, container);
-  const whenSettled = waitForFontReady(fontFamily, fontSize).then(() => {
-    refreshCharSizeAfterFontReady(term, fontFamily);
-    return safeFit(fitAddon, term, container);
-  });
-  return { immediate, whenSettled };
+  return safeFit(fitAddon, term, container);
 }

@@ -75,7 +75,7 @@ export function SkillManageDialog({ skill, allProjects, onClose, onChanged }: Pr
 
   return (
     <div style={s.modalOverlay} onClick={handleOverlayClick}>
-      <div style={s.skillDialogBox}>
+      <div style={s.skillDialogBox} data-shortcut-scope="ignore">
         <div style={s.skillDialogHeader}>
           <div style={s.skillDialogHeaderMain}>
             <div style={s.skillDialogTitle}>{skill.displayName || skill.name}</div>

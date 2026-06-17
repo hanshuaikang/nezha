@@ -202,6 +202,7 @@ export function NotificationBell() {
           onClick={handleOverlayClick}
         >
           <div
+            data-shortcut-scope="ignore"
             style={{
               width: 420,
               maxWidth: "calc(100vw - 32px)",
