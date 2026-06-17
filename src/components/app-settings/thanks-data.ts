@@ -24,6 +24,7 @@ import yifei from "../../assets/thanks/supporters/yifei.png";
 import jaywcjlove from "../../assets/thanks/supporters/jaywcjlove.png";
 import vincentLogic from "../../assets/thanks/supporters/VincentLogic.png";
 import githubDaily from "../../assets/thanks/supporters/github_daily.png";
+import wwtlitee from "../../assets/thanks/supporters/wwtlitee.png";
 
 export interface Contributor {
   /** GitHub 用户名，同时作为展示名 */
@@ -68,4 +69,5 @@ export const SUPPORTERS: Supporter[] = [
   { name: "jaywcjlove", avatar: jaywcjlove, link: "https://x.com/jaywcjlove", action: "open" },
   { name: "Vincent | 信号＞噪音", avatar: vincentLogic, link: "https://x.com/VincentLogic", action: "open" },
   { name: "GitHubDaily", avatar: githubDaily, link: "https://x.com/GitHub_Daily", action: "open" },
+  { name: "奶牛叔", avatar: wwtlitee, link: "https://x.com/WWTLitee", action: "open" },
 ];

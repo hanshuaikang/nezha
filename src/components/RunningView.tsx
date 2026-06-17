@@ -7,7 +7,8 @@ import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
 import { useToast } from "./Toast";
-import { shortenPath, getUsageColor } from "../utils";
+import { writeClipboardText } from "./file-explorer/clipboard";
+import { getUsageColor } from "../utils";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { useI18n } from "../i18n";
@@ -27,22 +28,40 @@ import {
 
 interface SessionMetrics {
   duration_secs: number;
+  session_file_bytes: number;
   total_tokens: number;
   context_tokens: number;
   context_window: number;
 }
 
 function formatDuration(secs: number): string {
-  if (secs < 60) return `${Math.round(secs)}s`;
-  const m = Math.floor(secs / 60);
-  const s = Math.round(secs % 60);
-  return `${m}m ${s}s`;
+  const totalSeconds = Math.max(0, Math.round(secs));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}K`;
+  if (bytes < 1024 * 1024 * 1024) {
+    const mb = bytes / 1024 / 1024;
+    return `${mb.toFixed(mb < 10 ? 1 : 0)}M`;
+  }
+  const gb = bytes / 1024 / 1024 / 1024;
+  return `${gb.toFixed(gb < 10 ? 1 : 0)}G`;
 }
 
 function InlineWindow({ label, window }: { label: string; window: UsageWindow }) {
@@ -115,7 +134,13 @@ export function RunningView({
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
 
-  const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
+  const [metricsState, setMetricsState] = useState<{
+    sessionPath: string;
+    status: "loading" | "ready" | "failed";
+    metrics: SessionMetrics | null;
+  } | null>(null);
+  const currentMetricsState = metricsState?.sessionPath === sessionPath ? metricsState : null;
+  const metrics = currentMetricsState?.status === "ready" ? currentMetricsState.metrics : null;
   const [editingTitle, setEditingTitle] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [hoverHeader, setHoverHeader] = useState(false);
@@ -191,6 +216,17 @@ export function RunningView({
     }
   };
 
+  const handleCopySessionPath = async () => {
+    if (!sessionPath) return false;
+    try {
+      await writeClipboardText(sessionPath);
+      return true;
+    } catch (err) {
+      showToast(t("running.sessionFilePathCopyFailed", { error: String(err) }), "error");
+      return false;
+    }
+  };
+
   useEffect(() => {
     const el = interruptedBannerRef.current;
     if (!el) return;
@@ -207,9 +243,13 @@ export function RunningView({
 
   useEffect(() => {
     if (!sessionPath) {
-      setMetrics(null);
+      setMetricsState(null);
       return;
     }
+    const activeSessionPath = sessionPath;
+    setMetricsState((prev) =>
+      prev?.sessionPath === activeSessionPath ? prev : { sessionPath: activeSessionPath, status: "loading", metrics: null },
+    );
     // 只在项目处于前台时才跑 metrics 轮询；切到其他项目时暂停，
     // 项目重新激活时这里会立即补拉一次。注意这里用的是 projectActive
     // 而不是 visible —— 后者在同项目内打开 FileViewer / GitDiff 时也会是 false，
@@ -220,12 +260,24 @@ export function RunningView({
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const load = () => {
-      invoke<SessionMetrics>("read_session_metrics", { sessionPath })
+      invoke<SessionMetrics>("read_session_metrics", { sessionPath: activeSessionPath })
         .then((nextMetrics) => {
           if (cancelled) return;
-          setMetrics(nextMetrics);
+          setMetricsState({
+            sessionPath: activeSessionPath,
+            status: "ready",
+            metrics: nextMetrics,
+          });
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) {
+            setMetricsState({
+              sessionPath: activeSessionPath,
+              status: "failed",
+              metrics: null,
+            });
+          }
+        });
     };
 
     load();
@@ -459,8 +511,8 @@ export function RunningView({
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
-          <span>
+        <div style={s.runMetaRow}>
+          <span style={s.runMetaFixed}>
             {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
             {permissionModeLabel(task.permissionMode, task.agent)}
           </span>
@@ -486,57 +538,64 @@ export function RunningView({
                 </>
               )
           )}
+          {task.worktreePath && task.worktreeBranch && task.baseBranch && (
+            <>
+              <span style={s.runMetaFixed}>·</span>
+              <span
+                title={t("running.worktreeBranchTitle", {
+                  branch: task.worktreeBranch,
+                  base: task.baseBranch,
+                })}
+                style={s.runMetaBranchInline}
+              >
+                <GitBranch size={11} strokeWidth={2.2} />
+                <span style={s.runMetaBranchText}>
+                  {t("running.worktreeBranchInfo", {
+                    branch: task.worktreeBranch,
+                    base: task.baseBranch,
+                  })}
+                </span>
+              </span>
+            </>
+          )}
         </div>
-        {task.worktreePath && task.worktreeBranch && task.baseBranch && (
-          <div
-            title={t("running.worktreeBranchTitle", {
-              branch: task.worktreeBranch,
-              base: task.baseBranch,
-            })}
-            style={s.runMetaBranchRow}
-          >
-            <GitBranch size={11} strokeWidth={2.2} />
-            <span>
-              {t("running.worktreeBranchInfo", {
-                branch: task.worktreeBranch,
-                base: task.baseBranch,
-              })}
-            </span>
-          </div>
-        )}
-        {sessionPath && (
-          <div
-            title={sessionPath}
-            style={{
-              marginTop: 4,
-              fontSize: 11,
-              color: "var(--text-muted)",
-              fontFamily: "var(--font-mono)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("running.sessionFile", { path: shortenPath(sessionPath) })}
-          </div>
-        )}
-        {metrics && (
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              gap: 12,
-              flexWrap: "wrap" as const,
-            }}
-          >
-            <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
-            <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
-            {metrics.context_window > 0 && metrics.context_tokens > 0 && (
-              <MetricPill
-                label={t("running.context")}
-                value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
-                  (metrics.context_tokens / metrics.context_window) * 100,
-                )}%)`}
+        {(metrics || sessionPath) && (
+          <div style={s.runMetricsRow}>
+            {metrics && (
+              <>
+                <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
+                <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
+                {metrics.context_window > 0 && metrics.context_tokens > 0 && (
+                  <MetricPill
+                    label={t("running.context")}
+                    value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
+                      (metrics.context_tokens / metrics.context_window) * 100,
+                    )}%)`}
+                  />
+                )}
+              </>
+            )}
+            {sessionPath && (
+              <SessionFilePill
+                label={t("running.sessionFileLabel")}
+                value={
+                  currentMetricsState?.status === "ready" && metrics
+                    ? formatFileSize(metrics.session_file_bytes)
+                    : currentMetricsState?.status === "failed"
+                      ? "0B"
+                      : "..."
+                }
+                tone={
+                  currentMetricsState?.status === "ready" && metrics
+                    ? metrics.session_file_bytes > 0
+                      ? "success"
+                      : "error"
+                    : currentMetricsState?.status === "failed"
+                      ? "error"
+                      : "warning"
+                }
+                copiedLabel={t("running.sessionFilePathCopied")}
+                onCopy={handleCopySessionPath}
               />
             )}
           </div>
@@ -647,29 +706,83 @@ export function RunningView({
 
 function MetricPill({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "3px 8px",
-        borderRadius: 6,
-        background: "var(--bg-input)",
-        border: "1px solid var(--border-dim)",
-      }}
-    >
-      <span
-        style={{
-          fontSize: 10,
-          color: "var(--text-hint)",
-          fontWeight: 600,
-          textTransform: "uppercase" as const,
-          letterSpacing: 0.4,
-        }}
-      >
-        {label}
-      </span>
-      <span style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600 }}>{value}</span>
+    <div style={s.runMetricPill}>
+      <span style={s.runMetricPillLabel}>{label}</span>
+      <span style={s.runMetricPillValue}>{value}</span>
     </div>
+  );
+}
+
+type SessionFilePillTone = "success" | "warning" | "error";
+
+const sessionFilePillToneColor: Record<SessionFilePillTone, string> = {
+  success: "var(--color-success)",
+  warning: "var(--color-warning)",
+  error: "var(--color-error)",
+};
+
+function SessionFilePill({
+  label,
+  value,
+  tone,
+  copiedLabel,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  tone: SessionFilePillTone;
+  copiedLabel: string;
+  onCopy: () => Promise<boolean>;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleClick = async () => {
+    const ok = await onCopy();
+    if (!ok) return;
+    setCopied(true);
+    if (copiedTimerRef.current !== null) {
+      clearTimeout(copiedTimerRef.current);
+    }
+    copiedTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copiedTimerRef.current = null;
+    }, 1000);
+  };
+
+  return (
+    <span
+      style={s.runSessionFilePillWrap}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        type="button"
+        style={{ ...s.runMetricPill, ...s.runMetricPillButton }}
+        onClick={handleClick}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            ...s.railStatusDot,
+            background: sessionFilePillToneColor[tone],
+            borderColor: "var(--bg-input)",
+            ...s.runSessionStatusDot,
+          }}
+        />
+        <span style={s.runMetricPillLabel}>{label}</span>
+        <span style={s.runMetricPillValue}>{value}</span>
+      </button>
+      {copied && hovered && <span style={s.runSessionCopyTooltip}>{copiedLabel}</span>}
+    </span>
   );
 }

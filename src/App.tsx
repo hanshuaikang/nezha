@@ -140,13 +140,17 @@ function getSystemPrefersDark() {
 
 function getInitialThemeMode(): ThemeMode {
   const stored = localStorage.getItem("nezha:theme");
-  return stored === "dark" || stored === "light" || stored === "system" || stored === "eyecare"
+  return stored === "dark" ||
+    stored === "light" ||
+    stored === "system" ||
+    stored === "eyecare" ||
+    stored === "midnight"
     ? stored
     : "system";
 }
 
 function resolveThemeVariant(mode: ThemeMode, systemPrefersDark: boolean): ThemeVariant {
-  if (mode === "system") return systemPrefersDark ? "dark" : "light";
+  if (mode === "system") return systemPrefersDark ? "midnight" : "light";
   return mode;
 }
 
@@ -266,7 +270,12 @@ function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("dark", themeVariant === "dark");
+    // The midnight variant layers on top of the dark token set: it keeps the
+    // `dark` class (so it inherits every dark token) and adds `midnight` for the
+    // few near-black overrides (menu border / surface backgrounds) declared later
+    // in themes.css, which win by source order at equal specificity.
+    root.classList.toggle("dark", themeVariant === "dark" || themeVariant === "midnight");
+    root.classList.toggle("midnight", themeVariant === "midnight");
     root.classList.toggle("eyecare", themeVariant === "eyecare");
     localStorage.setItem("nezha:theme", themeMode);
   }, [themeVariant, themeMode]);
@@ -275,7 +284,11 @@ function App() {
     // Tauri window theme only understands light/dark/null; map eyecare to light
     // so the native chrome (titlebar, scrollbars) stays in the light family.
     const nativeTheme =
-      themeMode === "system" ? null : themeMode === "dark" ? "dark" : "light";
+      themeMode === "system"
+        ? null
+        : themeMode === "dark" || themeMode === "midnight"
+          ? "dark"
+          : "light";
     getCurrentWindow()
       .setTheme(nativeTheme)
       .catch(console.error);
@@ -322,12 +335,13 @@ function App() {
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
-      // Toggle only cycles between the two standard variants. Special themes
-      // (eyecare and any future opt-in variants) retreat to "light" so the
-      // shortcut remains a one-tap escape hatch back to the canonical pair.
-      if (currentMode === "dark") return "light";
-      if (currentMode === "light") return "dark";
-      if (currentMode === "system") return systemPrefersDark ? "light" : "dark";
+      // Toggle only cycles between the canonical light/dark pair. The dark side
+      // defaults to midnight (neutral near-black surfaces); eyecare and any
+      // future opt-in variants retreat to "light" so the shortcut remains a
+      // one-tap escape hatch.
+      if (currentMode === "dark" || currentMode === "midnight") return "light";
+      if (currentMode === "light") return "midnight";
+      if (currentMode === "system") return systemPrefersDark ? "light" : "midnight";
       return "light";
     });
   }, [systemPrefersDark]);

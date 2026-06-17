@@ -28,7 +28,7 @@ import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { ruby } from "@codemirror/legacy-modes/mode/ruby";
 import { lua } from "@codemirror/legacy-modes/mode/lua";
 import { swift } from "@codemirror/legacy-modes/mode/swift";
-import { kotlin } from "@codemirror/legacy-modes/mode/clike";
+import { kotlin, csharp } from "@codemirror/legacy-modes/mode/clike";
 import { r } from "@codemirror/legacy-modes/mode/r";
 import type { Extension } from "@codemirror/state";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
@@ -163,6 +163,9 @@ function getLanguageExtension(fileName: string): Extension {
       return StreamLanguage.define(swift);
     case "kt":
       return StreamLanguage.define(kotlin);
+    case "cs":
+    case "csx":
+      return StreamLanguage.define(csharp);
     case "rb":
       return StreamLanguage.define(ruby);
     case "lua":
@@ -284,7 +287,7 @@ function FilePreviewPane({
   previewMode: boolean;
 }) {
   const editorTheme =
-    themeVariant === "dark"
+    themeVariant === "dark" || themeVariant === "midnight"
       ? githubDark
       : themeVariant === "eyecare"
         ? solarizedLight

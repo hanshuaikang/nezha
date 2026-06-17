@@ -44,7 +44,7 @@ export function SidebarFooterActions({
 }) {
   const { t } = useI18n();
   const [showAppSettings, setShowAppSettings] = useState(false);
-  const isDark = themeVariant === "dark";
+  const isDark = themeVariant === "dark" || themeVariant === "midnight";
 
   useEffect(() => {
     const open = () => setShowAppSettings(true);

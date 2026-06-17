@@ -10,6 +10,7 @@ use std::time::SystemTime;
 pub(crate) struct SessionMetrics {
     pub(crate) tool_calls: u64,
     pub(crate) duration_secs: f64,
+    pub(crate) session_file_bytes: u64,
     /// 任务累计 token 消耗（包含缓存命中 / reasoning），用于 UI"总消耗"。
     pub(crate) total_tokens: u64,
     /// 当前上下文占用（最后一轮 prompt 大小）。Codex 直读，Claude 由最后一条 assistant 推导。
@@ -106,6 +107,7 @@ fn parse_claude_metrics(content: &str) -> SessionMetrics {
     SessionMetrics {
         tool_calls,
         duration_secs: duration_from(first_ts, last_ts),
+        session_file_bytes: 0,
         total_tokens: input_tokens + output_tokens + cache_creation + cache_read,
         context_tokens: last_context,
         context_window: 0, // Claude session 不带窗口大小
@@ -168,6 +170,7 @@ fn parse_codex_metrics(content: &str) -> SessionMetrics {
     SessionMetrics {
         tool_calls,
         duration_secs: duration_from(first_ts, last_ts),
+        session_file_bytes: 0,
         total_tokens,
         context_tokens,
         context_window,
@@ -178,11 +181,14 @@ pub(crate) fn parse_session_metrics_from_path(path: &std::path::Path) -> Session
     let Ok(content) = std::fs::read_to_string(path) else {
         return SessionMetrics::default();
     };
-    if is_codex_session(&content) {
+    let session_file_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let mut metrics = if is_codex_session(&content) {
         parse_codex_metrics(&content)
     } else {
         parse_claude_metrics(&content)
-    }
+    };
+    metrics.session_file_bytes = session_file_bytes;
+    metrics
 }
 
 /// 带缓存的 session 指标解析
@@ -230,4 +236,3 @@ pub async fn read_session_metrics(session_path: String) -> Result<SessionMetrics
     .await
     .map_err(|e| format!("read_session_metrics join error: {}", e))?
 }
-

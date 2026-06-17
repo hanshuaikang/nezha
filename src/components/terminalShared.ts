@@ -7,6 +7,10 @@ import type { ThemeVariant } from "../types";
 // xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
 import type { XTermWithPrivates } from "./xterm-private";
 
+// xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
+// 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
+const XTERM_SCROLLBAR_WIDTH = 12;
+
 // ── Theme ────────────────────────────────────────────────────────────────────
 
 export const DARK_THEME = {
@@ -55,6 +59,13 @@ export const LIGHT_THEME = {
   brightWhite: "#8c959f",
 };
 
+// Midnight dark: same syntax palette as DARK_THEME, but a neutral near-black
+// background (#1A1B1D) to match the `html.midnight` --bg-panel surface.
+export const MIDNIGHT_THEME = {
+  ...DARK_THEME,
+  background: "#1a1b1d",
+};
+
 // Solarized Light–inspired warm palette to match the eyecare CSS tokens.
 export const EYECARE_THEME = {
   background: "#fdf6e3",
@@ -81,8 +92,23 @@ export const EYECARE_THEME = {
 
 export function themeFor(variant: ThemeVariant) {
   if (variant === "dark") return DARK_THEME;
+  if (variant === "midnight") return MIDNIGHT_THEME;
   if (variant === "eyecare") return EYECARE_THEME;
   return LIGHT_THEME;
+}
+
+export function minimumContrastRatioFor(variant: ThemeVariant): number {
+  // Dark-family variants (dark / midnight) ship a hand-tuned palette already
+  // readable on their backgrounds, so we skip xterm's auto contrast lift to
+  // preserve the original ANSI hues. Light-family variants (light / eyecare)
+  // pair light surfaces with high-saturation ANSI defaults that fall below
+  // WCAG AA — there we let xterm bump foregrounds until they hit 4.5:1.
+  return variant === "dark" || variant === "midnight" ? 1 : 4.5;
+}
+
+export function applyTerminalTheme(term: Terminal, variant: ThemeVariant): void {
+  term.options.theme = themeFor(variant);
+  term.options.minimumContrastRatio = minimumContrastRatioFor(variant);
 }
 
 // ── Watermark flow control ───────────────────────────────────────────────────
@@ -482,7 +508,9 @@ export function initTerminal(
     fontFamily,
     fontSize,
     theme: themeFor(variant),
+    minimumContrastRatio: minimumContrastRatioFor(variant),
     allowProposedApi: true,
+    overviewRuler: { width: XTERM_SCROLLBAR_WIDTH },
     // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
     // 鼠标事件转发给程序并取消本地选区,导致 macOS 用户"运行时无法框选"。开启此项后
     // 按住 ⌥ Option 拖动可强制本地选区（iTerm2 / Terminal.app 的标准约定）。
@@ -500,6 +528,38 @@ export function initTerminal(
   });
 
   return { term, fitAddon, whenFontsReady };
+}
+
+export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLElement): () => void {
+  const ownerWindow = container.ownerDocument.defaultView ?? window;
+  let scrollHideTimer: number | null = null;
+
+  const clearScrollHideTimer = () => {
+    if (scrollHideTimer === null) return;
+    ownerWindow.clearTimeout(scrollHideTimer);
+    scrollHideTimer = null;
+  };
+
+  const hideAfterScroll = () => {
+    clearScrollHideTimer();
+    scrollHideTimer = ownerWindow.setTimeout(() => {
+      container.classList.remove("nezha-xterm-scrolling");
+      scrollHideTimer = null;
+    }, 700);
+  };
+
+  const handleScroll = () => {
+    container.classList.add("nezha-xterm-scrolling");
+    hideAfterScroll();
+  };
+
+  const scrollDisposable = term.onScroll(handleScroll);
+
+  return () => {
+    clearScrollHideTimer();
+    container.classList.remove("nezha-xterm-scrolling");
+    scrollDisposable.dispose();
+  };
 }
 
 /**

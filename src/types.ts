@@ -9,8 +9,8 @@ export interface Project {
 }
 
 export type AgentType = "claude" | "codex";
-export type ThemeMode = "system" | "dark" | "light" | "eyecare";
-export type ThemeVariant = "dark" | "light" | "eyecare";
+export type ThemeMode = "system" | "dark" | "light" | "eyecare" | "midnight";
+export type ThemeVariant = "dark" | "light" | "eyecare" | "midnight";
 export type PermissionMode = "ask" | "auto_edit" | "full_access";
 export type TaskDisplayWindow = 3 | 7 | 15 | 30 | "all";
 

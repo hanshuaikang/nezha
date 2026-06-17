@@ -12,12 +12,13 @@ import {
 } from "../shortcuts";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  themeFor,
+  applyTerminalTheme,
   initTerminal,
   loadWebglAddon,
   safeFit,
   createSmartWriter,
   attachMacWebKitTerminalGuard,
+  attachTerminalScrollbarAutoHide,
   applyTerminalFontSize,
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
@@ -100,6 +101,7 @@ export function TerminalView({
     term.open(container);
     // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
     const disposeCharSizeOverride = applyDomCharSizeOverride(term);
+    const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
     loadWebglAddon(term);
 
@@ -194,6 +196,7 @@ export function TerminalView({
       onRegisterRef.current(null);
       fitAddonRef.current = null;
       disposeCharSizeOverride();
+      disposeScrollbarAutoHide();
       disposeMacWebKitGuard();
       disposeInputFix();
       disposeSmartCopy();
@@ -244,7 +247,7 @@ export function TerminalView({
 
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = themeFor(themeVariant);
+      applyTerminalTheme(terminalRef.current, themeVariant);
     }
   }, [themeVariant]);
 
@@ -282,6 +285,7 @@ export function TerminalView({
   return (
     <div
       ref={containerRef}
+      className="nezha-xterm-host"
       style={{
         width: "100%",
         height: "100%",

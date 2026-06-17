@@ -291,3 +291,30 @@ html.dark {
   --shadow-media: 0 16px 40px rgba(0, 0, 0, 0.6);
   --agent-badge-filter: brightness(0) invert(1) opacity(0.7);
 }
+
+/* Design tokens: midnight dark theme (neutral near-black).
+   Layered on top of `html.dark` (the element carries both classes), so this
+   block only overrides the midnight-specific deltas — near-black surfaces
+   (#1A1B1D files & terminal) and #222427 menu/borders — and inherits the rest
+   of the dark palette. Must stay AFTER `html.dark` to win at equal specificity. */
+html.midnight {
+  --bg-root: #1a1b1d;
+  --bg-shell: #1a1b1d;
+  --bg-titlebar: #1a1b1d;
+  --bg-sidebar: #1a1b1d;
+  --bg-sidebar-elevated: #1f2123;
+  --bg-panel: #1a1b1d;
+  --bg-card: #222427;
+  --bg-hover: #26282b;
+  --bg-selected: #2f3338;
+  --bg-subtle: #1f2123;
+  --bg-input: #222427;
+
+  --border-dim: #222427;
+  --border-medium: #2c2f33;
+  --border-strong: #3a3e44;
+  --border-focus: #e6e6e6;
+
+  --code-line-hover-bg: rgba(255, 255, 255, 0.04);
+  --image-checker-bg: rgba(255, 255, 255, 0.04);
+}

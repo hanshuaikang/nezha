@@ -7,12 +7,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  themeFor,
+  applyTerminalTheme,
   initTerminal,
   loadWebglAddon,
   safeFit,
   createSmartWriter,
+  themeFor,
   attachMacWebKitTerminalGuard,
+  attachTerminalScrollbarAutoHide,
   applyTerminalFontSize,
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
@@ -118,6 +120,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       term.open(container);
       // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
       const disposeCharSizeOverride = applyDomCharSizeOverride(term);
+      const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
       const disposeInputFix = attachMacWebKitShiftInputFix(term);
       loadWebglAddon(term);
       const writer = createSmartWriter(term);
@@ -218,6 +221,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         terminalRef.current = null;
         fitAddonRef.current = null;
         disposeCharSizeOverride();
+        disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
         term.dispose();
@@ -243,7 +247,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
     useEffect(() => {
       if (terminalRef.current) {
-        terminalRef.current.options.theme = themeFor(themeVariant);
+        applyTerminalTheme(terminalRef.current, themeVariant);
       }
     }, [themeVariant]);
 
@@ -292,11 +296,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     return (
       <div
         ref={containerRef}
+        className="nezha-xterm-host nezha-shell-xterm-host"
         style={{
           position: "absolute",
           inset: 0,
           overflow: "hidden",
-          padding: "4px 6px",
+          padding: "4px 0 4px 6px",
           cursor: "text",
           visibility: isActive ? "visible" : "hidden",
           pointerEvents: isActive ? "auto" : "none",
