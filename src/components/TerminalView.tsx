@@ -12,8 +12,7 @@ import {
 } from "../shortcuts";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  themeFor,
-  minimumContrastRatioFor,
+  applyTerminalThemeOnPanel,
   initTerminal,
   loadWebglAddon,
   safeFit,
@@ -27,21 +26,6 @@ import {
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
-
-function themeForAgentTerminal(variant: ThemeVariant, container: HTMLElement) {
-  const theme = themeFor(variant);
-  const background = window.getComputedStyle(container).getPropertyValue("--bg-panel").trim();
-  return background ? { ...theme, background } : theme;
-}
-
-function applyAgentTerminalTheme(
-  term: Terminal,
-  variant: ThemeVariant,
-  container: HTMLElement,
-): void {
-  term.options.theme = themeForAgentTerminal(variant, container);
-  term.options.minimumContrastRatio = minimumContrastRatioFor(variant);
-}
 
 interface TerminalViewProps {
   onInput: (data: string) => void;
@@ -109,7 +93,7 @@ export function TerminalView({
       terminalFontSize,
       monoFontFamily,
     );
-    applyAgentTerminalTheme(term, themeVariant, container);
+    applyTerminalThemeOnPanel(term, themeVariant, container);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     let disposed = false;
@@ -268,7 +252,7 @@ export function TerminalView({
 
   useEffect(() => {
     if (!terminalRef.current || !containerRef.current) return;
-    applyAgentTerminalTheme(terminalRef.current, themeVariant, containerRef.current);
+    applyTerminalThemeOnPanel(terminalRef.current, themeVariant, containerRef.current);
     // 主题/对比度变化后 xterm 算出的最终前景色变了，但 WebGL atlas 仍缓存
     // 旧色的 glyph 纹理，不刷新会看到颜色和字形错位。
     refreshTerminalDisplay(terminalRef.current);
@@ -314,7 +298,6 @@ export function TerminalView({
         height: "100%",
         overflow: "hidden",
         cursor: "text",
-        background: "inherit",
       }}
     />
   );

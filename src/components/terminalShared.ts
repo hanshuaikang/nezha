@@ -111,6 +111,25 @@ export function applyTerminalTheme(term: Terminal, variant: ThemeVariant): void 
   term.options.minimumContrastRatio = minimumContrastRatioFor(variant);
 }
 
+// 终端嵌在 var(--bg-panel) 表面（Agent 任务终端 / 嵌入式 Shell）时，把 xterm 背景
+// 从主题预设替换成 --bg-panel 的实际值，消除终端边界与外层面板拼接时的色差。
+// dark/eyecare 下主题预设与 --bg-panel 不一致；改造前 PR #293 仅修了 Agent 终端，
+// 这里把行为收敛到共享函数，两个终端入口走同一条路径。
+export function themeOnPanel(variant: ThemeVariant, container: HTMLElement) {
+  const theme = themeFor(variant);
+  const background = window.getComputedStyle(container).getPropertyValue("--bg-panel").trim();
+  return background ? { ...theme, background } : theme;
+}
+
+export function applyTerminalThemeOnPanel(
+  term: Terminal,
+  variant: ThemeVariant,
+  container: HTMLElement,
+): void {
+  term.options.theme = themeOnPanel(variant, container);
+  term.options.minimumContrastRatio = minimumContrastRatioFor(variant);
+}
+
 // ── Watermark flow control ───────────────────────────────────────────────────
 
 const HIGH_WATER = 128 * 1024; // 128 KB：超过时停止写入

@@ -7,12 +7,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  applyTerminalTheme,
+  applyTerminalThemeOnPanel,
   initTerminal,
   loadWebglAddon,
   safeFit,
   createSmartWriter,
-  themeFor,
   attachMacWebKitTerminalGuard,
   attachTerminalScrollbarAutoHide,
   applyTerminalFontSize,
@@ -116,6 +115,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         terminalFontSizeRef.current,
         monoFontFamilyRef.current,
       );
+      applyTerminalThemeOnPanel(term, themeVariantRef.current, container);
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
@@ -250,8 +250,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [isActive, shellId]);
 
     useEffect(() => {
-      if (terminalRef.current) {
-        applyTerminalTheme(terminalRef.current, themeVariant);
+      if (terminalRef.current && containerRef.current) {
+        applyTerminalThemeOnPanel(terminalRef.current, themeVariant, containerRef.current);
         // 主题/对比度变化后 xterm 算出的最终前景色变了，但 WebGL atlas 仍缓存
         // 旧色的 glyph 纹理，不刷新会看到颜色和字形错位。
         refreshTerminalDisplay(terminalRef.current);
@@ -400,7 +400,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           borderTop: "1px solid var(--border-dim)",
           display: "flex",
           flexDirection: "column",
-          background: themeFor(themeVariant).background,
+          background: "var(--bg-panel)",
         }}
       >
         {onResizeStart && (
