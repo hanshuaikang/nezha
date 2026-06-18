@@ -416,6 +416,9 @@ pub async fn save_agent_paths(claude_path: String, codex_path: String) -> Result
     .await
     .map_err(|e| e.to_string())??;
     clear_cached_versions();
+    // 路径变化会改写 claude_version_gte 的判定结果(tui 字段是否写入),需要重新生成
+    // Nezha 自有 settings 文件,否则下次启动任务会拿到与新路径版本不匹配的旧文件。
+    let _ = crate::hooks::regenerate_claude_settings();
     Ok(normalized)
 }
 

@@ -607,10 +607,13 @@ pub async fn run_task(
         // Claude:通过 `--settings <Nezha 自有文件>` 一并注入 hooks(可信时)与
         // tui:"default"(force_default_tui 开启时)。用户 ~/.claude/settings.json 中
         // 未提及的 key 保留;`tui` 是有意覆盖,见 build_claude_settings_value 注释。
+        // 守卫文件存在性:防御上游 save_* 漏调 regenerate 导致路径过时的边角场景。
         if claude_pass_settings {
             if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
-                c.arg("--settings");
-                c.arg(p.to_string_lossy().as_ref());
+                if p.exists() {
+                    c.arg("--settings");
+                    c.arg(p.to_string_lossy().as_ref());
+                }
             }
         }
         // 空 prompt 时不传 positional arg，让 Claude 进入交互式 REPL
@@ -856,8 +859,10 @@ pub async fn resume_task(
         // 同 run_task:hooks + force_default_tui 共用 --settings 通道。
         if claude_pass_settings {
             if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
-                c.arg("--settings");
-                c.arg(p.to_string_lossy().as_ref());
+                if p.exists() {
+                    c.arg("--settings");
+                    c.arg(p.to_string_lossy().as_ref());
+                }
             }
         }
         c
