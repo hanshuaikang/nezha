@@ -4,6 +4,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use usage::CodexRpcClient;
+use user_notify::{get_notification_manager, NotificationBuilder, NotificationManager, NotificationResponseAction};
 
 mod agent_assist;
 mod analytics;
@@ -49,6 +50,103 @@ impl TaskManager {
         writers.remove(id);
         children.remove(id);
     }
+}
+
+pub struct NotificationState {
+    manager: Arc<dyn NotificationManager>,
+}
+
+#[cfg(target_os = "macos")]
+struct NoopWake;
+
+#[cfg(target_os = "macos")]
+impl std::task::Wake for NoopWake {
+    fn wake(self: Arc<Self>) {}
+}
+
+#[cfg(target_os = "macos")]
+fn start_notification_permission_request<F>(
+    future: F,
+    tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+)
+where
+    F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+{
+    use std::future::Future;
+    use std::task::{Context, Poll, Waker};
+
+    let mut future = Box::pin(future);
+    let waker = Waker::from(Arc::new(NoopWake));
+    let mut cx = Context::from_waker(&waker);
+    match Future::poll(future.as_mut(), &mut cx) {
+        Poll::Ready(result) => {
+            let _ = tx.send(result);
+        }
+        Poll::Pending => {
+            tauri::async_runtime::spawn(async move {
+                let _ = tx.send(future.await);
+            });
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn ensure_native_notification_permission(
+    app_handle: tauri::AppHandle,
+    manager: Arc<dyn NotificationManager>,
+) -> Result<(), String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app_handle
+        .run_on_main_thread(move || {
+            // user-notify requires macOS permission requests to start on the main thread.
+            start_notification_permission_request(
+                async move {
+                    if manager
+                        .first_time_ask_for_notification_permission()
+                        .await
+                        .map_err(|e| {
+                            format!("Failed to request native notification permission: {}", e)
+                        })?
+                    {
+                        Ok(())
+                    } else {
+                        Err("Native notification permission was denied".to_string())
+                    }
+                },
+                tx,
+            );
+        })
+        .map_err(|e| format!("Failed to check native notification permission: {}", e))?;
+    rx.await
+        .map_err(|_| "Native notification permission check was cancelled".to_string())?
+}
+
+#[tauri::command]
+async fn send_native_notification(
+    _app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    title: String,
+    body: String,
+    project_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    ensure_native_notification_permission(_app_handle, state.manager.clone()).await?;
+
+    let builder = NotificationBuilder::new()
+        .title(&title)
+        .body(&body)
+        .set_user_info(HashMap::from([
+            ("projectId".into(), project_id),
+            ("taskId".into(), task_id),
+        ]));
+
+    state
+        .manager
+        .send_notification(builder)
+        .await
+        .map_err(|e| format!("Failed to send native notification: {}", e))?;
+    Ok(())
 }
 
 /// macOS: 把主窗口收起到 Dock(hide 而非退出)。
@@ -98,6 +196,15 @@ fn hide_main_window(window: tauri::Window) {
     let _ = window;
 }
 
+fn show_main_window(app_handle: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -113,6 +220,47 @@ pub fn run() {
             });
             // 启动 hook 事件文件 watcher
             crate::event_watcher::start(app.handle().clone());
+
+            // Windows: 设置进程级 AUMID，让桌面通知能正确关联到本应用
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::ffi::OsStrExt;
+                let aumid = std::ffi::OsStr::new("com.hanshutx.nezha\0")
+                    .encode_wide()
+                    .collect::<Vec<u16>>();
+                unsafe {
+                    windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(
+                        windows::core::PCWSTR(aumid.as_ptr()),
+                    ).ok().unwrap_or_default();
+                }
+            }
+
+            // 桌面通知管理器 + 点击回调
+            let notif_manager =
+                get_notification_manager("com.hanshutx.nezha".into(), None);
+            {
+                use tauri::Emitter;
+                use tauri::Manager;
+                let app_handle = app.handle().clone();
+                let mgr = notif_manager.clone();
+                mgr.register(
+                    Box::new(move |response| {
+                        if matches!(response.action, NotificationResponseAction::Default) {
+                            let _ =
+                                app_handle.emit("notification-clicked", response.user_info.clone());
+                            show_main_window(&app_handle);
+                        }
+                    }),
+                    vec![],
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to register notification click handler: {}", e);
+                });
+                app.manage(NotificationState {
+                    manager: notif_manager,
+                });
+            }
+
             Ok(())
         })
         .manage(TaskManager {
@@ -141,6 +289,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            send_native_notification,
             hide_main_window,
             pty::run_task,
             pty::resume_task,
@@ -236,12 +385,8 @@ pub fn run() {
             // 此时没有可见窗口，需要手动把主窗口重新显示并聚焦。
             #[cfg(target_os = "macos")]
             {
-                use tauri::Manager;
                 if let tauri::RunEvent::Reopen { .. } = _event {
-                    if let Some(window) = _app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    show_main_window(_app_handle);
                 }
             }
         });

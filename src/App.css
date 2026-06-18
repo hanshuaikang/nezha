@@ -1,6 +1,28 @@
 @import "./styles/themes.css";
 @import "./styles/font-selector.css";
 
+/* ── Toast animation ──────────────────────────────────────────── */
+@keyframes toast-right-in {
+  from { opacity: 0; transform: translateX(40px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes toast-right-out {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(40px) scale(0.96); }
+}
+@keyframes toast-left-in {
+  from { opacity: 0; transform: translateX(-40px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes toast-left-out {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(-40px) scale(0.96); }
+}
+@keyframes toast-progress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
 /* ── Reset ─────────────────────────────────────────────────────── */
 *,
 *::before,

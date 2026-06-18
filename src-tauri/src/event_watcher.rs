@@ -48,6 +48,10 @@ struct HookEvent {
     session_id: String,
     #[serde(default)]
     transcript_path: String,
+    #[serde(default)]
+    tool_name: String,
+    #[serde(default, alias = "hook_message")]
+    message: String,
 }
 
 pub fn start(app: AppHandle) {
@@ -154,7 +158,9 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
         "SessionStart" => handle_session_start(app, ev),
         // Claude 的 Notification 与 Codex 的 PermissionRequest 都表示"等待用户输入"
         // (Claude 工具审批/提问通知;Codex 工具审批/网络升级请求)。
-        "Notification" | "PermissionRequest" => emit_active_status(app, ev, "input_required"),
+        "Notification" | "PermissionRequest" => {
+            emit_active_status_for_notification(app, ev, "input_required")
+        }
         // 重新回到工作状态、清除 input_required 的两条信号:
         // - UserPromptSubmit:用户提交了下一条 prompt。
         // - PostToolUse:工具执行成功后触发(ask 模式下即审批通过后)。工具审批
@@ -168,7 +174,7 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
         // +60s),会让角标晚整整一分钟才出现。需要工具审批时的 Notification 才是即时触发的
         // (即 ask 模式很快的原因)。emit_active_status 的 child_handles 存活守卫确保进程
         // 真正退出后不会误发,真正退出仍交给 PTY exit monitor。
-        "Stop" => emit_active_status(app, ev, "input_required"),
+        "Stop" => emit_active_status_for_notification(app, ev, "input_required"),
         // SubagentStop(子代理结束)主代理仍在工作,不主动 emit。
         _ => {}
     }
@@ -241,23 +247,37 @@ fn last_status() -> &'static Mutex<HashMap<String, String>> {
     LAST_STATUS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// 仅当任务进程仍存活(本进程持有子进程句柄)且状态相比上次有变化时才广播,
-/// 避免给已退出的任务发送 input_required/running,也避免高频事件刷屏。
 fn emit_active_status(app: &AppHandle, ev: &HookEvent, status: &str) {
+    emit_active_status_inner(app, ev, status, false);
+}
+
+fn emit_active_status_for_notification(app: &AppHandle, ev: &HookEvent, status: &str) {
+    emit_active_status_inner(app, ev, status, true);
+}
+
+/// 仅当任务进程仍存活(本进程持有子进程句柄)时广播。普通状态更新按状态去重,
+/// 通知类 hook 事件强制透传给前端,由前端统一执行 5 秒通知去重。
+fn emit_active_status_inner(app: &AppHandle, ev: &HookEvent, status: &str, force_emit: bool) {
     let tm = app.state::<TaskManager>();
     if !tm.child_handles.lock().contains_key(&ev.task_id) {
         return;
     }
     {
         let mut last = last_status().lock();
-        if last.get(&ev.task_id).map(String::as_str) == Some(status) {
+        if !force_emit && last.get(&ev.task_id).map(String::as_str) == Some(status) {
             return;
         }
         last.insert(ev.task_id.clone(), status.to_string());
     }
     let _ = app.emit(
         "task-status",
-        serde_json::json!({ "task_id": ev.task_id, "status": status }),
+        serde_json::json!({
+            "task_id": ev.task_id,
+            "status": status,
+            "hook_event": ev.event,
+            "tool_name": ev.tool_name,
+            "hook_message": ev.message,
+        }),
     );
 }
 

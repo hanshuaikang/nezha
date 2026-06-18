@@ -3,6 +3,7 @@ name: Checks
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   checks:
@@ -49,3 +50,26 @@ jobs:
 
       - name: Run web build
         run: pnpm build
+
+  macos-tauri-check:
+    name: macOS Tauri check
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: macos-aarch64-check
+
+      - name: Run macOS Rust check
+        working-directory: src-tauri
+        run: cargo check --target aarch64-apple-darwin --locked

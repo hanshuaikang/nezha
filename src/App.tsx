@@ -14,6 +14,7 @@ import type {
   TerminalFontSize,
   TaskDisplayWindow,
   SkillHubConfig,
+  NotificationSettings,
 } from "./types";
 import {
   isActiveTaskStatus,
@@ -21,6 +22,8 @@ import {
   clampTerminalFontSize,
   DEFAULT_TASK_DISPLAY_WINDOW,
   normalizeTaskDisplayWindow,
+  cloneDefaultNotificationSettings,
+  normalizeNotificationSettings,
 } from "./types";
 import {
   DEFAULT_UI_FONT,
@@ -31,12 +34,13 @@ import { quoteFontName } from "./utils/fonts";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
-import { useToast } from "./components/Toast";
+import { NOTIFICATION_SETTINGS_CHANGED_EVENT, useToast } from "./components/Toast";
 import { isHideWindowShortcut } from "./shortcuts";
 import { APP_PLATFORM } from "./platform";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
+import { stripMarkdown } from "./utils";
 import s from "./styles";
 import "./App.css";
 
@@ -135,6 +139,63 @@ function isLiveTerminalTaskStatus(status: TaskStatus): boolean {
   return status === "pending" || status === "running" || status === "input_required";
 }
 
+function isAttentionStatus(status: TaskStatus): boolean {
+  return status === "input_required" || status === "detached" || status === "interrupted";
+}
+
+function shouldNotifyStatus(status: TaskStatus): boolean {
+  return status === "done" || status === "failed" || status === "input_required";
+}
+
+function getNotificationType(
+  status: TaskStatus,
+  hookEvent?: string,
+): keyof NotificationSettings["types"] | null {
+  if (status === "done" || status === "failed") return status;
+  if (status !== "input_required") return null;
+  return hookEvent === "Stop" ? "idle" : "input_required";
+}
+
+function truncateNotificationPreview(text: string, maxLength: number): string {
+  return text.length > maxLength ? text.slice(0, maxLength - 3) + "..." : text;
+}
+
+function getTaskNotificationTitle(task: Task, fallbackTitle: string): string {
+  const nameTitle = stripMarkdown(task.name?.trim() ?? "");
+  if (nameTitle) return nameTitle;
+  const promptTitle = stripMarkdown(task.prompt.slice(0, 60));
+  return promptTitle || fallbackTitle;
+}
+
+function getHookMessagePreview(hookMessage?: string): string | null {
+  if (!hookMessage) return null;
+  for (const line of hookMessage.split(/\r?\n/)) {
+    const preview = stripMarkdown(line);
+    if (preview) return truncateNotificationPreview(preview, 120);
+  }
+  const preview = stripMarkdown(hookMessage);
+  return preview ? truncateNotificationPreview(preview, 120) : null;
+}
+
+async function sendDesktopNotification(
+  title: string,
+  body: string,
+  extra?: Record<string, string>,
+): Promise<boolean> {
+  try {
+    await invoke("send_native_notification", {
+      title,
+      body,
+      projectId: extra?.projectId ?? "",
+      taskId: extra?.taskId ?? "",
+    });
+    return true;
+  } catch (e) {
+    console.warn("Failed to send desktop notification:", e);
+    return false;
+  }
+}
+
 function getSystemPrefersDark() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -180,9 +241,50 @@ function getInitialFontFamily(key: string, fallback: FontFamily): FontFamily {
   return quoteFontName(stored);
 }
 
+function getInitialNotificationSettings(): NotificationSettings {
+  try {
+    const raw = localStorage.getItem("nezha:notificationSettings");
+    return normalizeNotificationSettings(raw ? JSON.parse(raw) : null);
+  } catch {
+    return cloneDefaultNotificationSettings();
+  }
+}
+
 function App() {
   const { showToast } = useToast();
   const { t } = useI18n();
+
+  const isWindowFocusedRef = useRef(document.visibilityState === "visible" && document.hasFocus());
+  useEffect(() => {
+    const markDomFocused = () => {
+      isWindowFocusedRef.current = document.visibilityState === "visible";
+    };
+    const markBlurred = () => {
+      isWindowFocusedRef.current = false;
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        isWindowFocusedRef.current = false;
+      }
+    };
+    const onTauriFocusChanged = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      isWindowFocusedRef.current = focused && document.visibilityState === "visible";
+    });
+
+    window.addEventListener("focus", markDomFocused);
+    window.addEventListener("blur", markBlurred);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", markDomFocused);
+      window.removeEventListener("blur", markBlurred);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      onTauriFocusChanged.then((unlisten) => unlisten()).catch(console.error);
+    };
+  }, []);
+
+  const navigateToTaskRef = useRef<(projectId: string, taskId: string) => void>(() => {});
+  const tRef = useRef<(key: string) => string>(() => "");
+  tRef.current = (key: string) => t(key);
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
@@ -200,13 +302,29 @@ function App() {
   const [monoFontFamily, setMonoFontFamily] = useState<FontFamily>(() =>
     getInitialFontFamily("nezha:monoFontFamily", DEFAULT_MONO_FONT),
   );
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(
+    getInitialNotificationSettings,
+  );
+  const notificationSettingsRef = useRef(notificationSettings);
+  notificationSettingsRef.current = notificationSettings;
+  /** 去重：task_id → 上次通知时间戳 */
+  const lastNotifiedRef = useRef<Record<string, number>>({});
+  /** Stop 后同一轮空闲里的 Claude 延迟 Notification 不再重复通知 */
+  const idleCycleRef = useRef<Record<string, boolean>>({});
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const activeProjectRef = useRef(activeProject);
+  activeProjectRef.current = activeProject;
   const [projectViews, setProjectViews] = useState<Record<string, ProjectViewState>>({});
+  const projectViewsRef = useRef(projectViews);
+  projectViewsRef.current = projectViews;
   const [mountedProjectIds, setMountedProjectIds] = useState<string[]>([]);
   const [taskRunCounts, setTaskRunCounts] = useState<Record<string, number>>({});
   const [skillHubConfig, setSkillHubConfig] = useState<SkillHubConfig | null>(null);
+  const hubProjectId = skillHubConfig?.hubProjectId;
   const [hubMode, setHubMode] = useState(false);
 
   const tm = useTerminalManager();
@@ -337,6 +455,11 @@ function App() {
     document.documentElement.style.setProperty("--font-mono", value);
   }, [monoFontFamily]);
 
+  useEffect(() => {
+    localStorage.setItem("nezha:notificationSettings", JSON.stringify(notificationSettings));
+    window.dispatchEvent(new Event(NOTIFICATION_SETTINGS_CHANGED_EVENT));
+  }, [notificationSettings]);
+
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
       // Toggle only cycles between the canonical light/dark pair. The dark side
@@ -420,16 +543,115 @@ function App() {
   }, []);
 
   // Tauri event listeners (agent-output is handled inside useTerminalManager)
+  function handleTaskNotification(
+    taskId: string,
+    status: TaskStatus,
+    hookEvent?: string,
+    toolName?: string,
+    hookMessage?: string,
+  ) {
+    if (status !== "input_required") {
+      delete idleCycleRef.current[taskId];
+    }
+    if ((hookEvent === "Notification" || hookEvent === "Stop") && idleCycleRef.current[taskId]) {
+      return;
+    }
+    if (hookEvent === "Stop") {
+      idleCycleRef.current[taskId] = true;
+    }
+    if (!shouldNotifyStatus(status)) return;
+    const ns = notificationSettingsRef.current;
+    if (!ns.enabled) return;
+    const typeKey = getNotificationType(status, hookEvent);
+    if (!typeKey || ns.types[typeKey] === false) return;
+
+    const task = tasksRef.current.find((tk) => tk.id === taskId);
+    if (!task) return;
+    const tr = tRef.current;
+    const title = getTaskNotificationTitle(task, tr("taskNotif.fallbackTitle"));
+    const statusText =
+      typeKey === "done" ? tr("taskNotif.done")
+        : typeKey === "failed" ? tr("taskNotif.failed")
+        : typeKey === "idle" ? tr("taskNotif.idle")
+        : tr("taskNotif.inputRequired");
+    const hookPreview = getHookMessagePreview(hookMessage);
+    const body = hookPreview ?? (toolName ? `${statusText} - ${toolName}` : statusText);
+    const toastMessage = title ? `${title}: ${body}` : body;
+    const view = projectViewsRef.current[task.projectId];
+    const isViewingTask =
+      activeProjectRef.current?.id === task.projectId &&
+      view?.selectedTaskId === taskId;
+    const isWindowFocused = isWindowFocusedRef.current;
+    const toastType = status === "done" ? "success" : status === "failed" ? "error" : "warning";
+    const navigate = navigateToTaskRef.current;
+    const shouldSendSystem = !isWindowFocused && ns.system;
+    const shouldQueueInApp = !isWindowFocused && !ns.system && ns.inApp;
+    const shouldShowInApp = isWindowFocused && !isViewingTask && ns.inApp;
+
+    if (!shouldSendSystem && !shouldQueueInApp && !shouldShowInApp) return;
+
+    // Dedup only once we know this event will actually notify the user.
+    const now = Date.now();
+    const last = lastNotifiedRef.current[taskId];
+    if (last && now - last < 5000) return;
+    lastNotifiedRef.current[taskId] = now;
+
+    const showNotificationToast = (waitForFocus = false) => {
+      showToast(toastMessage, toastType, {
+        onClick: () => {
+          navigate(task.projectId, taskId);
+        },
+        notification: true,
+        playSound: true,
+        waitForFocus,
+      });
+    };
+
+    if (shouldSendSystem) {
+      sendDesktopNotification(title, body, {
+        projectId: task.projectId,
+        taskId,
+      }).then((sent) => {
+        if (sent) return;
+        const latestSettings = notificationSettingsRef.current;
+        if (!latestSettings.enabled || !latestSettings.inApp || latestSettings.types[typeKey] === false) {
+          return;
+        }
+        if (!tasksRef.current.some((tk) => tk.projectId === task.projectId && tk.id === taskId)) {
+          return;
+        }
+        const latestView = projectViewsRef.current[task.projectId];
+        const isNowViewingTask =
+          activeProjectRef.current?.id === task.projectId &&
+          latestView?.selectedTaskId === taskId;
+        if (isNowViewingTask) return;
+        showNotificationToast(true);
+      });
+    } else if (shouldQueueInApp) {
+      showNotificationToast(true);
+    } else {
+      showNotificationToast();
+    }
+  }
+
   useEffect(() => {
-    const p1 = listen<{ task_id: string; status: TaskStatus; failure_reason?: string }>(
+    const p1 = listen<{
+      task_id: string;
+      status: TaskStatus;
+      failure_reason?: string;
+      hook_event?: string;
+      tool_name?: string;
+      hook_message?: string;
+    }>(
       "task-status",
       (e) => {
-        const { task_id, status, failure_reason } = e.payload;
+        const { task_id, status, failure_reason, hook_event, tool_name, hook_message } = e.payload;
         updateTaskStatus(task_id, status, undefined, failure_reason);
         if (!isActiveTaskStatus(status)) {
           tm.removeTaskBuffers([task_id]);
         }
         if (status === "done") scheduleForDoneTask(task_id);
+        handleTaskNotification(task_id, status, hook_event, tool_name, hook_message);
       },
     );
     const p2 = listen<{ task_id: string; session_id: string; session_path: string }>(
@@ -486,6 +708,48 @@ function App() {
     setActiveProject(null);
     setHubMode(false);
   }
+
+  // Navigate to a task — used by notifications
+  const handleNavigateToTask = useCallback((projectId: string, taskId: string) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) {
+      console.warn("Notification target project no longer exists:", { projectId, taskId });
+      return;
+    }
+    const taskExists = tasksRef.current.some(
+      (task) => task.projectId === projectId && task.id === taskId,
+    );
+    const updated = { ...project, lastOpenedAt: Date.now() };
+    setProjects((prev) => {
+      const next = prev.map((p) => (p.id === project.id ? updated : p));
+      persistProjects(next, showToast, formatSaveProjectsError);
+      return next;
+    });
+    setHubMode(project.id === hubProjectId);
+    setActiveProject(updated);
+    mountProject(updated.id);
+    if (taskExists) {
+      updateProjectView(project.id, { selectedTaskId: taskId, isNewTask: false });
+    } else {
+      console.warn("Notification target task no longer exists:", { projectId, taskId });
+      updateProjectView(project.id, { selectedTaskId: null, isNewTask: true });
+    }
+  }, [projects, hubProjectId, mountProject, showToast, formatSaveProjectsError, updateProjectView]);
+  useEffect(() => { navigateToTaskRef.current = handleNavigateToTask; }, [handleNavigateToTask]);
+
+  // Notification click → navigate to task (user-notify register callback)
+  useEffect(() => {
+    const p = listen<{ projectId?: string; taskId?: string }>(
+      "notification-clicked",
+      (event) => {
+        const { projectId, taskId } = event.payload;
+        if (projectId && taskId) {
+          navigateToTaskRef.current(projectId, taskId);
+        }
+      },
+    );
+    return () => { p.then((fn) => fn()); };
+  }, []);
 
   function invokeRunTask(task: Task, projectPath: string, images: string[], texts: string[] = []) {
     invoke("run_task", {
@@ -1013,8 +1277,9 @@ function App() {
         if (task.id !== taskId) return task;
         if (shouldIgnoreTaskStatusTransition(task.status, status)) return task;
 
-        const attentionRequestedAt =
-          status === "input_required" ? (extra?.attentionRequestedAt ?? Date.now()) : undefined;
+        const attentionRequestedAt = isAttentionStatus(status)
+          ? (extra?.attentionRequestedAt ?? (task.status === status ? task.attentionRequestedAt : undefined) ?? Date.now())
+          : undefined;
 
         if (task.status === status && task.attentionRequestedAt === attentionRequestedAt) {
           return task;
@@ -1083,7 +1348,6 @@ function App() {
         .filter((project): project is Project => !!project),
     [mountedProjectIds, projects],
   );
-  const hubProjectId = skillHubConfig?.hubProjectId;
   const visibleProjectsForWelcome = useMemo(
     () => sortedProjects.filter((p) => p.id !== hubProjectId),
     [sortedProjects, hubProjectId],
@@ -1187,6 +1451,8 @@ function App() {
               onUiFontFamilyChange={setUiFontFamily}
               monoFontFamily={monoFontFamily}
               onMonoFontFamilyChange={setMonoFontFamily}
+              notificationSettings={notificationSettings}
+              onNotificationSettingsChange={setNotificationSettings}
             />
           );
         })}
@@ -1224,6 +1490,8 @@ function App() {
             onUiFontFamilyChange={setUiFontFamily}
             monoFontFamily={monoFontFamily}
             onMonoFontFamilyChange={setMonoFontFamily}
+            notificationSettings={notificationSettings}
+            onNotificationSettingsChange={setNotificationSettings}
           />
         </div>
       )}

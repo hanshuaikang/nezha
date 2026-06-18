@@ -20,6 +20,7 @@ import type {
   TaskDisplayWindow,
   FontFamily,
   SkillHubConfig,
+  NotificationSettings,
 } from "../types";
 import { getAvatarGradient, shortenPath } from "../utils";
 import { ProjectAvatar } from "./ProjectAvatar";
@@ -109,6 +110,8 @@ export function WelcomePage({
   onUiFontFamilyChange,
   monoFontFamily,
   onMonoFontFamilyChange,
+  notificationSettings,
+  onNotificationSettingsChange,
   skillHubConfig,
   onEnterSkillHub,
 }: {
@@ -134,6 +137,8 @@ export function WelcomePage({
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
   onMonoFontFamilyChange: (family: FontFamily) => void;
+  notificationSettings: NotificationSettings;
+  onNotificationSettingsChange: (settings: NotificationSettings) => void;
   skillHubConfig: SkillHubConfig | null;
   onEnterSkillHub: () => void;
 }) {
@@ -204,6 +209,8 @@ export function WelcomePage({
               onUiFontFamilyChange={onUiFontFamilyChange}
               monoFontFamily={monoFontFamily}
               onMonoFontFamilyChange={onMonoFontFamilyChange}
+              notificationSettings={notificationSettings}
+              onNotificationSettingsChange={onNotificationSettingsChange}
             />
           </div>
         </div>

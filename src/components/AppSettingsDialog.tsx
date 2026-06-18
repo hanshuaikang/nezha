@@ -10,9 +10,10 @@ import {
   Blocks,
   Heart,
   ExternalLink,
+  Bell,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily, NotificationSettings } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -29,6 +30,7 @@ import { ThemePanel } from "./app-settings/ThemePanel";
 import { FontPanel } from "./app-settings/FontPanel";
 import { HooksPanel } from "./app-settings/HooksPanel";
 import { SkillsPanel } from "./app-settings/SkillsPanel";
+import { NotificationPanel } from "./app-settings/NotificationPanel";
 import { getAgentSettingsFilePath } from "./app-settings/shared";
 import type { AgentKey, AppSettingsNavItem, NavKey, NavSection } from "./app-settings/types";
 
@@ -38,6 +40,7 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
   { key: "fonts", labelKey: "appSettings.fonts", section: "application", icon: Type },
   { key: "shortcuts", labelKey: "appSettings.shortcuts", section: "application", icon: Keyboard },
   { key: "hooks", labelKey: "appSettings.hooks", section: "application", icon: Zap },
+  { key: "notifications", labelKey: "appSettings.notifications", section: "application", icon: Bell },
   { key: "skills", labelKey: "skill.settings.navLabel", section: "application", icon: Blocks },
   {
     key: "claude",
@@ -121,6 +124,8 @@ export function AppSettingsDialog({
   onUiFontFamilyChange,
   monoFontFamily,
   onMonoFontFamilyChange,
+  notificationSettings,
+  onNotificationSettingsChange,
 }: {
   onClose: () => void;
   themeVariant: ThemeVariant;
@@ -137,6 +142,8 @@ export function AppSettingsDialog({
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
   onMonoFontFamilyChange: (family: FontFamily) => void;
+  notificationSettings: NotificationSettings;
+  onNotificationSettingsChange: (settings: NotificationSettings) => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("general");
@@ -234,6 +241,12 @@ export function AppSettingsDialog({
             <ShortcutsPanel key="shortcuts" />
           ) : activeNav === "hooks" ? (
             <HooksPanel key="hooks" />
+          ) : activeNav === "notifications" ? (
+            <NotificationPanel
+              key="notifications"
+              settings={notificationSettings}
+              onChange={onNotificationSettingsChange}
+            />
           ) : activeNav === "skills" ? (
             <SkillsPanel key="skills" />
           ) : activeNav === "about" ? (

@@ -171,3 +171,22 @@ export const CODE_EXTS = new Set([
   "swift",
   "kt",
 ]);
+
+// ── Markdown 工具 ────────────────────────────────────────────────────────────
+
+/** 去除 Markdown 标记，返回纯文本（用于通知 body 预览） */
+export function stripMarkdown(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ") // code blocks
+    .replace(/`([^`]*)`/g, "$1") // inline code
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ") // images
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links
+    .replace(/^#{1,6}\s+/gm, " ") // headings (only at line start)
+    .replace(/[*_~]+([^*_~]+)[*_~]+/g, "$1") // bold/italic/strikethrough
+    .replace(/>\s+/g, " ") // blockquotes
+    .replace(/[-*+]\s+/g, " ") // list markers
+    .replace(/\d+\.\s+/g, " ") // ordered list
+    .replace(/\n+/g, " ") // newlines
+    .replace(/\s+/g, " ") // collapse whitespace
+    .trim();
+}

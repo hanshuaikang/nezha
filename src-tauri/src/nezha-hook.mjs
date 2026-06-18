@@ -22,6 +22,8 @@ const pick = (payload, ...keys) => {
   return "";
 };
 
+const truncate = (value, max) => (value.length > max ? value.slice(0, max - 3) + "..." : value);
+
 let raw = "";
 let done = false;
 
@@ -32,6 +34,10 @@ function finish() {
   done = true;
   try {
     const payload = raw ? JSON.parse(raw) : {};
+    const message = truncate(
+      pick(payload, "last_assistant_message", "lastAssistantMessage", "message"),
+      500,
+    );
     const line =
       JSON.stringify({
         ts: Date.now(),
@@ -47,6 +53,7 @@ function finish() {
         cwd: pick(payload, "cwd"),
         tool_name: pick(payload, "tool_name", "toolName"),
         permission_mode: pick(payload, "permission_mode", "permissionMode"),
+        message,
       }) + "\n";
     mkdirSync(eventDir, { recursive: true });
     appendFileSync(join(eventDir, "events.jsonl"), line);

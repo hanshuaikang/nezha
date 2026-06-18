@@ -121,6 +121,81 @@ export function isActiveTaskStatus(status: TaskStatus): boolean {
   );
 }
 
+// ── Notification Settings ─────────────────────────────────────────────────────
+
+export type ToastPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left";
+
+export interface NotificationSettings {
+  /** 总开关 */
+  enabled: boolean;
+  /** 应用内 Toast 弹窗 */
+  inApp: boolean;
+  /** 系统桌面通知 */
+  system: boolean;
+  /** 应用内通知提示音 */
+  sound: boolean;
+  /** Toast 弹窗位置 */
+  toastPosition: ToastPosition;
+  /** 按状态类型过滤 */
+  types: {
+    done: boolean;
+    failed: boolean;
+    idle: boolean;
+    input_required: boolean;
+  };
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  inApp: true,
+  system: true,
+  sound: true,
+  toastPosition: "bottom-right",
+  types: { done: true, failed: true, idle: true, input_required: true },
+};
+
+export const VALID_TOAST_POSITIONS: ToastPosition[] = [
+  "bottom-right",
+  "bottom-left",
+  "top-right",
+  "top-left",
+];
+
+export function cloneDefaultNotificationSettings(): NotificationSettings {
+  return {
+    ...DEFAULT_NOTIFICATION_SETTINGS,
+    types: { ...DEFAULT_NOTIFICATION_SETTINGS.types },
+  };
+}
+
+function booleanOrDefault(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+export function normalizeNotificationSettings(value: unknown): NotificationSettings {
+  if (typeof value !== "object" || value === null) return cloneDefaultNotificationSettings();
+  const obj = value as Record<string, unknown>;
+  const types =
+    typeof obj.types === "object" && obj.types !== null
+      ? (obj.types as Record<string, unknown>)
+      : {};
+  return {
+    enabled: booleanOrDefault(obj.enabled, true),
+    inApp: booleanOrDefault(obj.inApp, true),
+    system: booleanOrDefault(obj.system, true),
+    sound: booleanOrDefault(obj.sound, true),
+    toastPosition: VALID_TOAST_POSITIONS.includes(obj.toastPosition as ToastPosition)
+      ? (obj.toastPosition as ToastPosition)
+      : DEFAULT_NOTIFICATION_SETTINGS.toastPosition,
+    types: {
+      done: booleanOrDefault(types.done, true),
+      failed: booleanOrDefault(types.failed, true),
+      idle: booleanOrDefault(types.idle, true),
+      input_required: booleanOrDefault(types.input_required, true),
+    },
+  };
+}
+
 // ── Notifications ────────────────────────────────────────────────────────────
 
 export interface NotificationItem {

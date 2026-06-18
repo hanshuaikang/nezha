@@ -9,6 +9,7 @@ import {
   getGitStatusLabel,
   getFileColor,
   CODE_EXTS,
+  stripMarkdown,
 } from "../utils";
 
 // ── getAvatarGradient ────────────────────────────────────────────────────────
@@ -159,6 +160,22 @@ describe("getFileColor", () => {
   it("ext 参数优先于从文件名推断的扩展名", () => {
     // 传入 ext="rs" 覆盖从 "foo.ts" 推断的 "ts"
     expect(getFileColor("foo.ts", "rs")).toBe("var(--icon-file-rust)");
+  });
+});
+
+// ── stripMarkdown ────────────────────────────────────────────────────────────
+
+describe("stripMarkdown", () => {
+  it("保留 inline code 的内容，只移除反引号", () => {
+    expect(stripMarkdown("我跑了 `pnpm lint`，通过了")).toBe("我跑了 pnpm lint，通过了");
+  });
+
+  it("保留链接显示文本，只移除链接写法", () => {
+    expect(stripMarkdown("查看 [报告](https://example.com/report)")).toBe("查看 报告");
+  });
+
+  it("移除代码块和图片内容", () => {
+    expect(stripMarkdown("完成\n```ts\nconst x = 1\n```\n![图](a.png)")).toBe("完成");
   });
 });
 
