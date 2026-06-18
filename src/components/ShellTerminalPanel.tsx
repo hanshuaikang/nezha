@@ -252,6 +252,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     useEffect(() => {
       if (terminalRef.current) {
         applyTerminalTheme(terminalRef.current, themeVariant);
+        // 主题/对比度变化后 xterm 算出的最终前景色变了，但 WebGL atlas 仍缓存
+        // 旧色的 glyph 纹理，不刷新会看到颜色和字形错位。
+        refreshTerminalDisplay(terminalRef.current);
       }
     }, [themeVariant]);
 
