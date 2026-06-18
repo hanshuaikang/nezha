@@ -362,14 +362,6 @@ pub fn get_agent_launch_spec(agent: &str) -> AgentLaunchSpec {
     get_agent_launch_spec_from_settings(&load_settings_internal(), agent)
 }
 
-/// codex 是否真正可用：实际执行 `codex --version` 成功才算（走全局带缓存的探测，
-/// 与 `hooks::usable_for` 同源）。不能用 launch spec 的 `program` 是否非空来判断——
-/// 路径解析在二进制缺失时会回退成裸名 `"codex"`，导致永远非空、永远误判为已安装。
-/// 注意：只验证二进制能否运行，不验证登录状态，未登录的 codex 调用仍会在运行时失败。
-pub fn codex_available() -> bool {
-    detect_codex_version().is_some()
-}
-
 #[tauri::command]
 pub async fn load_app_settings() -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(load_settings_internal)

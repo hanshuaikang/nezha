@@ -294,14 +294,7 @@ pub async fn generate_commit_message(project_path: String) -> Result<String, Str
     let config = crate::config::read_project_config(project_path.clone())?;
     let commit_prompt = config.git.commit_prompt;
     let timeout_secs = config.git.commit_message_timeout_secs.clamp(1, 120);
-    // 临时策略：claude `-p` 计费变动期间，提交信息一律改用 codex（headless）生成，
-    // 规避 claude headless 额度消耗。codex 未安装则直接报错——不回落项目默认 agent
-    // （claude -p 当前不可用，回落也无意义）。
-    let agent = if crate::app_settings::codex_available() {
-        "codex".to_string()
-    } else {
-        return Err("codex 未安装，无法生成提交信息。请安装 codex 后重试。".to_string());
-    };
+    let agent = config.agent.default;
 
     // 3. Build full prompt
     let full_prompt = format!(
