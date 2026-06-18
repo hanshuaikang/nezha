@@ -18,6 +18,7 @@ import {
   applyTerminalFontSize,
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
+  refreshTerminalDisplay,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
@@ -122,7 +123,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       const disposeCharSizeOverride = applyDomCharSizeOverride(term);
       const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
       const disposeInputFix = attachMacWebKitShiftInputFix(term);
-      loadWebglAddon(term);
+      const webglHandle = loadWebglAddon(term);
       const writer = createSmartWriter(term);
       const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
@@ -184,11 +185,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
         window.requestAnimationFrame(() => {
           fit();
-        const t = terminalRef.current;
-        if (t) {
+          const t = terminalRef.current;
+          if (t) {
+            refreshTerminalDisplay(t);
             t.focus();
-        }
-      });
+          }
+        });
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -221,6 +223,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         terminalRef.current = null;
         fitAddonRef.current = null;
         disposeCharSizeOverride();
+        webglHandle.dispose();
         disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
@@ -241,6 +244,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
           }
         }
+        refreshTerminalDisplay(terminalRef.current);
         terminalRef.current.focus();
       });
     }, [isActive, shellId]);
@@ -301,7 +305,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           position: "absolute",
           inset: 0,
           overflow: "hidden",
-          padding: "4px 0 4px 6px",
+          padding: "4px 0 16px 6px",
           cursor: "text",
           visibility: isActive ? "visible" : "hidden",
           pointerEvents: isActive ? "auto" : "none",

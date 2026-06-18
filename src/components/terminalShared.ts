@@ -337,6 +337,7 @@ export interface InitTerminalResult {
 
 const fontReadyCache = new Set<string>();
 const FONT_READY_TIMEOUT_MS = 1000;
+const TEXTURE_ATLAS_REFRESH_DELAYS_MS = [0, 50, 250, 1000, 2500, 5000] as const;
 
 function primaryFontFamily(fontFamily: string): string | null {
   const first = fontFamily.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
@@ -383,17 +384,32 @@ function waitForFontReady(fontFamily: string, fontSize: number): Promise<void> {
   });
 }
 
+function whenFontEventuallyReady(fontFamily: string, fontSize: number): Promise<void> {
+  const fonts = typeof document !== "undefined" ? document.fonts : undefined;
+  if (!fonts) return Promise.resolve();
+
+  const primary = primaryFontFamily(fontFamily);
+  const spec = primary ? `${fontSize}px "${primary}"` : null;
+  const load = spec
+    ? fonts.load(spec).catch((err) => {
+        console.warn(`[terminal] invalid font spec "${spec}"`, err);
+      })
+    : Promise.resolve();
+  return load.then(() => fonts.ready).then(() => {});
+}
+
+const DOM_MEASURE_REPEAT = 32;
 const domCellWidthCache = new Map<string, number>();
 
 function isFontLoaded(fontFamily: string, fontSize: number): boolean {
   const primary = primaryFontFamily(fontFamily);
-  if (!primary) return true; // 通用关键字（monospace 等）总是 ready
+  if (!primary) return true; // 通用关键字（monospace 等）总是 ready。
   const fonts = typeof document !== "undefined" ? document.fonts : undefined;
   if (!fonts) return true;
   try {
     return fonts.check(`${fontSize}px "${primary}"`);
   } catch {
-    return true; // spec 拼接异常时不阻止缓存，等同于 ready
+    return true;
   }
 }
 
@@ -403,45 +419,43 @@ function measureCellWidthInDOM(fontFamily: string, fontSize: number): number | n
   const cached = domCellWidthCache.get(key);
   if (cached !== undefined) return cached;
 
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:absolute;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;white-space:pre;font-kerning:none;";
+  const probe = document.createElement("span");
+  probe.classList.add("xterm-char-measure-element");
+  probe.setAttribute("aria-hidden", "true");
+  probe.style.whiteSpace = "pre";
+  probe.style.fontKerning = "none";
   probe.style.fontFamily = fontFamily;
   probe.style.fontSize = `${fontSize}px`;
-  // 32 个 'W'：与 xterm 内置 DomMeasureStrategy 一致，平均消除 offsetWidth 取整误差。
-  probe.textContent = "W".repeat(32);
+  // 与 xterm DomMeasureStrategy 保持一致：32 个 W 平均掉布局取整误差。
+  probe.textContent = "W".repeat(DOM_MEASURE_REPEAT);
   document.body.appendChild(probe);
   try {
-    const width = probe.offsetWidth / 32;
+    const width = probe.offsetWidth / DOM_MEASURE_REPEAT;
     if (!Number.isFinite(width) || width <= 0) return null;
-    // 字体未 ready 时测的是 fallback 宽度，禁止入缓存——否则 fonts.ready 后
-    // 走 override 仍命中旧值，cell 永远按 fallback 字体算（CJK 字体首次加载场景）。
+    // 字体未 ready 时测的是 fallback 宽度，不能缓存；ready 后会再测一次。
     if (isFontLoaded(fontFamily, fontSize)) {
       domCellWidthCache.set(key, width);
     }
     return width;
   } finally {
-    document.body.removeChild(probe);
+    probe.remove();
   }
 }
 
 /**
- * 用 DOM offsetWidth 替换 xterm 的 canvas cell width 测量，修复 WKWebView 下
- * CJK 等宽字体（如 Maple Mono CN）的 cell 被测成 fullwidth、英文字符被双宽
- * 渲染的 bug。只改 width，不动 height（与 DOM offsetHeight 是两套语义）。
+ * 只修正 xterm 测量结果里的 width，不直接写 `_charSizeService` 当前值。
  *
- * 必须在 `term.open()` 之后调用；私有 API 访问见 xterm-private.d.ts。
+ * WKWebView/OffscreenCanvas 对 CJK Nerd Font 的 measureText 可能把半宽字符测成
+ * fullwidth。这里用 DOM 宽度覆盖策略返回值，让 xterm 自己的 measure() 继续负责
+ * 写入 width/height、触发 onCharSizeChange 和 renderer 更新。height 保持 xterm
+ * 原始结果，避免 DOM 高度语义和 xterm lineHeight 叠加后把整屏 cell 拉坏。
  */
 export function applyDomCharSizeOverride(term: Terminal): () => void {
   const core = (term as XTermWithPrivates)._core;
-  const css = core?._charSizeService;
-  if (!css) {
-    console.warn("[terminal] xterm _charSizeService inaccessible; skip DOM width override");
-    return () => {};
-  }
-  const strategy = css._measureStrategy;
-  if (!strategy || typeof strategy.measure !== "function") {
-    console.warn("[terminal] xterm _measureStrategy inaccessible; skip DOM width override");
+  const charSizeService = core?._charSizeService;
+  const strategy = charSizeService?._measureStrategy;
+  if (!charSizeService || !strategy || typeof strategy.measure !== "function") {
+    console.warn("[terminal] xterm char size strategy inaccessible; skip DOM width override");
     return () => {};
   }
 
@@ -451,31 +465,28 @@ export function applyDomCharSizeOverride(term: Terminal): () => void {
 
   strategy.measure = () => {
     const result = original();
-    if (!active) return result;
+    if (!active || result.width <= 0 || result.height <= 0) return result;
 
-    const ff = term.options.fontFamily;
-    const fs = term.options.fontSize;
-    if (typeof ff !== "string" || typeof fs !== "number") return result;
-    if (result.width <= 0) return result;
+    const fontFamily = term.options.fontFamily;
+    const fontSize = term.options.fontSize;
+    if (typeof fontFamily !== "string" || typeof fontSize !== "number") return result;
 
-    const domWidth = measureCellWidthInDOM(ff, fs);
-    if (domWidth === null) return result;
-    if (Math.abs(result.width - domWidth) < 0.5) return result;
+    const domWidth = measureCellWidthInDOM(fontFamily, fontSize);
+    if (domWidth === null || Math.abs(result.width - domWidth) < 0.5) return result;
 
     if (!warnedMismatch) {
       warnedMismatch = true;
       console.warn(
-        `[terminal] canvas measureText width=${result.width.toFixed(2)} != DOM measure=${domWidth.toFixed(2)} (font: ${ff}, ${fs}px) — using DOM width (CJK monospace fix)`,
+        `[terminal] xterm measured cell width=${result.width.toFixed(2)}, DOM width=${domWidth.toFixed(2)}; using DOM width`,
       );
     }
     return { width: domWidth, height: result.height };
   };
 
-  // open 时 xterm 已经测过一次未 patch 的路径，需要立即重测覆盖错值。
   try {
-    css.measure();
+    charSizeService.measure();
   } catch {
-    /* term 未就绪：后续 fontFamily/fontSize 变更会重新触发 measure */
+    /* term 未完全就绪时忽略；字体/字号变化会再次触发 measure */
   }
 
   return () => {
@@ -562,9 +573,95 @@ export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLE
   };
 }
 
+export interface WebglAddonHandle {
+  /** 释放 WebGL addon。延迟加载未完成时也安全调用，会标记 disposed 阻止后续 load。 */
+  dispose: () => void;
+}
+
+interface TextureAtlasRefreshState {
+  generation: number;
+  frameIds: number[];
+  timerIds: number[];
+}
+
+const textureAtlasRefreshState = new WeakMap<Terminal, TextureAtlasRefreshState>();
+
+function getTerminalOwnerWindow(term: Terminal): Window {
+  return term.element?.ownerDocument.defaultView ?? window;
+}
+
+function getTextureAtlasRefreshState(term: Terminal): TextureAtlasRefreshState {
+  let state = textureAtlasRefreshState.get(term);
+  if (!state) {
+    state = { generation: 0, frameIds: [], timerIds: [] };
+    textureAtlasRefreshState.set(term, state);
+  }
+  return state;
+}
+
+function cancelScheduledTextureAtlasRefresh(term: Terminal): TextureAtlasRefreshState {
+  const ownerWindow = getTerminalOwnerWindow(term);
+  const state = getTextureAtlasRefreshState(term);
+  for (const frameId of state.frameIds) {
+    ownerWindow.cancelAnimationFrame(frameId);
+  }
+  for (const timerId of state.timerIds) {
+    ownerWindow.clearTimeout(timerId);
+  }
+  state.frameIds = [];
+  state.timerIds = [];
+  return state;
+}
+
 /**
- * 尝试加载 WebGL addon，失败时静默降级。
- * 必须在 term.open() 之后调用。
+ * 字体或字号变更后丢掉 WebGL atlas 让新尺寸的 glyph 重新光栅化。无 WebGL
+ * 时 (`clearTextureAtlas` 不存在或抛出) 静默忽略。
+ */
+function refreshTextureAtlas(term: Terminal): void {
+  try {
+    term.clearTextureAtlas();
+    if (term.rows > 0) {
+      term.refresh(0, term.rows - 1);
+    }
+  } catch {
+    /* DOM renderer 没有 atlas / term 已 dispose */
+  }
+}
+
+function scheduleTextureAtlasRefresh(term: Terminal): void {
+  const ownerWindow = getTerminalOwnerWindow(term);
+  const state = cancelScheduledTextureAtlasRefresh(term);
+  const generation = state.generation + 1;
+  state.generation = generation;
+
+  const firstFrame = ownerWindow.requestAnimationFrame(() => {
+    if (state.generation !== generation || !term.element) return;
+    const secondFrame = ownerWindow.requestAnimationFrame(() => {
+      if (state.generation !== generation || !term.element) return;
+      for (const delay of TEXTURE_ATLAS_REFRESH_DELAYS_MS) {
+        const timerId = ownerWindow.setTimeout(() => {
+          if (state.generation !== generation || !term.element) return;
+          refreshTextureAtlas(term);
+        }, delay);
+        state.timerIds.push(timerId);
+      }
+    });
+    state.frameIds.push(secondFrame);
+  });
+  state.frameIds.push(firstFrame);
+}
+
+export function refreshTerminalDisplay(term: Terminal): void {
+  scheduleTextureAtlasRefresh(term);
+}
+
+/**
+ * 异步加载 WebGL addon：等待字体 ready 后再 new，避免 atlas 用 fallback 字体
+ * 首次 prefill。失败时静默降级到 xterm DOM renderer。
+ *
+ * 为什么必须等字体 ready：WebGL renderer 用 glyph atlas 缓存光栅化结果，
+ * 第一次 fill 用什么字体后续就是什么字体——若 atlas 用未加载完的 fallback
+ * 字体填，即便后面 cell 尺寸算对了，渲染出来的字符仍是 fallback 形状。
  *
  * 关于"要不要关掉 WebGL"的实测结论（recording8/9/10 对照）：
  * - WebGL 的代价：拖大段选区时偶发 100–400 ms composite 爆点（GPU 几何上传）
@@ -575,19 +672,48 @@ export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLE
  *   "偶发爆点"比 DOM 的"持续小卡顿"更可接受。
  *
  * 不要为了"避免偶发卡顿"再把这里关掉——见 timeline rec10。
+ *
+ * 必须在 `term.open()` 之后调用——term.element 在 open 时才挂上。
  */
-export function loadWebglAddon(term: Terminal): void {
-  try {
-    const webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => {
-      console.warn("[terminal] WebGL context lost; falling back to xterm DOM renderer");
-      webglAddon.dispose();
-    });
-    term.loadAddon(webglAddon);
-  } catch (err) {
-    console.warn("[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
-    /* 不支持 WebGL 时降级，不影响功能 */
-  }
+export function loadWebglAddon(term: Terminal): WebglAddonHandle {
+  let disposed = false;
+  let addon: WebglAddon | null = null;
+
+  const fontFamily = typeof term.options.fontFamily === "string" ? term.options.fontFamily : "monospace";
+  const fontSize = typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
+
+  void waitForFontReady(fontFamily, fontSize).finally(() => {
+    if (disposed || !term.element) return;
+    refreshCharSizeAfterFontReady(term, fontFamily);
+    try {
+      addon = new WebglAddon();
+      addon.onContextLoss(() => {
+        console.warn("[terminal] WebGL context lost; falling back to xterm DOM renderer");
+        addon?.dispose();
+        addon = null;
+      });
+      term.loadAddon(addon);
+      scheduleTextureAtlasRefresh(term);
+      void whenFontEventuallyReady(fontFamily, fontSize).then(() => {
+        if (!disposed && term.element) {
+          refreshCharSizeAfterFontReady(term, fontFamily);
+          scheduleTextureAtlasRefresh(term);
+        }
+      });
+    } catch (err) {
+      console.warn("[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
+      /* 不支持 WebGL 时降级，不影响功能 */
+    }
+  });
+
+  return {
+    dispose: () => {
+      disposed = true;
+      cancelScheduledTextureAtlasRefresh(term);
+      addon?.dispose();
+      addon = null;
+    },
+  };
 }
 
 /**
@@ -636,7 +762,9 @@ export function applyTerminalFontSize(
 ): { cols: number; rows: number } | null {
   if (term.options.fontSize === fontSize) return null;
   term.options.fontSize = fontSize;
-  return safeFit(fitAddon, term, container);
+  const result = safeFit(fitAddon, term, container);
+  scheduleTextureAtlasRefresh(term);
+  return result;
 }
 
 export interface FontFamilyApplyResult {
@@ -658,6 +786,7 @@ export function applyTerminalFontFamily(
   const immediate = safeFit(fitAddon, term, container);
   const whenSettled = waitForFontReady(fontFamily, fontSize).then(() => {
     refreshCharSizeAfterFontReady(term, fontFamily);
+    scheduleTextureAtlasRefresh(term);
     return safeFit(fitAddon, term, container);
   });
   return { immediate, whenSettled };

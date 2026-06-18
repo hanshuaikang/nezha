@@ -22,6 +22,7 @@ import {
   applyTerminalFontSize,
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
+  refreshTerminalDisplay,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
@@ -103,7 +104,7 @@ export function TerminalView({
     const disposeCharSizeOverride = applyDomCharSizeOverride(term);
     const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
-    loadWebglAddon(term);
+    const webglHandle = loadWebglAddon(term);
 
     const size = safeFit(fitAddon, term, container);
     if (size) notifyResize(size.cols, size.rows);
@@ -168,6 +169,7 @@ export function TerminalView({
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term, container);
         if (s) notifyResize(s.cols, s.rows);
+        refreshTerminalDisplay(term);
         term.focus();
       });
     };
@@ -196,6 +198,7 @@ export function TerminalView({
       onRegisterRef.current(null);
       fitAddonRef.current = null;
       disposeCharSizeOverride();
+      webglHandle.dispose();
       disposeScrollbarAutoHide();
       disposeMacWebKitGuard();
       disposeInputFix();
@@ -235,6 +238,7 @@ export function TerminalView({
       if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
       if (s) notifyResize(s.cols, s.rows);
+      refreshTerminalDisplay(terminalRef.current);
       terminalRef.current.focus();
     });
   }, [isActive, notifyResize]);
