@@ -27,6 +27,7 @@ import {
   DEFAULT_MONO_FONT,
 } from "./types";
 import type { FontFamily } from "./types";
+import { quoteFontName } from "./utils/fonts";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
@@ -173,7 +174,10 @@ function getInitialAttentionBadge(): boolean {
 
 function getInitialFontFamily(key: string, fallback: FontFamily): FontFamily {
   const stored = localStorage.getItem(key);
-  return stored || fallback;
+  if (!stored) return fallback;
+  // 旧版本写入的裸字体名（如 "Maple Mono NF CN"）在 Canvas 2D 下会被
+  // tokenize 成多个 family 全部 miss；读出时统一 normalize 一次。
+  return quoteFontName(stored);
 }
 
 function App() {

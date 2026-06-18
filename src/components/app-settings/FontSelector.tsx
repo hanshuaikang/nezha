@@ -5,7 +5,7 @@ import type React from "react";
 import type { FontFamily } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
-import { loadSystemFonts, parseFirstFontName, filterFonts } from "../../utils/fonts";
+import { loadSystemFonts, parseFirstFontName, filterFonts, quoteFontName } from "../../utils/fonts";
 
 const FONT_ITEM_HEIGHT = 32;
 const FONT_LIST_HEIGHT = 280;
@@ -76,7 +76,7 @@ export function FontSelector({ value, onChange, label, hint, defaultFont, previe
 
   const handleSelect = useCallback(
     (font: string) => {
-      onChange(font);
+      onChange(quoteFontName(font));
       setOpen(false);
       setSearch("");
     },
