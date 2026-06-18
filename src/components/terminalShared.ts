@@ -651,8 +651,24 @@ function scheduleTextureAtlasRefresh(term: Terminal): void {
   state.frameIds.push(firstFrame);
 }
 
+/**
+ * `display:none → 重新可见` 路径用：xterm WebGL canvas 在 layout tree 移除
+ * 期间 atlas/render 缓存可能进入坏状态（切回项目时肉眼可见乱码，改尺寸后
+ * 恢复正常），等一帧 layout 稳定后清一次缓存即可。
+ *
+ * 不复用 scheduleTextureAtlasRefresh —— 那个 6 个延迟节点是字体异步加载
+ * 兜底，切回时字体早就 ready，跑 6 次只会让用户看到 6 次闪烁。
+ */
 export function refreshTerminalDisplay(term: Terminal): void {
-  scheduleTextureAtlasRefresh(term);
+  const ownerWindow = getTerminalOwnerWindow(term);
+  const state = cancelScheduledTextureAtlasRefresh(term);
+  const generation = state.generation + 1;
+  state.generation = generation;
+  const frameId = ownerWindow.requestAnimationFrame(() => {
+    if (state.generation !== generation || !term.element) return;
+    refreshTextureAtlas(term);
+  });
+  state.frameIds.push(frameId);
 }
 
 /**
