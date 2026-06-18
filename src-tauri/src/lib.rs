@@ -108,8 +108,12 @@ pub fn run() {
             });
             // 安装 hook 脚本与用户级配置注入(失败不阻塞启动,前端可查询状态)。
             // 结果写入缓存,供 run_task/resume_task 的 hook 信任检查零阻塞读取。
+            // 之后再跑一次 regenerate:即使 hooks 不可用(如未装 node),只要用户开启
+            // force_default_tui 也能保证 Nezha settings 文件按 AppSettings 状态落盘,
+            // 避免 pty.rs 把 --settings 指向不存在的路径。
             std::thread::spawn(|| {
                 crate::hooks::cache_status(crate::hooks::ensure_installed());
+                let _ = crate::hooks::regenerate_claude_settings();
             });
             // 启动 hook 事件文件 watcher
             crate::event_watcher::start(app.handle().clone());
@@ -208,6 +212,7 @@ pub fn run() {
             app_settings::save_agent_paths,
             app_settings::save_send_shortcut,
             app_settings::save_shift_enter_newline,
+            app_settings::save_claude_force_default_tui,
             app_settings::detect_agent_paths,
             app_settings::detect_agent_versions_for_settings,
             app_settings::get_system_fonts,

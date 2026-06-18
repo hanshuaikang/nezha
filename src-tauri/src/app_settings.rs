@@ -26,6 +26,10 @@ fn default_shift_enter_newline() -> bool {
     true
 }
 
+fn default_claude_force_default_tui() -> bool {
+    true
+}
+
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static CACHED_CODEX_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static SETTINGS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -48,6 +52,11 @@ pub struct AppSettings {
     pub send_shortcut: String,
     #[serde(default = "default_shift_enter_newline")]
     pub terminal_shift_enter_newline: bool,
+    /// 强制 Claude TUI 走 default（classic 主屏渲染）模式：通过 `--settings` 注入
+    /// `{"tui":"default"}` 覆盖用户 ~/.claude/settings.json 中的 tui 字段，
+    /// 避免 fullscreen 渲染下的部分终端副作用（如 CJK 复制乱码、滚轮被劫持等）。
+    #[serde(default = "default_claude_force_default_tui")]
+    pub claude_force_default_tui: bool,
 }
 
 impl Default for AppSettings {
@@ -57,6 +66,7 @@ impl Default for AppSettings {
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
+            claude_force_default_tui: default_claude_force_default_tui(),
         }
     }
 }
@@ -314,6 +324,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
         terminal_shift_enter_newline: settings.terminal_shift_enter_newline,
+        claude_force_default_tui: settings.claude_force_default_tui,
     }
 }
 
@@ -329,6 +340,7 @@ fn load_settings_unlocked() -> AppSettings {
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
+            claude_force_default_tui: default_claude_force_default_tui(),
         });
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -381,6 +393,7 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
         atomic_write(&path, &raw)?;
     }
     clear_cached_versions();
+    let _ = crate::hooks::regenerate_claude_settings();
     Ok(())
 }
 
@@ -438,6 +451,29 @@ pub async fn save_shift_enter_newline(enabled: bool) -> Result<AppSettings, Stri
         let normalized = normalize_settings(settings);
         let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
         atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(normalized)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_claude_force_default_tui(enabled: bool) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let normalized = {
+            let _guard = settings_lock().lock();
+            let mut settings = load_settings_unlocked();
+            settings.claude_force_default_tui = enabled;
+
+            let dir = nezha_dir()?;
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let path = settings_path()?;
+            let normalized = normalize_settings(settings);
+            let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+            atomic_write(&path, &raw)?;
+            normalized
+        };
+        let _ = crate::hooks::regenerate_claude_settings();
         Ok::<AppSettings, String>(normalized)
     })
     .await

@@ -571,6 +571,18 @@ pub async fn run_task(
             .await
             .unwrap_or(false)
     };
+    // Claude 是否要传 --settings:hook 可信 或 (force_default_tui 开启且 Claude
+    // 版本支持 tui 字段) 任一为真即需要。判断逻辑与 hooks::nezha_claude_settings_needed
+    // 保持一致,使文件状态与命令行参数同步。
+    let claude_pass_settings = !is_codex
+        && (use_hooks
+            || tokio::task::spawn_blocking(|| {
+                let s = crate::app_settings::load_settings_internal();
+                s.claude_force_default_tui
+                    && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
+            })
+            .await
+            .unwrap_or(false));
 
     let mut cmd = if is_codex {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
@@ -592,9 +604,10 @@ pub async fn run_task(
             c.arg("--session-id");
             c.arg(sid);
         }
-        // Claude:hook 可信时通过 `--settings <Nezha 自有文件>` 传入 hooks,不修改用户的
-        // ~/.claude/settings.json(Claude 对 hooks 跨源 merge,用户 hook 不受影响)。
-        if use_hooks {
+        // Claude:通过 `--settings <Nezha 自有文件>` 一并注入 hooks(可信时)与
+        // tui:"default"(force_default_tui 开启时)。用户 ~/.claude/settings.json 中
+        // 未提及的 key 保留;`tui` 是有意覆盖,见 build_claude_settings_value 注释。
+        if claude_pass_settings {
             if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
                 c.arg("--settings");
                 c.arg(p.to_string_lossy().as_ref());
@@ -816,6 +829,15 @@ pub async fn resume_task(
             .await
             .unwrap_or(false)
     };
+    let claude_pass_settings = agent != "codex"
+        && (use_hooks
+            || tokio::task::spawn_blocking(|| {
+                let s = crate::app_settings::load_settings_internal();
+                s.claude_force_default_tui
+                    && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
+            })
+            .await
+            .unwrap_or(false));
 
     let mut cmd = if agent == "codex" {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
@@ -831,8 +853,8 @@ pub async fn resume_task(
         let mut c = build_claude_cmd(&agent_bin, &permission_mode);
         c.arg("--resume");
         c.arg(&session_id);
-        // Claude:命令行 `--settings` 传入 Nezha 自有 hooks 文件,不改用户配置。
-        if use_hooks {
+        // 同 run_task:hooks + force_default_tui 共用 --settings 通道。
+        if claude_pass_settings {
             if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
                 c.arg("--settings");
                 c.arg(p.to_string_lossy().as_ref());

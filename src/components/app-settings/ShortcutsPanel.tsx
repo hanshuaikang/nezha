@@ -103,6 +103,7 @@ export function ShortcutsPanel() {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    claude_force_default_tui: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

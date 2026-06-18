@@ -78,6 +78,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.installedVersions": "Installed Versions",
     "appSettings.versionsHint":
       "Versions are detected from the configured executable path or the system PATH.",
+    "appSettings.claudeForceDefaultTui": "Force Default TUI Mode",
+    "appSettings.claudeForceDefaultTuiToggleLabel": "Always launch with tui=default",
+    "appSettings.claudeForceDefaultTuiHint":
+      "Inject --settings with tui=\"default\" so Claude uses the classic main-screen renderer instead of fullscreen. Recommended to avoid fullscreen side-effects in some terminals (CJK clipboard corruption, mouse-wheel hijacking). Requires Claude Code v2.1.110+.",
     "appSettings.nezhaDescription": "Desktop task manager for AI coding agents",
     "appSettings.version": "Version",
     "appSettings.github": "GitHub",
@@ -578,6 +582,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.codexPathHint": "留空则从系统 PATH 中使用 codex。",
     "appSettings.installedVersions": "已安装版本",
     "appSettings.versionsHint": "版本会从配置的可执行文件路径或系统 PATH 中检测。",
+    "appSettings.claudeForceDefaultTui": "强制 Default TUI 模式",
+    "appSettings.claudeForceDefaultTuiToggleLabel": "始终以 tui=default 启动",
+    "appSettings.claudeForceDefaultTuiHint":
+      "通过 --settings 注入 tui=\"default\"，强制 Claude 走 classic 主屏渲染，避开 fullscreen 在部分终端的副作用（CJK 复制乱码、滚轮被劫持等）。需要 Claude Code v2.1.110+。",
     "appSettings.nezhaDescription": "轻量级跨平台 AI IDE",
     "appSettings.version": "版本",
     "appSettings.github": "GitHub",

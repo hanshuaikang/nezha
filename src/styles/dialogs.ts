@@ -351,6 +351,26 @@ export const dialogs = {
     transition: "transform 0.15s",
     transform: "translateX(16px)",
   },
+  agentPathToggleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "9px 12px",
+    background: "var(--bg-input)",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 7,
+    cursor: "pointer",
+  },
+  agentPathToggleRowDisabled: {
+    cursor: "default",
+    opacity: 0.65,
+  },
+  agentPathToggleLabel: {
+    fontSize: 12.5,
+    color: "var(--text-primary)",
+    fontWeight: 500,
+  },
   modalTextarea: {
     width: "100%",
     padding: "9px 11px",
