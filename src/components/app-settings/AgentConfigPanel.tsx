@@ -146,10 +146,13 @@ export function AgentConfigPanel({
     <>
       <div
         style={{
-          ...s.settingsBody,
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
           display: "flex",
           flexDirection: "column",
-          gap: 0,
           padding: "18px 20px 14px",
         }}
       >
@@ -172,6 +175,7 @@ export function AgentConfigPanel({
                 fontWeight: 600,
                 color: "var(--text-primary)",
                 marginBottom: 10,
+                flexShrink: 0,
               }}
             >
               {t("appSettings.configFile")}
@@ -180,7 +184,7 @@ export function AgentConfigPanel({
         )}
 
         {/* File path + edit button row */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0 }}>
           <div
             style={{
               fontSize: 11.5,
@@ -255,8 +259,9 @@ export function AgentConfigPanel({
               className="file-viewer-code"
               style={{
                 flex: 1,
-                minHeight: 0,
-                overflowY: "auto",
+                minHeight: 280,
+                minWidth: 0,
+                overflow: "auto",
                 borderRadius: 8,
                 border: "1px solid var(--border-dim)",
                 fontSize: 12.5,
@@ -267,7 +272,8 @@ export function AgentConfigPanel({
             <pre
               style={{
                 flex: 1,
-                minHeight: 0,
+                minHeight: 280,
+                minWidth: 0,
                 margin: 0,
                 overflow: "auto",
                 padding: "14px 16px",

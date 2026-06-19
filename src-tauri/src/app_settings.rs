@@ -393,33 +393,35 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
         atomic_write(&path, &raw)?;
     }
     clear_cached_versions();
-    let _ = crate::hooks::regenerate_claude_settings();
+    crate::hooks::regenerate_claude_settings()?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn save_agent_paths(claude_path: String, codex_path: String) -> Result<AppSettings, String> {
-    let normalized = tokio::task::spawn_blocking(move || {
-        let _guard = settings_lock().lock();
-        let mut settings = load_settings_unlocked();
-        settings.claude_path = claude_path;
-        settings.codex_path = codex_path;
+    tokio::task::spawn_blocking(move || {
+        let normalized = {
+            let _guard = settings_lock().lock();
+            let mut settings = load_settings_unlocked();
+            settings.claude_path = claude_path;
+            settings.codex_path = codex_path;
 
-        let dir = nezha_dir()?;
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = settings_path()?;
-        let normalized = normalize_settings(settings);
-        let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
-        atomic_write(&path, &raw)?;
+            let dir = nezha_dir()?;
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let path = settings_path()?;
+            let normalized = normalize_settings(settings);
+            let raw = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+            atomic_write(&path, &raw)?;
+            normalized
+        };
+        clear_cached_versions();
+        // 路径变化会改写 claude_version_gte 的判定结果(tui 字段是否写入),需要重新生成
+        // Nezha 自有 settings 文件,否则下次启动任务会拿到与新路径版本不匹配的旧文件。
+        crate::hooks::regenerate_claude_settings()?;
         Ok::<AppSettings, String>(normalized)
     })
     .await
-    .map_err(|e| e.to_string())??;
-    clear_cached_versions();
-    // 路径变化会改写 claude_version_gte 的判定结果(tui 字段是否写入),需要重新生成
-    // Nezha 自有 settings 文件,否则下次启动任务会拿到与新路径版本不匹配的旧文件。
-    let _ = crate::hooks::regenerate_claude_settings();
-    Ok(normalized)
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -476,7 +478,7 @@ pub async fn save_claude_force_default_tui(enabled: bool) -> Result<AppSettings,
             atomic_write(&path, &raw)?;
             normalized
         };
-        let _ = crate::hooks::regenerate_claude_settings();
+        crate::hooks::regenerate_claude_settings()?;
         Ok::<AppSettings, String>(normalized)
     })
     .await

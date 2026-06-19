@@ -223,7 +223,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   const forceTuiEnabled = settings.claude_force_default_tui;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18, flexShrink: 0 }}>
       {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
 
       <div
