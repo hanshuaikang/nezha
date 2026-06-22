@@ -552,6 +552,8 @@ export function initTerminal(
     refreshCharSizeAfterFontReady(term, fontFamily);
   });
 
+  registerActiveTerminal(term);
+
   return { term, fitAddon, whenFontsReady };
 }
 
@@ -627,6 +629,32 @@ function cancelScheduledTextureAtlasRefresh(term: Terminal): TextureAtlasRefresh
   return state;
 }
 
+// xterm.js #6014:WebGL TextureAtlas.clearTexture() 漏设 _requestClearModel,
+// 共享 atlas 的 sibling renderer 继续用失效纹理坐标渲染,屏幕上残留错位 glyph。
+// 维护活跃 terminal 集合,清自己 atlas 后强制 sibling 重建 model。
+// register 在 initTerminal 内部隐式调用;unregister 必须在 term.dispose() 前由
+// 调用方显式调用——Terminal 类没暴露 onDispose 事件,只能这么做。
+const activeTerminals = new Set<Terminal>();
+
+function registerActiveTerminal(term: Terminal): void {
+  activeTerminals.add(term);
+}
+
+export function unregisterActiveTerminal(term: Terminal): void {
+  activeTerminals.delete(term);
+}
+
+function refreshSiblingTerminals(except: Terminal): void {
+  for (const sibling of activeTerminals) {
+    if (sibling === except || sibling.rows <= 0) continue;
+    try {
+      sibling.refresh(0, sibling.rows - 1);
+    } catch {
+      /* sibling 在 dispose 中途的 race */
+    }
+  }
+}
+
 /**
  * 字体或字号变更后丢掉 WebGL atlas 让新尺寸的 glyph 重新光栅化。无 WebGL
  * 时 (`clearTextureAtlas` 不存在或抛出) 静默忽略。
@@ -640,6 +668,7 @@ function refreshTextureAtlas(term: Terminal): void {
   } catch {
     /* DOM renderer 没有 atlas / term 已 dispose */
   }
+  refreshSiblingTerminals(term);
 }
 
 function scheduleTextureAtlasRefresh(term: Terminal): void {

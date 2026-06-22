@@ -18,6 +18,7 @@ import {
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
   refreshTerminalDisplay,
+  unregisterActiveTerminal,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
@@ -227,6 +228,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
+        unregisterActiveTerminal(term);
         term.dispose();
         invoke("kill_shell", { shellId }).catch(() => {});
       };

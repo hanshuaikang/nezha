@@ -23,6 +23,7 @@ import {
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
   refreshTerminalDisplay,
+  unregisterActiveTerminal,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
@@ -210,6 +211,7 @@ export function TerminalView({
       container.removeEventListener("pointerdown", handlePointerDown as EventListener);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
+      unregisterActiveTerminal(term);
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
