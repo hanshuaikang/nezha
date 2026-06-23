@@ -412,7 +412,9 @@ export function ProjectRail({
         <>
           <button
             title={t("project.showAllProjects")}
+            aria-expanded={drawerOpen}
             onClick={() => setDrawerOpen((v) => !v)}
+            onMouseDown={(e) => e.stopPropagation()}
             onMouseEnter={() => setExpandHov(true)}
             onMouseLeave={() => setExpandHov(false)}
             style={{
