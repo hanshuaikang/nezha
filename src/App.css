@@ -534,8 +534,18 @@ body {
 }
 
 /* ── Markdown file preview ──────────────────────────────────────── */
+.md-preview-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
 .md-preview-scroll {
-  height: 100%;
+  flex: 1 1 auto;
   overflow: auto;
   padding: 24px 32px;
   background: var(--bg-panel);
@@ -676,25 +686,23 @@ body {
 }
 
 /* ── Markdown preview outline (TOC) ─────────────────────────────── */
+/* 与正文同级 flex 子项（内联占宽，不悬浮遮挡），与 .md-preview-scroll 并排 */
 .md-toc {
-  position: absolute;
-  top: 14px;
-  right: 18px;
-  z-index: 5;
-  width: 200px;
-  max-height: calc(100% - 28px);
+  flex-shrink: 0;
+  width: 220px;
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
-  border: 1px solid var(--border-dim);
-  border-radius: 8px;
-  box-shadow: var(--shadow-md);
+  border-left: 1px solid var(--border-dim);
   overflow: hidden;
   font-family: var(--font-ui);
+  /* 必须显式声明：flex 子项默认 min-height: auto = min-content height，
+     会被内部 list 的自然高度撑开，导致 stretch 失效、列表无法触发滚动 */
+  min-height: 0;
 }
 
 .md-toc-collapsed {
-  width: auto;
+  width: 32px;
 }
 
 .md-toc-toggle {
@@ -712,6 +720,11 @@ body {
   cursor: pointer;
 }
 
+.md-toc-collapsed .md-toc-toggle {
+  justify-content: center;
+  padding: 7px 4px;
+}
+
 .md-toc-toggle:hover {
   background: var(--bg-hover);
 }
@@ -722,6 +735,8 @@ body {
   padding: 4px 4px 6px;
   overflow-y: auto;
   border-top: 1px solid var(--border-dim);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .md-toc-item {
@@ -739,6 +754,10 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+  /* overflow: hidden 会让 min-height: auto 解析为 0；
+     在 flex column 列表里默认 flex-shrink: 1 会把每项压扁到不到 1 个字符高，
+     必须显式禁止收缩，让 list 的 overflow-y: auto 接管溢出 */
+  flex-shrink: 0;
 }
 
 .md-toc-item:hover {
