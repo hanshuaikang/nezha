@@ -663,7 +663,9 @@ export function FileViewer({
 
   if (!activeTab) return null;
 
-  const activePreviewMode = !!previewModes[activeTab.path];
+  // 新打开的 markdown 文件 useEffect 同步 previewMode 前会有一帧 undefined，
+  // 直接根据文件名兜底默认值，避免闪一帧编辑器
+  const activePreviewMode = previewModes[activeTab.path] ?? isMarkdownFile(activeTab.name);
   const activeIsMarkdown = isMarkdownFile(activeTab.name);
   const canCloseOtherTabs = tabs.length > 1;
   const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
