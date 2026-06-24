@@ -63,6 +63,7 @@ export function ProjectPage({
   onSnapshot,
   onBack,
   onSwitchProject,
+  onCommitProjectOrder,
   onOpen,
   themeVariant,
   themeMode,
@@ -129,6 +130,11 @@ export function ProjectPage({
   onSnapshot: (taskId: string, snapshot: string) => void;
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
+  onCommitProjectOrder: (
+    draggedId: string,
+    beforeId: string | null,
+    visibleIds: string[],
+  ) => void;
   onOpen: () => void;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
@@ -317,6 +323,7 @@ export function ProjectPage({
         activeProjectId={project.id}
         attentionBadge={attentionBadge}
         onSwitch={onSwitchProject}
+        onCommitProjectOrder={onCommitProjectOrder}
         onOpen={onOpen}
         singleProjectMode={hubMode}
       />

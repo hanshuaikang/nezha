@@ -82,6 +82,55 @@ function persistProjectTasksQuietly(projectId: string, allTasks: Task[]) {
   }).catch(console.error);
 }
 
+// 老用户首次升级到拖拽排序版本时,把 projects 数组按 id 升序排一次并落盘,
+// 让上来看到的 rail 顺序和旧版本(railProjects useMemo 里的 sort)一致。
+// 之后用户拖拽产生的顺序由 projects 数组本身承载,不再排序。
+const RAIL_PROJECTS_ORDERED_KEY = "nezha:rail-projects-ordered";
+
+function isProjectsIdAscending(projects: Project[]): boolean {
+  for (let i = 1; i < projects.length; i++) {
+    if (Number(projects[i].id) < Number(projects[i - 1].id)) return false;
+  }
+  return true;
+}
+
+// 拖拽重排:beforeId === null 表示拖到 visible 末尾;draggedId === beforeId 视为无操作。
+// visibleIds 是 rail 当前可见子集(过滤了 hiddenFromRail 与 hub),src/dst 在这个子序列
+// 里算 — 直接在完整 projects 上 splice 会因为 hidden 项夹在中间而无声改写它们的相对位置
+// (用户取消隐藏时会看到位置错乱)。重排后只回填到 visible 槽位,hidden 项原位保留。
+// 返回新数组(若顺序无变化则返回原数组,方便 setState 早退)。
+function reorderProjects(
+  projects: Project[],
+  visibleIds: string[],
+  draggedId: string,
+  beforeId: string | null,
+): Project[] {
+  if (draggedId === beforeId) return projects;
+
+  const srcIdxV = visibleIds.indexOf(draggedId);
+  if (srcIdxV === -1) return projects;
+
+  const dstIdxV = beforeId === null ? visibleIds.length : visibleIds.indexOf(beforeId);
+  if (dstIdxV === -1) return projects;
+
+  const newVisibleOrder = [...visibleIds];
+  const [dragged] = newVisibleOrder.splice(srcIdxV, 1);
+  const adjustedDstIdxV = dstIdxV > srcIdxV ? dstIdxV - 1 : dstIdxV;
+  newVisibleOrder.splice(adjustedDstIdxV, 0, dragged);
+
+  const visibleSet = new Set(visibleIds);
+  const projectById = new Map(projects.map((p) => [p.id, p] as const));
+  let visibleCursor = 0;
+  const next = projects.map((p) => {
+    if (!visibleSet.has(p.id)) return p;
+    const id = newVisibleOrder[visibleCursor++];
+    return projectById.get(id) ?? p;
+  });
+
+  if (next.every((p, i) => p === projects[i])) return projects;
+  return next;
+}
+
 interface ProjectViewState {
   selectedTaskId: string | null;
   isNewTask: boolean;
@@ -368,7 +417,33 @@ function App() {
     async function init() {
       // Load projects from ~/.nezha/projects.json
       const loadedProjects = await invoke<Project[]>("load_projects");
-      setProjects(loadedProjects);
+
+      // 仅在首次升级到拖拽版本时做一次性顺序迁移:若 projects.json 不是
+      // id 升序(老版本 handleOpen 把新项目插到首位,所以多半是降序),
+      // 重排成 id 升序并落盘,与旧版 railProjects 的视觉顺序保持一致。
+      // 之后顺序由用户拖拽决定,不再触发此分支。
+      const alreadyOrdered = localStorage.getItem(RAIL_PROJECTS_ORDERED_KEY) === "1";
+      const projectsForState =
+        alreadyOrdered || isProjectsIdAscending(loadedProjects)
+          ? loadedProjects
+          : [...loadedProjects].sort((a, b) => Number(a.id) - Number(b.id));
+      if (!alreadyOrdered) {
+        // flag 必须在写盘成功后才落:否则一次磁盘失败 → flag 已锁 → 下次启动跳过
+        // 迁移 → 老用户 rail 顺序永久错乱。无需写盘的分支可直接 set。
+        if (projectsForState !== loadedProjects) {
+          invoke("save_projects", { projects: projectsForState })
+            .then(() => {
+              localStorage.setItem(RAIL_PROJECTS_ORDERED_KEY, "1");
+            })
+            .catch((e: unknown) => {
+              console.error(e);
+              showToast(formatSaveProjectsError(String(e)));
+            });
+        } else {
+          localStorage.setItem(RAIL_PROJECTS_ORDERED_KEY, "1");
+        }
+      }
+      setProjects(projectsForState);
 
       // Load tasks for all known projects
       const chunks = await Promise.all(
@@ -386,19 +461,33 @@ function App() {
     }
 
     init().catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    // 用 backend 列表作为权威，merge 进前端 state：
-    // 后端写入的版本覆盖共有项；前端独有但 backend 还未持久化的条目保留下来。
+    // 用 backend 列表作为内容权威,但顺序以 prev 为准:用户拖拽产生的顺序保存在
+    // 前端 state 里,不能被一次后台 reload 还原。共有项的字段由 authoritative 覆盖;
+    // prev 独有的(尚未持久化)条目保留;authoritative 独有的(skill hub 等新增)
+    // 追加到末尾。
     const mergeProjects = (authoritative: Project[]) => {
       setProjects((prev) => {
-        const byId = new Map<string, Project>();
-        authoritative.forEach((p) => byId.set(p.id, p));
-        prev.forEach((p) => {
-          if (!byId.has(p.id)) byId.set(p.id, p);
-        });
-        return Array.from(byId.values());
+        const authMap = new Map<string, Project>();
+        authoritative.forEach((p) => authMap.set(p.id, p));
+        const seenIds = new Set<string>();
+        const next: Project[] = [];
+        for (const p of prev) {
+          const auth = authMap.get(p.id);
+          if (auth !== undefined) {
+            next.push(auth);
+            seenIds.add(p.id);
+          } else {
+            next.push(p);
+          }
+        }
+        for (const p of authoritative) {
+          if (!seenIds.has(p.id)) next.push(p);
+        }
+        return next;
       });
     };
 
@@ -469,7 +558,9 @@ function App() {
       ? { ...existing, lastOpenedAt: Date.now() }
       : { id: `${Date.now()}`, name: deriveProjectName(path), path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
-      const next = [project, ...prev.filter((p) => p.path !== path)];
+      const next = existing
+        ? prev.map((p) => (p.path === path ? project : p))
+        : [project, ...prev];
       persistProjects(next, showToast, formatSaveProjectsError);
       return next;
     });
@@ -1015,6 +1106,22 @@ function App() {
     });
   }
 
+  // 拖拽结束时一次性提交新顺序;beforeId === null 表示拖到 visible 末尾。
+  // visibleIds 来自 ProjectRail 内部过滤后的 railProjects(去 hiddenFromRail/hub),
+  // src/dst 必须在这个子集里算,否则会无声打乱隐藏项的相对位置。
+  // 拖拽期间 ProjectRail 内部只用 transform 让位,不会调到这里,避免高频重渲染和写盘。
+  const handleCommitProjectOrder = useCallback(
+    (draggedId: string, beforeId: string | null, visibleIds: string[]) => {
+      setProjects((prev) => {
+        const next = reorderProjects(prev, visibleIds, draggedId, beforeId);
+        if (next === prev) return prev;
+        persistProjects(next, showToast, formatSaveProjectsError);
+        return next;
+      });
+    },
+    [showToast, formatSaveProjectsError],
+  );
+
   function updateTaskStatus(
     taskId: string,
     status: TaskStatus,
@@ -1086,10 +1193,10 @@ function App() {
     () => [...projects].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt),
     [projects],
   );
-  const railProjects = useMemo(
-    () => [...projects].sort((a, b) => Number(a.id) - Number(b.id)),
-    [projects],
-  );
+  // rail 顺序直接由 projects 数组承载;拖拽通过 handleCommitProjectOrder 改变这个数组。
+  // 老版本在这里 sort 是为了给 backend 写入的"任意"顺序提供一个稳定视觉,
+  // 现在改由 init 时一次性迁移 + 用户拖拽决定。
+  const railProjects = projects;
   const mountedProjects = useMemo(
     () =>
       mountedProjectIds
@@ -1185,6 +1292,7 @@ function App() {
               onSnapshot={tm.handleSnapshot}
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
+              onCommitProjectOrder={handleCommitProjectOrder}
               onOpen={handleOpen}
               themeVariant={themeVariant}
               themeMode={themeMode}
