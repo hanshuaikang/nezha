@@ -648,9 +648,14 @@ function refreshSiblingTerminals(except: Terminal): void {
   for (const sibling of activeTerminals) {
     if (sibling === except || sibling.rows <= 0) continue;
     try {
-      sibling.refresh(0, sibling.rows - 1);
+      // 关键:调 clearTextureAtlas 而非 refresh。
+      // WebglRenderer._updateModel 有 dirty-skip,sibling 的 model.cells 跟 buffer
+      // 一致时整屏 continue 跳过,glyph 仍引用清空前的 atlas 坐标 → 乱码残留。
+      // clearTextureAtlas 内部走 _clearModel(true) 强制清空 model,绕开 dirty-skip。
+      // 第一行的 _charAtlas.clearTexture() 已在我们的清缓存调用里跑过,这里是 no-op。
+      sibling.clearTextureAtlas();
     } catch {
-      /* sibling 在 dispose 中途的 race */
+      /* sibling 在 dispose 中途的 race / DOM renderer 无 atlas */
     }
   }
 }
