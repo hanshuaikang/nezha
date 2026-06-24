@@ -161,6 +161,7 @@ function normalizeInterruptedTasksOnStartup(
       return {
         ...task,
         status: "detached" as TaskStatus,
+        updatedAt: interruptedAt,
         attentionRequestedAt: task.attentionRequestedAt ?? interruptedAt,
       };
     }
@@ -170,6 +171,7 @@ function normalizeInterruptedTasksOnStartup(
     return {
       ...task,
       status: "interrupted" as TaskStatus,
+      updatedAt: interruptedAt,
       attentionRequestedAt: task.attentionRequestedAt ?? interruptedAt,
     };
   });
@@ -642,6 +644,7 @@ function App() {
 
     // 1) 立即把任务推到 state 让 view 切到 RunningView。worktree 字段先留空，
     //    避免 await create_task_worktree 期间用户停留在 NewTaskView，让人误以为没反应。
+    const now = Date.now();
     const baseTask: Task = {
       id: taskId,
       projectId: project.id,
@@ -650,7 +653,8 @@ function App() {
       agent,
       permissionMode,
       status: immediate ? "pending" : "todo",
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     };
     setTasks((prev) => {
       const next = [baseTask, ...prev];
@@ -723,7 +727,12 @@ function App() {
     setTasks((prev) => {
       const next = prev.map((t) =>
         t.id === task.id
-          ? { ...t, status: "pending" as TaskStatus, attentionRequestedAt: undefined }
+          ? {
+              ...t,
+              status: "pending" as TaskStatus,
+              updatedAt: Date.now(),
+              attentionRequestedAt: undefined,
+            }
           : t,
       );
       persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
@@ -835,7 +844,12 @@ function App() {
     setTasks((prev) => {
       const next = prev.map((t) =>
         t.id === taskId
-          ? { ...t, status: "pending" as TaskStatus, attentionRequestedAt: undefined }
+          ? {
+              ...t,
+              status: "pending" as TaskStatus,
+              updatedAt: Date.now(),
+              attentionRequestedAt: undefined,
+            }
           : t,
       );
       persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
@@ -1142,7 +1156,7 @@ function App() {
         }
 
         changed = true;
-        const updated: Task = { ...task, status, attentionRequestedAt };
+        const updated: Task = { ...task, status, attentionRequestedAt, updatedAt: Date.now() };
         if (status === "failed" && failureReason) updated.failureReason = failureReason;
         return updated;
       });

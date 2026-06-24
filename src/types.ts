@@ -99,6 +99,8 @@ export interface Task {
   permissionMode: PermissionMode;
   status: TaskStatus;
   createdAt: number;
+  /** 任务状态最近一次变更的时间戳；左侧任务列表按此字段排序与分组。缺省时回落到 createdAt。 */
+  updatedAt?: number;
   attentionRequestedAt?: number;
   starred?: boolean;
   failureReason?: string;

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import * as Popover from "@radix-ui/react-popover";
-import { X, AlertCircle, Eye, PencilLine, MoreHorizontal, List, ChevronRight } from "lucide-react";
+import { X, AlertCircle, Eye, PencilLine, MoreHorizontal, List } from "lucide-react";
 import { getFileColor } from "../utils";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
@@ -229,6 +229,8 @@ type ImagePreviewData = {
   byteLength: number;
 };
 
+const TOC_OPEN_STORAGE_KEY = "nezha:md-toc-open";
+
 function MarkdownToc({
   toc,
   activeId,
@@ -239,19 +241,39 @@ function MarkdownToc({
   onJump: (id: string) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const stored = window.localStorage.getItem(TOC_OPEN_STORAGE_KEY);
+      return stored === null ? false : stored === "1";
+    } catch {
+      return false;
+    }
+  });
   const minDepth = useMemo(() => Math.min(...toc.map((entry) => entry.depth)), [toc]);
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(TOC_OPEN_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        /* localStorage 不可用时静默忽略 */
+      }
+      return next;
+    });
+  };
 
   return (
     <div className={`md-toc${open ? "" : " md-toc-collapsed"}`}>
       <button
         type="button"
         className="md-toc-toggle"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={toggle}
         title={t("file.outline")}
+        aria-label={t("file.outline")}
       >
-        {open ? <List size={13} /> : <ChevronRight size={13} />}
-        <span>{t("file.outline")}</span>
+        <List size={13} />
+        {open && <span>{t("file.outline")}</span>}
       </button>
       {open && (
         <nav className="md-toc-list">
@@ -474,7 +496,7 @@ function FilePreviewPane({
             />
           ) : content !== null ? (
             isMarkdown && previewMode ? (
-              <>
+              <div className="md-preview-pane">
                 <div ref={scrollRef} className="md-preview-scroll">
                   <div
                     className="md-preview"
@@ -484,7 +506,7 @@ function FilePreviewPane({
                 {toc.length > 0 && (
                   <MarkdownToc toc={toc} activeId={activeHeadingId} onJump={jumpToHeading} />
                 )}
-              </>
+              </div>
             ) : (
               <ReactCodeMirror
                 value={content}
@@ -616,9 +638,21 @@ export function FileViewer({
     setPreviewModes((prev) => {
       const next: Record<string, boolean> = {};
       for (const tab of tabs) {
-        if (prev[tab.path]) next[tab.path] = true;
+        if (tab.path in prev) {
+          // 已经初始化过的 tab：保留之前的状态（包括用户主动切到编辑模式）
+          next[tab.path] = prev[tab.path];
+        } else if (isMarkdownFile(tab.name)) {
+          // 新打开的 markdown 文件默认进入预览模式
+          next[tab.path] = true;
+        }
       }
-      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length !== nextKeys.length) return next;
+      for (const k of nextKeys) {
+        if (prev[k] !== next[k]) return next;
+      }
+      return prev;
     });
   }, [tabs]);
 
@@ -629,7 +663,9 @@ export function FileViewer({
 
   if (!activeTab) return null;
 
-  const activePreviewMode = !!previewModes[activeTab.path];
+  // 新打开的 markdown 文件 useEffect 同步 previewMode 前会有一帧 undefined，
+  // 直接根据文件名兜底默认值，避免闪一帧编辑器
+  const activePreviewMode = previewModes[activeTab.path] ?? isMarkdownFile(activeTab.name);
   const activeIsMarkdown = isMarkdownFile(activeTab.name);
   const canCloseOtherTabs = tabs.length > 1;
   const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
@@ -787,7 +823,7 @@ export function FileViewer({
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                color: activePreviewMode ? "var(--accent)" : "var(--text-hint)",
+                color: "var(--text-hint)",
                 fontSize: 11.5,
                 fontFamily: "var(--font-ui)",
                 flexShrink: 0,
@@ -904,7 +940,7 @@ export function FileViewer({
                 fileName={tab.name}
                 projectPath={projectPath}
                 themeVariant={themeVariant}
-                previewMode={!!previewModes[tab.path]}
+                previewMode={previewModes[tab.path] ?? isMarkdownFile(tab.name)}
               />
             </div>
           );

@@ -84,6 +84,7 @@ export function TaskList({
   }, [tasks, query]);
 
   const sorted = useMemo(() => {
+    const sortKey = (task: Task) => task.updatedAt ?? task.createdAt;
     return [...filtered].sort((a, b) => {
       const aNeedsAttention =
         a.status === "input_required" || a.status === "detached" || a.status === "interrupted";
@@ -92,9 +93,9 @@ export function TaskList({
       if (aNeedsAttention && !bNeedsAttention) return -1;
       if (!aNeedsAttention && bNeedsAttention) return 1;
       if (aNeedsAttention && bNeedsAttention) {
-        return (b.attentionRequestedAt ?? b.createdAt) - (a.attentionRequestedAt ?? a.createdAt);
+        return (b.attentionRequestedAt ?? sortKey(b)) - (a.attentionRequestedAt ?? sortKey(a));
       }
-      return b.createdAt - a.createdAt;
+      return sortKey(b) - sortKey(a);
     });
   }, [filtered]);
 
@@ -134,10 +135,13 @@ export function TaskList({
         starredTasks.push(task);
       } else if (task.status === "todo") {
         todoTasks.push(task);
-      } else if (task.createdAt >= todayTs) {
-        todayTasks.push(task);
-      } else if (task.createdAt >= cutoffTs) {
-        earlierTasks.push(task);
+      } else {
+        const bucketAt = task.updatedAt ?? task.createdAt;
+        if (bucketAt >= todayTs) {
+          todayTasks.push(task);
+        } else if (bucketAt >= cutoffTs) {
+          earlierTasks.push(task);
+        }
       }
     }
 
