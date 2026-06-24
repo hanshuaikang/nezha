@@ -940,7 +940,7 @@ export function FileViewer({
                 fileName={tab.name}
                 projectPath={projectPath}
                 themeVariant={themeVariant}
-                previewMode={!!previewModes[tab.path]}
+                previewMode={previewModes[tab.path] ?? isMarkdownFile(tab.name)}
               />
             </div>
           );
