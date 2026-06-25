@@ -65,9 +65,11 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.attentionBadgeHint":
       "Show a yellow count badge on the project rail for tasks awaiting your confirmation. When off, a yellow dot is shown instead.",
     "appSettings.terminalScrollback": "Terminal Scrollback",
-    "appSettings.terminalScrollbackLines": "{lines} lines",
+    "appSettings.terminalScrollbackUnit": "lines",
     "appSettings.terminalScrollbackHint":
-      "Maximum number of lines kept in each task terminal's scrollback. Lines beyond this are discarded. Applies to newly opened terminals only.",
+      "Maximum number of lines kept in each task terminal's scrollback. Lines beyond this are discarded. Range: 500–5000, step 500. Applies to newly opened terminals only.",
+    "appSettings.terminalScrollbackWarning":
+      "Above 3000, memory and selection/copy latency grow noticeably; many concurrent tasks may lag.",
     "appSettings.agentPaths": "Agent Installation Paths",
     "appSettings.installation": "Installation",
     "appSettings.configFile": "Configuration File",
@@ -574,9 +576,11 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.attentionBadgeHint":
       "在项目栏为等待你确认的任务显示黄色数量角标。关闭后则显示黄色小圆点。",
     "appSettings.terminalScrollback": "终端滚动缓冲",
-    "appSettings.terminalScrollbackLines": "{lines} 行",
+    "appSettings.terminalScrollbackUnit": "行",
     "appSettings.terminalScrollbackHint":
-      "每个任务终端最多保留的回滚行数,超出后旧行被丢弃。仅对新打开的终端生效。",
+      "每个任务终端最多保留的回滚行数,超出后旧行被丢弃。范围:500–5000,步长 500。仅对新打开的终端生效。",
+    "appSettings.terminalScrollbackWarning":
+      "3000 行以上,内存与选区/复制耗时明显增加,多任务并发可能卡顿。",
     "appSettings.agentPaths": "智能体安装路径",
     "appSettings.installation": "安装",
     "appSettings.configFile": "配置文件",

@@ -45,14 +45,6 @@ export const TERMINAL_SCROLLBACK_MAX = 5000;
 export const TERMINAL_SCROLLBACK_STEP = 500;
 export const DEFAULT_TERMINAL_SCROLLBACK: TerminalScrollback = 1000;
 
-export const TERMINAL_SCROLLBACK_VALUES: readonly TerminalScrollback[] = (() => {
-  const values: TerminalScrollback[] = [];
-  for (let v = TERMINAL_SCROLLBACK_MIN; v <= TERMINAL_SCROLLBACK_MAX; v += TERMINAL_SCROLLBACK_STEP) {
-    values.push(v);
-  }
-  return values;
-})();
-
 export function clampTerminalScrollback(value: unknown): TerminalScrollback {
   const num = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(num)) return DEFAULT_TERMINAL_SCROLLBACK;

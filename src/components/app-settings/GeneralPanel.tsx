@@ -1,12 +1,14 @@
 import type React from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, AlertTriangle } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
 import { useI18n, type AppLanguage } from "../../i18n";
 import {
   clampTerminalScrollback,
   normalizeTaskDisplayWindow,
   TASK_DISPLAY_WINDOW_VALUES,
-  TERMINAL_SCROLLBACK_VALUES,
+  TERMINAL_SCROLLBACK_MIN,
+  TERMINAL_SCROLLBACK_MAX,
+  TERMINAL_SCROLLBACK_STEP,
   type TaskDisplayWindow,
   type TerminalScrollback,
 } from "../../types";
@@ -71,13 +73,11 @@ export function GeneralPanel({
     taskDisplayWindowOptions.find((option) => option.value === taskDisplayWindow)?.label ??
     t("appSettings.taskDisplayRecentDays", { days: 3 });
 
-  const terminalScrollbackOptions = TERMINAL_SCROLLBACK_VALUES.map((value) => ({
-    value,
-    label: t("appSettings.terminalScrollbackLines", { lines: value }),
-  }));
-  const selectedTerminalScrollbackLabel =
-    terminalScrollbackOptions.find((option) => option.value === terminalScrollback)?.label ??
-    t("appSettings.terminalScrollbackLines", { lines: terminalScrollback });
+  const stepScrollback = (direction: 1 | -1) => {
+    onTerminalScrollbackChange(
+      clampTerminalScrollback(terminalScrollback + direction * TERMINAL_SCROLLBACK_STEP),
+    );
+  };
 
   return (
     <div
@@ -198,45 +198,48 @@ export function GeneralPanel({
 
       <div style={{ ...fieldStyle, marginTop: 18 }}>
         <label style={labelStyle}>{t("appSettings.terminalScrollback")}</label>
-        <Select.Root
-          value={String(terminalScrollback)}
-          onValueChange={(value) => onTerminalScrollbackChange(clampTerminalScrollback(value))}
-        >
-          <Select.Trigger
+        <div style={s.fontSizeControls}>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={TERMINAL_SCROLLBACK_MIN}
+            max={TERMINAL_SCROLLBACK_MAX}
+            step={TERMINAL_SCROLLBACK_STEP}
+            value={terminalScrollback}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (Number.isFinite(next)) {
+                onTerminalScrollbackChange(clampTerminalScrollback(next));
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                stepScrollback(1);
+                return;
+              }
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                stepScrollback(-1);
+                return;
+              }
+              if (e.key !== "Tab") {
+                e.preventDefault();
+              }
+            }}
+            onPaste={(e) => e.preventDefault()}
             aria-label={t("appSettings.terminalScrollback")}
-            style={selectTriggerStyle}
-          >
-            <Select.Value>{selectedTerminalScrollbackLabel}</Select.Value>
-            <Select.Icon>
-              <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
-            </Select.Icon>
-          </Select.Trigger>
-          <Select.Portal>
-            <Select.Content position="popper" sideOffset={4} style={s.settingsSelectContent}>
-              <Select.Viewport style={s.settingsSelectViewport}>
-                {terminalScrollbackOptions.map((option) => {
-                  const optionValue = String(option.value);
-                  const selected = option.value === terminalScrollback;
-
-                  return (
-                    <Select.Item
-                      key={optionValue}
-                      value={optionValue}
-                      className="radix-select-item"
-                      style={selected ? s.settingsSelectOptionSelected : s.settingsSelectOption}
-                    >
-                      <Select.ItemText>{option.label}</Select.ItemText>
-                      <Select.ItemIndicator style={s.settingsSelectIndicator}>
-                        <Check size={13} style={s.settingsSelectCheck} />
-                      </Select.ItemIndicator>
-                    </Select.Item>
-                  );
-                })}
-              </Select.Viewport>
-            </Select.Content>
-          </Select.Portal>
-        </Select.Root>
+            style={s.settingsNumberInput}
+          />
+          <span style={s.fontSizeUnit}>{t("appSettings.terminalScrollbackUnit")}</span>
+        </div>
         <span style={hintStyle}>{t("appSettings.terminalScrollbackHint")}</span>
+        {terminalScrollback > 3000 && (
+          <div style={s.settingsFieldWarning} role="alert">
+            <AlertTriangle size={13} strokeWidth={2} style={s.settingsFieldWarningIcon} />
+            <span>{t("appSettings.terminalScrollbackWarning")}</span>
+          </div>
+        )}
       </div>
     </div>
   );
