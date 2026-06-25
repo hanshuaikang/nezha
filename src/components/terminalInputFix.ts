@@ -1,5 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "../platform";
+import type { XTermWithPrivates } from "./xterm-private";
 
 type TerminalWithInput = Pick<Terminal, "input" | "textarea">;
 
@@ -141,5 +142,105 @@ export function attachLinuxIMEFix(
       textarea.removeEventListener("keydown", handleKeyDownCapture, true);
       disposable.dispose();
     },
+  };
+}
+
+// 远程输入法（如 UU 远程）会把整段文本作为 KeyboardEvent.key 发送，例如
+// key="测试"、key="Hello, hello, hello."。这些不是普通功能键，需要走 keypress
+// 分支直接发完整文本；下面列出的标准功能键/控制键则必须排除。
+const NON_PRINTABLE_KEYS = new Set([
+  "Alt",
+  "AltGraph",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "Backspace",
+  "CapsLock",
+  "Clear",
+  "ContextMenu",
+  "Control",
+  "Dead",
+  "Delete",
+  "End",
+  "Enter",
+  "Escape",
+  "F1",
+  "F2",
+  "F3",
+  "F4",
+  "F5",
+  "F6",
+  "F7",
+  "F8",
+  "F9",
+  "F10",
+  "F11",
+  "F12",
+  "F13",
+  "F14",
+  "F15",
+  "F16",
+  "F17",
+  "F18",
+  "F19",
+  "F20",
+  "F21",
+  "F22",
+  "F23",
+  "F24",
+  "Home",
+  "Insert",
+  "Meta",
+  "NumLock",
+  "PageDown",
+  "PageUp",
+  "Pause",
+  "Process",
+  "ScrollLock",
+  "Shift",
+  "Tab",
+  "Unidentified",
+]);
+
+function isMultiCharRemoteInput(key: string): boolean {
+  return (
+    key.length > 1 && !NON_PRINTABLE_KEYS.has(key) && /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}]+$/u.test(key)
+  );
+}
+
+/**
+ * 修复 macOS WKWebView 在手机 / Pad 远程输入法（如 UU 远程）下，终端只能收到
+ * 第一个字符的问题。
+ *
+ * 远程输入法会直接把候选词作为 KeyboardEvent.key 发送（例如 key="测试"），而
+ * xterm 的 keypress 处理只会按 keyCode 发第一个字。这里在 capture 阶段拦截这
+ * 种多字符 keypress，直接发送完整 key 文本。
+ */
+export function patchMacWebKitInputEvent(term: Terminal): () => void {
+  if (!IS_MAC_WEBKIT) {
+    return () => {};
+  }
+
+  const core = (term as XTermWithPrivates)._core;
+  const element = term.element;
+  const textarea = term.textarea;
+  if (!element || !textarea) {
+    return () => {};
+  }
+
+  const handleKeyPressCapture = (event: KeyboardEvent) => {
+    if (event.target !== textarea) return;
+    if (!isMultiCharRemoteInput(event.key)) return;
+
+    core.coreService.triggerDataEvent(event.key, true);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  element.addEventListener("keypress", handleKeyPressCapture, true);
+
+  return () => {
+    element.removeEventListener("keypress", handleKeyPressCapture, true);
   };
 }

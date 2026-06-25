@@ -33,8 +33,13 @@ export interface XTermCharSizeService {
   _measureStrategy: XTermMeasureStrategy;
 }
 
+export interface XTermCoreService {
+  triggerDataEvent(data: string, userInput?: boolean): void;
+}
+
 export interface XTermCore {
   _charSizeService?: XTermCharSizeService;
+  coreService: XTermCoreService;
 }
 
 /** 包含 `_core` 私有入口的 Terminal——命名带 "Private" 便于 grep 定位。 */

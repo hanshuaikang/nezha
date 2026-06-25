@@ -21,7 +21,7 @@ import {
   refreshTerminalDisplay,
   unregisterActiveTerminal,
 } from "./terminalShared";
-import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { attachLinuxIMEFix, attachMacWebKitShiftInputFix, patchMacWebKitInputEvent } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import "@xterm/xterm/css/xterm.css";
@@ -143,6 +143,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       const disposeCharSizeOverride = applyDomCharSizeOverride(term);
       const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
       const disposeInputFix = attachMacWebKitShiftInputFix(term);
+      const disposeRemoteInputPatch = patchMacWebKitInputEvent(term);
       const webglHandle = loadWebglAddon(term);
       const writer = createSmartWriter(term);
       const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
@@ -250,6 +251,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
+        disposeRemoteInputPatch();
         term.dispose();
         invoke("kill_shell", { shellId }).catch(() => {});
       };

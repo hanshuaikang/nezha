@@ -26,7 +26,7 @@ import {
   refreshTerminalDisplay,
   unregisterActiveTerminal,
 } from "./terminalShared";
-import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { attachLinuxIMEFix, attachMacWebKitShiftInputFix, patchMacWebKitInputEvent } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -173,7 +173,8 @@ export function TerminalView({
       onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
     });
     const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
-    const disposeOnData = { dispose: () => linuxIME.dispose() };
+    const disposeRemoteInputPatch = patchMacWebKitInputEvent(term);
+    const disposeOnData = { dispose: () => { disposeRemoteInputPatch(); linuxIME.dispose(); } };
 
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 0) {
