@@ -3,9 +3,12 @@ import { Check, ChevronDown } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
 import { useI18n, type AppLanguage } from "../../i18n";
 import {
+  clampTerminalScrollback,
   normalizeTaskDisplayWindow,
   TASK_DISPLAY_WINDOW_VALUES,
+  TERMINAL_SCROLLBACK_VALUES,
   type TaskDisplayWindow,
+  type TerminalScrollback,
 } from "../../types";
 import s from "../../styles";
 
@@ -14,11 +17,15 @@ export function GeneralPanel({
   onTaskDisplayWindowChange,
   attentionBadge,
   onAttentionBadgeChange,
+  terminalScrollback,
+  onTerminalScrollbackChange,
 }: {
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   attentionBadge: boolean;
   onAttentionBadgeChange: (enabled: boolean) => void;
+  terminalScrollback: TerminalScrollback;
+  onTerminalScrollbackChange: (value: TerminalScrollback) => void;
 }) {
   const { language, setLanguage, t } = useI18n();
 
@@ -63,6 +70,14 @@ export function GeneralPanel({
   const selectedTaskDisplayWindowLabel =
     taskDisplayWindowOptions.find((option) => option.value === taskDisplayWindow)?.label ??
     t("appSettings.taskDisplayRecentDays", { days: 3 });
+
+  const terminalScrollbackOptions = TERMINAL_SCROLLBACK_VALUES.map((value) => ({
+    value,
+    label: t("appSettings.terminalScrollbackLines", { lines: value }),
+  }));
+  const selectedTerminalScrollbackLabel =
+    terminalScrollbackOptions.find((option) => option.value === terminalScrollback)?.label ??
+    t("appSettings.terminalScrollbackLines", { lines: terminalScrollback });
 
   return (
     <div
@@ -179,6 +194,49 @@ export function GeneralPanel({
           </span>
         </button>
         <span style={hintStyle}>{t("appSettings.attentionBadgeHint")}</span>
+      </div>
+
+      <div style={{ ...fieldStyle, marginTop: 18 }}>
+        <label style={labelStyle}>{t("appSettings.terminalScrollback")}</label>
+        <Select.Root
+          value={String(terminalScrollback)}
+          onValueChange={(value) => onTerminalScrollbackChange(clampTerminalScrollback(value))}
+        >
+          <Select.Trigger
+            aria-label={t("appSettings.terminalScrollback")}
+            style={selectTriggerStyle}
+          >
+            <Select.Value>{selectedTerminalScrollbackLabel}</Select.Value>
+            <Select.Icon>
+              <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+            </Select.Icon>
+          </Select.Trigger>
+          <Select.Portal>
+            <Select.Content position="popper" sideOffset={4} style={s.settingsSelectContent}>
+              <Select.Viewport style={s.settingsSelectViewport}>
+                {terminalScrollbackOptions.map((option) => {
+                  const optionValue = String(option.value);
+                  const selected = option.value === terminalScrollback;
+
+                  return (
+                    <Select.Item
+                      key={optionValue}
+                      value={optionValue}
+                      className="radix-select-item"
+                      style={selected ? s.settingsSelectOptionSelected : s.settingsSelectOption}
+                    >
+                      <Select.ItemText>{option.label}</Select.ItemText>
+                      <Select.ItemIndicator style={s.settingsSelectIndicator}>
+                        <Check size={13} style={s.settingsSelectCheck} />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                  );
+                })}
+              </Select.Viewport>
+            </Select.Content>
+          </Select.Portal>
+        </Select.Root>
+        <span style={hintStyle}>{t("appSettings.terminalScrollbackHint")}</span>
       </div>
     </div>
   );

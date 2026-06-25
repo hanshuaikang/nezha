@@ -38,6 +38,29 @@ export function clampTerminalFontSize(value: number): TerminalFontSize {
   return Math.min(TERMINAL_FONT_SIZE_MAX, Math.max(TERMINAL_FONT_SIZE_MIN, snapped));
 }
 
+export type TerminalScrollback = number;
+
+export const TERMINAL_SCROLLBACK_MIN = 500;
+export const TERMINAL_SCROLLBACK_MAX = 5000;
+export const TERMINAL_SCROLLBACK_STEP = 500;
+export const DEFAULT_TERMINAL_SCROLLBACK: TerminalScrollback = 1000;
+
+export const TERMINAL_SCROLLBACK_VALUES: readonly TerminalScrollback[] = (() => {
+  const values: TerminalScrollback[] = [];
+  for (let v = TERMINAL_SCROLLBACK_MIN; v <= TERMINAL_SCROLLBACK_MAX; v += TERMINAL_SCROLLBACK_STEP) {
+    values.push(v);
+  }
+  return values;
+})();
+
+export function clampTerminalScrollback(value: unknown): TerminalScrollback {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_TERMINAL_SCROLLBACK;
+  const snapped =
+    Math.round(num / TERMINAL_SCROLLBACK_STEP) * TERMINAL_SCROLLBACK_STEP;
+  return Math.min(TERMINAL_SCROLLBACK_MAX, Math.max(TERMINAL_SCROLLBACK_MIN, snapped));
+}
+
 export type FontFamily = string;
 export const DEFAULT_UI_FONT: FontFamily =
   '"SF Pro Display", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif';

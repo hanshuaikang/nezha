@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import type { Task, UsageWindow, TerminalFontSize, FontFamily, ThemeVariant } from "../types";
+import type {
+  Task,
+  UsageWindow,
+  TerminalFontSize,
+  TerminalScrollback,
+  FontFamily,
+  ThemeVariant,
+} from "../types";
 import { permissionModeLabel } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
@@ -97,6 +104,7 @@ export function RunningView({
   onGenerateName,
   themeVariant,
   terminalFontSize,
+  terminalScrollback,
   monoFontFamily,
 }: {
   task: Task;
@@ -120,6 +128,7 @@ export function RunningView({
   onGenerateName: () => Promise<void>;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: TerminalScrollback;
   monoFontFamily: FontFamily;
 }) {
   const { t } = useI18n();
@@ -668,6 +677,7 @@ export function RunningView({
             onSnapshot={onSnapshot}
             themeVariant={themeVariant}
             terminalFontSize={terminalFontSize}
+            terminalScrollback={terminalScrollback}
             monoFontFamily={monoFontFamily}
             isActive={visible}
             initialData={restoreState.initialData}

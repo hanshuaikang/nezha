@@ -9,7 +9,16 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import type { Project, Task, ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type {
+  Project,
+  Task,
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TerminalScrollback,
+  TaskDisplayWindow,
+  FontFamily,
+} from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { SidebarFooterActions } from "./SidebarFooterActions";
 import { BranchBar } from "./task-panel/BranchBar";
@@ -41,6 +50,8 @@ export function TaskPanel({
   onTaskDisplayWindowChange,
   attentionBadge,
   onAttentionBadgeChange,
+  terminalScrollback,
+  onTerminalScrollbackChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -72,6 +83,8 @@ export function TaskPanel({
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   attentionBadge: boolean;
   onAttentionBadgeChange: (enabled: boolean) => void;
+  terminalScrollback: TerminalScrollback;
+  onTerminalScrollbackChange: (value: TerminalScrollback) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -220,6 +233,8 @@ export function TaskPanel({
           onTaskDisplayWindowChange={onTaskDisplayWindowChange}
           attentionBadge={attentionBadge}
           onAttentionBadgeChange={onAttentionBadgeChange}
+          terminalScrollback={terminalScrollback}
+          onTerminalScrollbackChange={onTerminalScrollbackChange}
           uiFontFamily={uiFontFamily}
           onUiFontFamilyChange={onUiFontFamilyChange}
           monoFontFamily={monoFontFamily}

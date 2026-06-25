@@ -10,7 +10,7 @@ import {
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
 } from "../shortcuts";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
+import type { TerminalFontSize, TerminalScrollback, FontFamily, ThemeVariant } from "../types";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -36,6 +36,7 @@ interface TerminalViewProps {
   onReady?: (generation: number) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: TerminalScrollback;
   monoFontFamily: FontFamily;
   isActive?: boolean;
   initialData?: string;
@@ -50,6 +51,7 @@ export function TerminalView({
   onReady,
   themeVariant,
   terminalFontSize,
+  terminalScrollback,
   monoFontFamily,
   isActive = true,
   initialData,
@@ -89,7 +91,7 @@ export function TerminalView({
 
     const { term, fitAddon, whenFontsReady } = initTerminal(
       themeVariant,
-      1000,
+      terminalScrollback,
       terminalFontSize,
       monoFontFamily,
     );

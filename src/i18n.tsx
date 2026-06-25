@@ -64,6 +64,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.attentionBadgeToggle": "Show pending-confirmation count",
     "appSettings.attentionBadgeHint":
       "Show a yellow count badge on the project rail for tasks awaiting your confirmation. When off, a yellow dot is shown instead.",
+    "appSettings.terminalScrollback": "Terminal Scrollback",
+    "appSettings.terminalScrollbackLines": "{lines} lines",
+    "appSettings.terminalScrollbackHint":
+      "Maximum number of lines kept in each task terminal's scrollback. Lines beyond this are discarded. Applies to newly opened terminals only.",
     "appSettings.agentPaths": "Agent Installation Paths",
     "appSettings.installation": "Installation",
     "appSettings.configFile": "Configuration File",
@@ -569,6 +573,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.attentionBadgeToggle": "显示待确认任务数量",
     "appSettings.attentionBadgeHint":
       "在项目栏为等待你确认的任务显示黄色数量角标。关闭后则显示黄色小圆点。",
+    "appSettings.terminalScrollback": "终端滚动缓冲",
+    "appSettings.terminalScrollbackLines": "{lines} 行",
+    "appSettings.terminalScrollbackHint":
+      "每个任务终端最多保留的回滚行数,超出后旧行被丢弃。仅对新打开的终端生效。",
     "appSettings.agentPaths": "智能体安装路径",
     "appSettings.installation": "安装",
     "appSettings.configFile": "配置文件",

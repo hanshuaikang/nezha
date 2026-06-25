@@ -15,6 +15,7 @@ import {
   normalizeSendShortcut,
   normalizeShiftEnterNewline,
 } from "../../shortcuts";
+import { DEFAULT_TERMINAL_SCROLLBACK } from "../../types";
 import s from "../../styles";
 import { renderShortcutKeys } from "./shared";
 import { APP_SETTINGS_CHANGED_EVENT, type AppSettings } from "./types";
@@ -104,6 +105,7 @@ export function ShortcutsPanel() {
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
     claude_force_default_tui: true,
+    terminal_scrollback: DEFAULT_TERMINAL_SCROLLBACK,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

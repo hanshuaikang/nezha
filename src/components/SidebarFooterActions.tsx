@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
-import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type {
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TerminalScrollback,
+  TaskDisplayWindow,
+  FontFamily,
+} from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
 import { OPEN_APP_SETTINGS_EVENT } from "./app-settings/types";
 import { NotificationBell } from "./NotificationBell";
@@ -21,6 +28,8 @@ export function SidebarFooterActions({
   onTaskDisplayWindowChange,
   attentionBadge,
   onAttentionBadgeChange,
+  terminalScrollback,
+  onTerminalScrollbackChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -37,6 +46,8 @@ export function SidebarFooterActions({
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   attentionBadge: boolean;
   onAttentionBadgeChange: (enabled: boolean) => void;
+  terminalScrollback: TerminalScrollback;
+  onTerminalScrollbackChange: (value: TerminalScrollback) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -89,6 +100,8 @@ export function SidebarFooterActions({
           onTaskDisplayWindowChange={onTaskDisplayWindowChange}
           attentionBadge={attentionBadge}
           onAttentionBadgeChange={onAttentionBadgeChange}
+          terminalScrollback={terminalScrollback}
+          onTerminalScrollbackChange={onTerminalScrollbackChange}
           uiFontFamily={uiFontFamily}
           onUiFontFamilyChange={onUiFontFamilyChange}
           monoFontFamily={monoFontFamily}

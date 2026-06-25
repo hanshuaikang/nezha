@@ -12,6 +12,7 @@ import type {
   ThemeMode,
   ThemeVariant,
   TerminalFontSize,
+  TerminalScrollback,
   TaskDisplayWindow,
   SkillHubConfig,
 } from "./types";
@@ -19,6 +20,8 @@ import {
   isActiveTaskStatus,
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
+  DEFAULT_TERMINAL_SCROLLBACK,
+  clampTerminalScrollback,
   DEFAULT_TASK_DISPLAY_WINDOW,
   normalizeTaskDisplayWindow,
 } from "./types";
@@ -252,6 +255,14 @@ function App() {
     getInitialTaskDisplayWindow,
   );
   const [attentionBadge, setAttentionBadge] = useState<boolean>(getInitialAttentionBadge);
+  const [terminalScrollback, setTerminalScrollbackState] = useState<TerminalScrollback>(
+    DEFAULT_TERMINAL_SCROLLBACK,
+  );
+  const handleTerminalScrollbackChange = useCallback((value: TerminalScrollback) => {
+    const clamped = clampTerminalScrollback(value);
+    setTerminalScrollbackState(clamped);
+    invoke("save_terminal_scrollback", { scrollback: clamped }).catch(console.error);
+  }, []);
   const [uiFontFamily, setUiFontFamily] = useState<FontFamily>(() =>
     getInitialFontFamily("nezha:uiFontFamily", DEFAULT_UI_FONT),
   );
@@ -374,6 +385,21 @@ function App() {
   useEffect(() => {
     localStorage.setItem("nezha:terminalFontSize", String(terminalFontSize));
   }, [terminalFontSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<{ terminal_scrollback?: unknown }>("load_app_settings")
+      .then((settings) => {
+        if (cancelled) return;
+        setTerminalScrollbackState(clampTerminalScrollback(settings.terminal_scrollback));
+      })
+      .catch(() => {
+        /* 默认 1000 已经在 state 初值,无需 fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("nezha:taskDisplayWindow", String(taskDisplayWindow));
@@ -1319,6 +1345,8 @@ function App() {
               onTaskDisplayWindowChange={setTaskDisplayWindow}
               attentionBadge={attentionBadge}
               onAttentionBadgeChange={setAttentionBadge}
+              terminalScrollback={terminalScrollback}
+              onTerminalScrollbackChange={handleTerminalScrollbackChange}
               uiFontFamily={uiFontFamily}
               onUiFontFamilyChange={setUiFontFamily}
               monoFontFamily={monoFontFamily}
@@ -1356,6 +1384,8 @@ function App() {
             onTaskDisplayWindowChange={setTaskDisplayWindow}
             attentionBadge={attentionBadge}
             onAttentionBadgeChange={setAttentionBadge}
+            terminalScrollback={terminalScrollback}
+            onTerminalScrollbackChange={handleTerminalScrollbackChange}
             uiFontFamily={uiFontFamily}
             onUiFontFamilyChange={setUiFontFamily}
             monoFontFamily={monoFontFamily}

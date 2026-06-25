@@ -8,6 +8,7 @@ import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   normalizeSendShortcut,
 } from "../../shortcuts";
+import { DEFAULT_TERMINAL_SCROLLBACK } from "../../types";
 import s from "../../styles";
 import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings, type AgentKey } from "./types";
 import { getAgentExecutablePlaceholder } from "./shared";
@@ -74,6 +75,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
     claude_force_default_tui: true,
+    terminal_scrollback: DEFAULT_TERMINAL_SCROLLBACK,
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);

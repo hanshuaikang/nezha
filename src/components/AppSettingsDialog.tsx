@@ -12,7 +12,14 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { ThemeMode, ThemeVariant, TerminalFontSize, TaskDisplayWindow, FontFamily } from "../types";
+import type {
+  ThemeMode,
+  ThemeVariant,
+  TerminalFontSize,
+  TerminalScrollback,
+  TaskDisplayWindow,
+  FontFamily,
+} from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 import claudeLogo from "../assets/claude.svg";
@@ -117,6 +124,8 @@ export function AppSettingsDialog({
   onTaskDisplayWindowChange,
   attentionBadge,
   onAttentionBadgeChange,
+  terminalScrollback,
+  onTerminalScrollbackChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -133,6 +142,8 @@ export function AppSettingsDialog({
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   attentionBadge: boolean;
   onAttentionBadgeChange: (enabled: boolean) => void;
+  terminalScrollback: TerminalScrollback;
+  onTerminalScrollbackChange: (value: TerminalScrollback) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -212,6 +223,8 @@ export function AppSettingsDialog({
               onTaskDisplayWindowChange={onTaskDisplayWindowChange}
               attentionBadge={attentionBadge}
               onAttentionBadgeChange={onAttentionBadgeChange}
+              terminalScrollback={terminalScrollback}
+              onTerminalScrollbackChange={onTerminalScrollbackChange}
             />
           ) : activeNav === "theme" ? (
             <ThemePanel
