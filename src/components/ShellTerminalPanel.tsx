@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import { useTerminalPathDrop } from "./useTerminalPathDrop";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
   applyTerminalThemeOnPanel,
@@ -101,6 +102,20 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       }),
       [shellId],
     );
+
+    const insertDroppedPathText = useCallback(
+      (text: string) => {
+        invoke("send_input", { taskId: shellId, data: text }).catch(console.error);
+        terminalRef.current?.focus();
+      },
+      [shellId],
+    );
+
+    useTerminalPathDrop({
+      containerRef,
+      isActive,
+      onInsertText: insertDroppedPathText,
+    });
 
     useEffect(() => {
       if (!containerRef.current) return;

@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import { useTerminalPathDrop } from "./useTerminalPathDrop";
 import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
@@ -84,6 +85,17 @@ export function TerminalView({
     lastSizeRef.current = { cols, rows };
     onResizeRef.current(cols, rows);
   }, []);
+
+  const insertDroppedPathText = useCallback((text: string) => {
+    onInputRef.current(text);
+    terminalRef.current?.focus();
+  }, []);
+
+  useTerminalPathDrop({
+    containerRef,
+    isActive,
+    onInsertText: insertDroppedPathText,
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;
