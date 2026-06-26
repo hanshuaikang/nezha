@@ -191,6 +191,9 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      // 必须最先 unregister:后续任一 dispose 调用抛错会中断 cleanup,
+      // 让 term 永久滞留 activeTerminals,下次 sibling 广播命中 zombie。
+      unregisterActiveTerminal(term);
       try {
         const snapshot = serializeAddon.serialize();
         if (snapshot) onSnapshotRef.current?.(snapshot);
@@ -211,7 +214,6 @@ export function TerminalView({
       container.removeEventListener("pointerdown", handlePointerDown as EventListener);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
-      unregisterActiveTerminal(term);
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

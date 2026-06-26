@@ -646,13 +646,14 @@ export function unregisterActiveTerminal(term: Terminal): void {
 
 function refreshSiblingTerminals(except: Terminal): void {
   for (const sibling of activeTerminals) {
-    if (sibling === except || sibling.rows <= 0) continue;
+    // sibling.element 同时识别 not-yet-opened (无 element) 与已 detach 的 disposed
+    // sibling;rows getter 在某些 dispose 中途状态会抛 TypeError,不能放在 try 外。
+    if (sibling === except || !sibling.element) continue;
     try {
       // 关键:调 clearTextureAtlas 而非 refresh。
       // WebglRenderer._updateModel 有 dirty-skip,sibling 的 model.cells 跟 buffer
       // 一致时整屏 continue 跳过,glyph 仍引用清空前的 atlas 坐标 → 乱码残留。
       // clearTextureAtlas 内部走 _clearModel(true) 强制清空 model,绕开 dirty-skip。
-      // 第一行的 _charAtlas.clearTexture() 已在我们的清缓存调用里跑过,这里是 no-op。
       sibling.clearTextureAtlas();
     } catch {
       /* sibling 在 dispose 中途的 race / DOM renderer 无 atlas */
@@ -670,10 +671,12 @@ function refreshTextureAtlas(term: Terminal): void {
     if (term.rows > 0) {
       term.refresh(0, term.rows - 1);
     }
+    // 只在自己 clear 成功后才广播:DOM renderer / 已 dispose 路径下自己没改变
+    // atlas 状态,sibling 没有刷新的理由,广播只会引发无意义闪烁。
+    refreshSiblingTerminals(term);
   } catch {
     /* DOM renderer 没有 atlas / term 已 dispose */
   }
-  refreshSiblingTerminals(term);
 }
 
 function scheduleTextureAtlasRefresh(term: Terminal): void {
