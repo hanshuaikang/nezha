@@ -67,7 +67,7 @@ ErrorBoundary  (全局兜底)
 
 > **复用小组件**（被多处引用）：`StatusIcon` / `IconButton` / `ProjectAvatar`。
 >
-> **已拆出的子目录**（`src/components/<dir>/`）：`app-settings/` · `task-panel/` · `new-task/` · `file-explorer/` · `file-viewer/` · `git-diff/` · `git-view/` · `skill-hub/`——这些目录里是已经从主组件拆出来的子部件，新增功能优先继续往这些子目录加，不要回灌到根目录大文件里。
+> **已拆出的子目录**（`src/components/<dir>/`）：`app-settings/` · `task-panel/` · `new-task/` · `file-explorer/` · `file-viewer/` · `git-diff/` · `git-view/` · `skill-hub/` · `project-rail/`——这些目录里是已经从主组件拆出来的子部件，新增功能优先继续往这些子目录加，不要回灌到根目录大文件里。
 
 状态从 `App.tsx` 通过 props 向下传递；异步更新通过 Tauri 通道/事件向上传递：
 - **agent 任务输出** — 通过 `tauri::ipc::Channel<String>`（前端 `new Channel<string>()`）由 `run_task` / `resume_task` 的 `onOutput` 参数传入，绕过事件总线的全局广播，直投 `useTerminalManager` 的批量写入流程
@@ -88,8 +88,8 @@ ErrorBoundary  (全局兜底)
 | `git.rs` | 完整 Git 集成：状态 / 分支 / 日志 / 差异 / 暂存 / 提交 / 推送 / 拉取 / `generate_commit_message`，以及 worktree 系列（`create_task_worktree` / `merge_task_worktree` / `remove_task_worktree` / `worktree_diff_stats`） |
 | `analytics.rs` | 解析会话 JSONL 获取 token / 工具调用指标（`read_session_metrics`，供 RunningView 轮询） |
 | `config.rs` | 项目级 `.nezha/config.toml` 管理（`init_project_config` / `read_project_config` / `write_project_config` / `read_agent_config_file` / `write_agent_config_file` / `get_agent_config_file_path`） |
-| `app_settings.rs` | 应用级智能体路径、版本、UI 偏好（`load_app_settings` / `save_app_settings` / `save_agent_paths` / `save_send_shortcut` / `save_shift_enter_newline` / `detect_agent_paths` / `detect_agent_versions_for_settings` / `get_system_fonts`） |
-| `hooks.rs` + `nezha-hook.mjs` | Claude Code / Codex 的 hook 集成（能力探测、注入、事件回传） |
+| `app_settings.rs` | 应用级智能体路径、版本、UI 偏好（`load_app_settings` / `save_app_settings` / `save_agent_paths` / `save_send_shortcut` / `save_shift_enter_newline` / `save_claude_force_default_tui` / `save_terminal_scrollback` / `detect_agent_paths` / `detect_agent_versions_for_settings` / `get_system_fonts`） |
+| `hooks.rs` + `nezha-hook.mjs` | Claude Code / Codex 的 hook 集成（能力探测、注入、事件回传、`regenerate_claude_settings`） |
 | `event_watcher.rs` | 监听 `.nezha/events/<taskId>/events.jsonl`，把 hook 事件回投到前端 |
 | `notification.rs` | 系统通知发送（任务状态 / attention） |
 | `agent_assist.rs` | 智能体辅助调用：headless 命令生成任务名、commit message 等 |
@@ -128,6 +128,7 @@ interface Task {
   permissionMode: "ask" | "auto_edit" | "full_access";
   status: TaskStatus;
   createdAt: number;
+  updatedAt?: number;        // 状态最近变更时间戳；任务列表按此排序，缺省回落 createdAt
   attentionRequestedAt?: number;
   starred?: boolean;
   failureReason?: string;
@@ -150,10 +151,6 @@ interface Task {
 - `~/.nezha/projects.json` — Project[]
 - `~/.nezha/projects/<projectId>/tasks.json` — Task[]（每个项目独立一个文件）
 - 主题及 UI 偏好存储于 localStorage
-
-**Tauri 存储命令（`src-tauri/src/storage.rs`）：**
-- `load_projects` / `save_projects`
-- `load_project_tasks` / `save_project_tasks`
 
 > 修改 Task 数据结构时，**必须同步更新 `types.ts`（TypeScript）和 `storage.rs` 中的 `Task` 结构体（Rust）**——否则新字段在序列化时会被静默丢弃。
 
@@ -184,7 +181,7 @@ commit_message_timeout_secs = 60   # 生成 commit message 的超时秒数（hea
 
 ### 样式
 
-- 所有样式统一放在 `src/styles/` 目录下，并通过 `src/styles/index.ts` 聚合导出。新样式优先按已有模块（`layout` / `panels` / `task` / `terminal` / `dialogs` / `common` / `git-diff` / `skill-hub` / `timeline` / `font`）归档，不要创建独立的业务 `.css` 文件。
+- 所有样式统一放在 `src/styles/` 目录下，并通过 `src/styles/index.ts` 聚合导出。新样式优先按已有模块（`layout` / `panels` / `task` / `terminal` / `dialogs` / `common` / `git-diff` / `skill-hub` / `timeline` / `font` / `rail-drag`）归档，不要创建独立的业务 `.css` 文件。
 - **新增 / 修改组件时禁止使用 `style={{}}` 行内样式**。动态条件（disabled / hover / active）用 `className` + `data-*` 属性 + CSS 选择器表达，不要 fallback 成 inline。存量 inline style（如 `GitChanges.tsx`、`FileExplorer.tsx`）属于已知技术债，**修该文件时也要一并迁出**，不要复制现有 inline 风格。
 - 主题变量（颜色、间距）是 `App.css` / `themes.css` 中的 CSS 自定义属性，在 `styles/*` 中通过 `var(--name)` 引用，不要 hardcode 颜色值。
 
@@ -193,11 +190,6 @@ commit_message_timeout_secs = 60   # 生成 commit message 的超时秒数（hea
 - 不引入外部状态库。跨项目/跨面板的核心状态主要存活在 `App.tsx` 中并通过 props 向下传递；组件内部的短生命周期 UI 状态保留在各自组件内。
 - Tauri 事件（`listen()`）驱动异步状态更新——后端的状态变更通过此机制到达前端。
 - 任何数据变更后，立即通过 Tauri 的 `save_projects` / `save_project_tasks` 命令持久化到磁盘。
-
-### TypeScript
-
-- 已开启严格模式（`tsconfig.json`）。避免使用 `any`，应扩展 `types.ts` 代替。
-- Tauri 命令使用 `invoke<ReturnType>()` 类型化——添加新命令时记得加泛型参数。
 
 ### Rust
 
@@ -225,7 +217,6 @@ commit_message_timeout_secs = 60   # 生成 commit message 的超时秒数（hea
 ### 后端性能
 
 - **Tauri async 命令内禁止直接调用阻塞操作**——当前 `git.rs` 中所有命令（`git_status`、`git_log`、`git_push` 等）和 `fs.rs` 中的 `read_dir_entries`、`list_project_files` 虽标记为 `async fn`，但内部直接调用 `std::process::Command::output()` 等同步阻塞操作而未使用 `spawn_blocking`，会阻塞 Tokio 异步运行时。**新增 Tauri 命令凡涉及文件 I/O、进程启动、网络请求，必须包裹 `tokio::task::spawn_blocking`。**
-- **PTY 读取缓冲区不宜过小**——当前 `pty.rs` 中 `spawn_pty_reader` 使用 4096 字节缓冲区，大量输出（如 npm install）会产生 25000+ 次事件发送。新增类似读取循环时缓冲区应至少 32KB-64KB。
 - **持锁期间禁止执行 I/O**——`send_input`（pty.rs）在持有 `pty_writers` 锁期间执行 `write_all` + `flush`；`resize_pty` 在持有 `pty_masters` 锁期间执行 ioctl。应先 clone/取出资源再释放锁，或缩短临界区。
 - **`read_session_messages` 禁止全文件一次性加载**——当前实现对整个 JSONL 文件调用 `fs::read_to_string`，长会话文件可达数百 MB。应改为流式逐行读取或支持分页。
 - **`list_project_files` 应合并 git 命令**——当前执行两次 `git ls-files`（tracked + untracked），可合并为 `git ls-files -c -o --exclude-standard` 一次完成。
@@ -237,21 +228,7 @@ commit_message_timeout_secs = 60   # 生成 commit message 的超时秒数（hea
 
 ### 组件规模
 
-- **单个组件文件不应超过 400 行**——`AppSettingsDialog`（256 行）已通过拆出 `src/components/app-settings/` 子目录完成瘦身。新增功能若落在以下仍超标文件，优先继续拆分再扩展，**不要继续往这些大文件里塞**：
-
-  | 文件 | 当前行数 | 拆分方向 |
-  |------|---------|---------|
-  | `App.tsx` | ~1216 | 状态切片、Tauri 事件监听可下沉到 hooks |
-  | `FileViewer.tsx` | ~839 | 语言渲染 / 图片预览 / markdown TOC 已部分在 `file-viewer/` 子目录，可继续 |
-  | `GitChanges.tsx` | ~773 | 文件树 / 提交 UI / hunk 操作 |
-  | `GitHistory.tsx` | ~768 | 已有 `git-view/` 子目录，可继续抽 |
-  | `RunningView.tsx` | ~675 | header / metrics / terminal 已可拆 |
-  | `NewTaskView.tsx` | ~612 | 已有 `new-task/` 子目录，仍可下沉 |
-  | `task-panel/BranchBar.tsx` | ~602 | popover 子组件、creation flow 可拆 |
-  | `ProjectPage.tsx` | ~575 | 面板编排逻辑可抽 hook |
-  | `ShellTerminalPanel.tsx` | ~543 | tab 管理 / PTY 状态 |
-  | `FileExplorer.tsx` | ~511 | 已有 `file-explorer/` 子目录 |
-  | `ProjectRail.tsx` | ~482 | 项目项 / 上下文菜单 |
+- **单个组件文件不应超过 400 行**——新增功能优先往已有子目录（`app-settings/` / `project-rail/` / `new-task/` / `file-explorer/` / `file-viewer/` / `git-diff/` / `git-view/`）下沉，不要继续往已经偏大的根文件里塞。
 
 ---
 
@@ -332,7 +309,7 @@ commit_message_timeout_secs = 60   # 生成 commit message 的超时秒数（hea
 
 - **改前 vs 改后对照**：上下或并排放置，标注差异。
 - **多状态覆盖**：默认 / hover / focus / 选中 / 禁用 / 加载中 / 空态 / 错误态——凡是改动会影响到的状态都要给一张。
-- **暗色 + 亮色主题各一张**（nezha 支持 `dark` / `light` / `eyecare` 等多主题，至少覆盖暗色和亮色各一）。
+- **暗色 + 亮色主题各一张**（nezha 支持 `dark` / `midnight` / `light` / `eyecare` 四种主题，至少覆盖暗色和亮色各一）。
 - **动效 / 交互**：用 GIF 或短屏幕录制（≤10s），静态截图无法表达过渡 / hover / 拖拽行为。
 - **响应式**：如果改动涉及面板可缩放区域，附窄 / 宽两种尺寸的截图。
 - **截图里如出现私有项目名、token、邮箱等敏感信息，请打码再贴**。
@@ -366,37 +343,24 @@ commit_message_timeout_secs = 60   # 生成 commit message 的超时秒数（hea
 
 ## 开发流程 Checklist（写代码前过一遍）
 
-不要等 review 时才补这些——[[feedback_apply_agents_md_at_write_time]] 已经付过返工代价。
-
 **写前端组件前：**
-- [ ] 不写 `style={{}}` 行内样式，新增样式进 `src/styles/` 模块（[[feedback_no_inline_styles]]）
-- [ ] UI 原语优先用 Radix / `lucide-react`，不用原生 `<select>` / `<dialog>` / 自实现
-- [ ] 高频事件回调（PTY 输出、滚动、输入）禁止直接 setState，用 ref + RAF 批量
-- [ ] 长列表（>1000 行）必须考虑虚拟化
-- [ ] 改动落在终端相关文件（`TerminalView.tsx` / `terminalShared.ts` / `useTerminalManager.ts`）→ **先过"终端性能红线"章节**
+- [ ] 不写 `style={{}}`，样式进 `src/styles/` 模块
+- [ ] UI 原语用 Radix / `lucide-react`，不用原生 `<select>` / `<dialog>` / 自实现
+- [ ] 高频回调（PTY 输出、滚动）不直接 setState，用 ref + RAF 批量
+- [ ] 长列表（>1000 条）考虑虚拟滚动
+- [ ] 改动涉及 `TerminalView.tsx` / `terminalShared.ts` / `useTerminalManager.ts` → **先过终端性能红线章节**
 
 **写 Tauri 命令前：**
-- [ ] 接受路径参数 → canonicalize + starts_with 校验，绝不直接信任前端传值
-- [ ] 涉及文件 I/O / 进程启动 / 网络请求 → 用 `tokio::task::spawn_blocking` 或 `tokio::process::Command` + `kill_on_drop(true)`，外层 `tokio::time::timeout`
-- [ ] 读大文件 → 流式 + 行数/字节硬上限，禁止 `fs::read_to_string` 全量加载
-- [ ] 持锁期间不做 I/O，先 clone / drop guard 再写
-- [ ] Mutex 不要裸 `.unwrap()`——优先 `parking_lot::Mutex`
-- [ ] 新命令记得在 `lib.rs::invoke_handler!` 注册
+- [ ] 路径参数 → canonicalize + starts_with 校验
+- [ ] 文件 I/O / 进程 / 网络 → `tokio::task::spawn_blocking` + `kill_on_drop(true)` + `timeout`
+- [ ] 读大文件 → 流式，禁止 `fs::read_to_string` 全量加载；`read_file_content` 硬限 2 MB
+- [ ] 持锁期间不做 I/O，先 clone / drop guard
+- [ ] Mutex 用 `parking_lot::Mutex`，不裸 `.unwrap()`
+- [ ] 新命令在 `lib.rs::invoke_handler!` 注册；用 `invoke<ReturnType>()` 类型化
 
 **改数据 schema 前：**
-- [ ] `types.ts`（TS）和 `storage.rs`（Rust Task struct）**同步更新**，否则新字段静默丢失
-- [ ] 字段重命名考虑迁移——`~/.nezha/` 是用户数据，schema 变更要兼容旧文件
-
----
-
-## 禁止事项
-
-- **不要引入 CSS 框架**（Tailwind 等）——现有的 `src/styles/` 模块化 CSS-in-JS 模式是有意为之的设计决策。
-- **不要在未经讨论的情况下引入状态管理库**（Redux、Zustand）——当前的 props 透传方式是刻意保持简单的。
-- **交互式 UI 原语优先使用组件库而非原生 HTML 元素**——下拉菜单、对话框、提示框等使用已安装的 Radix UI（`@radix-ui/react-select`），而非 `<select>`、`<dialog>` 或自行实现。按需添加其他 Radix headless 包。图标使用已安装的 `lucide-react`。
-- **`read_file_content` 中不要读取超过 2 MB 的文件**——此限制在 Rust 侧强制执行，属于有意为之的设计。
-- **不要在未考虑迁移方案的情况下修改文件存储 schema**（`~/.nezha/`）——字段名变更会导致现有用户数据静默损坏。
-- **不要阻塞 Tauri 主线程**——所有重型操作必须通过 `tokio::task::spawn_blocking` 处理。
+- [ ] `types.ts` 和 `storage.rs` Task 结构体同步更新，否则新字段静默丢失
+- [ ] 字段重命名写迁移——`~/.nezha/` 是用户数据，不能静默损坏
 
 ---
 
