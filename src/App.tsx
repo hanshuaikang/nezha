@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -12,6 +12,7 @@ import type {
   ThemeMode,
   ThemeVariant,
   TerminalFontSize,
+  TerminalScrollback,
   TaskDisplayWindow,
   SkillHubConfig,
 } from "./types";
@@ -19,14 +20,18 @@ import {
   isActiveTaskStatus,
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
+  DEFAULT_TERMINAL_SCROLLBACK,
+  clampTerminalScrollback,
   DEFAULT_TASK_DISPLAY_WINDOW,
   normalizeTaskDisplayWindow,
 } from "./types";
 import {
   DEFAULT_UI_FONT,
-  DEFAULT_MONO_FONT,
+  getDefaultMonoFont,
+  isAutoDefaultMonoFont,
 } from "./types";
 import type { FontFamily } from "./types";
+import { quoteFontName } from "./utils/fonts";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
 import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
@@ -36,6 +41,20 @@ import { APP_PLATFORM } from "./platform";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
+import {
+  DARK_THEME_STORAGE_KEY,
+  getNextThemeMode,
+  getPreferredDarkTheme,
+  getPreferredLightTheme,
+  isDarkThemeMode,
+  isLightThemeMode,
+  isThemeMode,
+  LIGHT_THEME_STORAGE_KEY,
+  resolveThemeVariant,
+  THEME_STORAGE_KEY,
+  type DarkThemeMode,
+  type LightThemeMode,
+} from "./theme";
 import s from "./styles";
 import "./App.css";
 
@@ -80,6 +99,55 @@ function persistProjectTasksQuietly(projectId: string, allTasks: Task[]) {
   }).catch(console.error);
 }
 
+// 老用户首次升级到拖拽排序版本时,把 projects 数组按 id 升序排一次并落盘,
+// 让上来看到的 rail 顺序和旧版本(railProjects useMemo 里的 sort)一致。
+// 之后用户拖拽产生的顺序由 projects 数组本身承载,不再排序。
+const RAIL_PROJECTS_ORDERED_KEY = "nezha:rail-projects-ordered";
+
+function isProjectsIdAscending(projects: Project[]): boolean {
+  for (let i = 1; i < projects.length; i++) {
+    if (Number(projects[i].id) < Number(projects[i - 1].id)) return false;
+  }
+  return true;
+}
+
+// 拖拽重排:beforeId === null 表示拖到 visible 末尾;draggedId === beforeId 视为无操作。
+// visibleIds 是 rail 当前可见子集(过滤了 hiddenFromRail 与 hub),src/dst 在这个子序列
+// 里算 — 直接在完整 projects 上 splice 会因为 hidden 项夹在中间而无声改写它们的相对位置
+// (用户取消隐藏时会看到位置错乱)。重排后只回填到 visible 槽位,hidden 项原位保留。
+// 返回新数组(若顺序无变化则返回原数组,方便 setState 早退)。
+function reorderProjects(
+  projects: Project[],
+  visibleIds: string[],
+  draggedId: string,
+  beforeId: string | null,
+): Project[] {
+  if (draggedId === beforeId) return projects;
+
+  const srcIdxV = visibleIds.indexOf(draggedId);
+  if (srcIdxV === -1) return projects;
+
+  const dstIdxV = beforeId === null ? visibleIds.length : visibleIds.indexOf(beforeId);
+  if (dstIdxV === -1) return projects;
+
+  const newVisibleOrder = [...visibleIds];
+  const [dragged] = newVisibleOrder.splice(srcIdxV, 1);
+  const adjustedDstIdxV = dstIdxV > srcIdxV ? dstIdxV - 1 : dstIdxV;
+  newVisibleOrder.splice(adjustedDstIdxV, 0, dragged);
+
+  const visibleSet = new Set(visibleIds);
+  const projectById = new Map(projects.map((p) => [p.id, p] as const));
+  let visibleCursor = 0;
+  const next = projects.map((p) => {
+    if (!visibleSet.has(p.id)) return p;
+    const id = newVisibleOrder[visibleCursor++];
+    return projectById.get(id) ?? p;
+  });
+
+  if (next.every((p, i) => p === projects[i])) return projects;
+  return next;
+}
+
 interface ProjectViewState {
   selectedTaskId: string | null;
   isNewTask: boolean;
@@ -110,6 +178,7 @@ function normalizeInterruptedTasksOnStartup(
       return {
         ...task,
         status: "detached" as TaskStatus,
+        updatedAt: interruptedAt,
         attentionRequestedAt: task.attentionRequestedAt ?? interruptedAt,
       };
     }
@@ -119,6 +188,7 @@ function normalizeInterruptedTasksOnStartup(
     return {
       ...task,
       status: "interrupted" as TaskStatus,
+      updatedAt: interruptedAt,
       attentionRequestedAt: task.attentionRequestedAt ?? interruptedAt,
     };
   });
@@ -139,15 +209,19 @@ function getSystemPrefersDark() {
 }
 
 function getInitialThemeMode(): ThemeMode {
-  const stored = localStorage.getItem("nezha:theme");
-  return stored === "dark" || stored === "light" || stored === "system" || stored === "eyecare"
-    ? stored
-    : "system";
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  return isThemeMode(stored) ? stored : "system";
 }
 
-function resolveThemeVariant(mode: ThemeMode, systemPrefersDark: boolean): ThemeVariant {
-  if (mode === "system") return systemPrefersDark ? "dark" : "light";
-  return mode;
+function getInitialLightThemeMode(): LightThemeMode {
+  return getPreferredLightTheme(
+    getInitialThemeMode(),
+    localStorage.getItem(LIGHT_THEME_STORAGE_KEY),
+  );
+}
+
+function getInitialDarkThemeMode(): DarkThemeMode {
+  return getPreferredDarkTheme(getInitialThemeMode(), localStorage.getItem(DARK_THEME_STORAGE_KEY));
 }
 
 function getInitialTerminalFontSize(): TerminalFontSize {
@@ -169,7 +243,16 @@ function getInitialAttentionBadge(): boolean {
 
 function getInitialFontFamily(key: string, fallback: FontFamily): FontFamily {
   const stored = localStorage.getItem(key);
-  return stored || fallback;
+  if (!stored) return fallback;
+  // 老版本 useEffect 无差别把当时的 DEFAULT_MONO_FONT 写进 localStorage,
+  // 导致默认更新对老用户无效。识别到历史自动默认值就清掉,改用当前平台默认。
+  if (key === "nezha:monoFontFamily" && isAutoDefaultMonoFont(stored)) {
+    localStorage.removeItem(key);
+    return fallback;
+  }
+  // 旧版本写入的裸字体名（如 "Maple Mono NF CN"）在 Canvas 2D 下会被
+  // tokenize 成多个 family 全部 miss；读出时统一 normalize 一次。
+  return quoteFontName(stored);
 }
 
 function App() {
@@ -177,6 +260,8 @@ function App() {
   const { t } = useI18n();
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
+  const [lightThemeMode, setLightThemeMode] = useState<LightThemeMode>(getInitialLightThemeMode);
+  const [darkThemeMode, setDarkThemeMode] = useState<DarkThemeMode>(getInitialDarkThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
   const themeVariant: ThemeVariant = resolveThemeVariant(themeMode, systemPrefersDark);
   const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
@@ -186,11 +271,19 @@ function App() {
     getInitialTaskDisplayWindow,
   );
   const [attentionBadge, setAttentionBadge] = useState<boolean>(getInitialAttentionBadge);
+  const [terminalScrollback, setTerminalScrollbackState] = useState<TerminalScrollback>(
+    DEFAULT_TERMINAL_SCROLLBACK,
+  );
+  const handleTerminalScrollbackChange = useCallback((value: TerminalScrollback) => {
+    const clamped = clampTerminalScrollback(value);
+    setTerminalScrollbackState(clamped);
+    invoke("save_terminal_scrollback", { scrollback: clamped }).catch(console.error);
+  }, []);
   const [uiFontFamily, setUiFontFamily] = useState<FontFamily>(() =>
     getInitialFontFamily("nezha:uiFontFamily", DEFAULT_UI_FONT),
   );
   const [monoFontFamily, setMonoFontFamily] = useState<FontFamily>(() =>
-    getInitialFontFamily("nezha:monoFontFamily", DEFAULT_MONO_FONT),
+    getInitialFontFamily("nezha:monoFontFamily", getDefaultMonoFont()),
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -264,18 +357,35 @@ function App() {
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("dark", themeVariant === "dark");
+    // The midnight variant layers on top of the dark token set: it keeps the
+    // `dark` class (so it inherits every dark token) and adds `midnight` for the
+    // few near-black overrides (menu border / surface backgrounds) declared later
+    // in themes.css, which win by source order at equal specificity.
+    root.classList.toggle("dark", themeVariant === "dark" || themeVariant === "midnight");
+    root.classList.toggle("midnight", themeVariant === "midnight");
     root.classList.toggle("eyecare", themeVariant === "eyecare");
-    localStorage.setItem("nezha:theme", themeMode);
+    localStorage.setItem(THEME_STORAGE_KEY, themeMode);
   }, [themeVariant, themeMode]);
+
+  useEffect(() => {
+    localStorage.setItem(LIGHT_THEME_STORAGE_KEY, lightThemeMode);
+  }, [lightThemeMode]);
+
+  useEffect(() => {
+    localStorage.setItem(DARK_THEME_STORAGE_KEY, darkThemeMode);
+  }, [darkThemeMode]);
 
   useEffect(() => {
     // Tauri window theme only understands light/dark/null; map eyecare to light
     // so the native chrome (titlebar, scrollbars) stays in the light family.
     const nativeTheme =
-      themeMode === "system" ? null : themeMode === "dark" ? "dark" : "light";
+      themeMode === "system"
+        ? null
+        : themeMode === "dark" || themeMode === "midnight"
+          ? "dark"
+          : "light";
     getCurrentWindow()
       .setTheme(nativeTheme)
       .catch(console.error);
@@ -301,6 +411,21 @@ function App() {
   }, [terminalFontSize]);
 
   useEffect(() => {
+    let cancelled = false;
+    invoke<{ terminal_scrollback?: unknown }>("load_app_settings")
+      .then((settings) => {
+        if (cancelled) return;
+        setTerminalScrollbackState(clampTerminalScrollback(settings.terminal_scrollback));
+      })
+      .catch(() => {
+        /* 默认 1000 已经在 state 初值,无需 fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem("nezha:taskDisplayWindow", String(taskDisplayWindow));
   }, [taskDisplayWindow]);
 
@@ -315,28 +440,61 @@ function App() {
   }, [uiFontFamily]);
 
   useEffect(() => {
-    const value = monoFontFamily.trim() || DEFAULT_MONO_FONT;
-    localStorage.setItem("nezha:monoFontFamily", value);
-    document.documentElement.style.setProperty("--font-mono", value);
+    const trimmed = monoFontFamily.trim();
+    const effective = trimmed || getDefaultMonoFont();
+    // 用户没显式自定义时不写入 localStorage,避免把默认值固化、
+    // 导致后续改默认对老用户失效（这正是历史 bug 的根因）。
+    if (!trimmed || isAutoDefaultMonoFont(trimmed)) {
+      localStorage.removeItem("nezha:monoFontFamily");
+    } else {
+      localStorage.setItem("nezha:monoFontFamily", trimmed);
+    }
+    document.documentElement.style.setProperty("--font-mono", effective);
   }, [monoFontFamily]);
+
+  const handleThemeModeChange = useCallback((mode: ThemeMode) => {
+    if (isLightThemeMode(mode)) setLightThemeMode(mode);
+    if (isDarkThemeMode(mode)) setDarkThemeMode(mode);
+    setThemeMode(mode);
+  }, []);
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((currentMode) => {
-      // Toggle only cycles between the two standard variants. Special themes
-      // (eyecare and any future opt-in variants) retreat to "light" so the
-      // shortcut remains a one-tap escape hatch back to the canonical pair.
-      if (currentMode === "dark") return "light";
-      if (currentMode === "light") return "dark";
-      if (currentMode === "system") return systemPrefersDark ? "light" : "dark";
-      return "light";
+      return getNextThemeMode(currentMode, systemPrefersDark, lightThemeMode, darkThemeMode);
     });
-  }, [systemPrefersDark]);
+  }, [darkThemeMode, lightThemeMode, systemPrefersDark]);
 
   useEffect(() => {
     async function init() {
       // Load projects from ~/.nezha/projects.json
       const loadedProjects = await invoke<Project[]>("load_projects");
-      setProjects(loadedProjects);
+
+      // 仅在首次升级到拖拽版本时做一次性顺序迁移:若 projects.json 不是
+      // id 升序(老版本 handleOpen 把新项目插到首位,所以多半是降序),
+      // 重排成 id 升序并落盘,与旧版 railProjects 的视觉顺序保持一致。
+      // 之后顺序由用户拖拽决定,不再触发此分支。
+      const alreadyOrdered = localStorage.getItem(RAIL_PROJECTS_ORDERED_KEY) === "1";
+      const projectsForState =
+        alreadyOrdered || isProjectsIdAscending(loadedProjects)
+          ? loadedProjects
+          : [...loadedProjects].sort((a, b) => Number(a.id) - Number(b.id));
+      if (!alreadyOrdered) {
+        // flag 必须在写盘成功后才落:否则一次磁盘失败 → flag 已锁 → 下次启动跳过
+        // 迁移 → 老用户 rail 顺序永久错乱。无需写盘的分支可直接 set。
+        if (projectsForState !== loadedProjects) {
+          invoke("save_projects", { projects: projectsForState })
+            .then(() => {
+              localStorage.setItem(RAIL_PROJECTS_ORDERED_KEY, "1");
+            })
+            .catch((e: unknown) => {
+              console.error(e);
+              showToast(formatSaveProjectsError(String(e)));
+            });
+        } else {
+          localStorage.setItem(RAIL_PROJECTS_ORDERED_KEY, "1");
+        }
+      }
+      setProjects(projectsForState);
 
       // Load tasks for all known projects
       const chunks = await Promise.all(
@@ -354,19 +512,33 @@ function App() {
     }
 
     init().catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    // 用 backend 列表作为权威，merge 进前端 state：
-    // 后端写入的版本覆盖共有项；前端独有但 backend 还未持久化的条目保留下来。
+    // 用 backend 列表作为内容权威,但顺序以 prev 为准:用户拖拽产生的顺序保存在
+    // 前端 state 里,不能被一次后台 reload 还原。共有项的字段由 authoritative 覆盖;
+    // prev 独有的(尚未持久化)条目保留;authoritative 独有的(skill hub 等新增)
+    // 追加到末尾。
     const mergeProjects = (authoritative: Project[]) => {
       setProjects((prev) => {
-        const byId = new Map<string, Project>();
-        authoritative.forEach((p) => byId.set(p.id, p));
-        prev.forEach((p) => {
-          if (!byId.has(p.id)) byId.set(p.id, p);
-        });
-        return Array.from(byId.values());
+        const authMap = new Map<string, Project>();
+        authoritative.forEach((p) => authMap.set(p.id, p));
+        const seenIds = new Set<string>();
+        const next: Project[] = [];
+        for (const p of prev) {
+          const auth = authMap.get(p.id);
+          if (auth !== undefined) {
+            next.push(auth);
+            seenIds.add(p.id);
+          } else {
+            next.push(p);
+          }
+        }
+        for (const p of authoritative) {
+          if (!seenIds.has(p.id)) next.push(p);
+        }
+        return next;
       });
     };
 
@@ -437,7 +609,9 @@ function App() {
       ? { ...existing, lastOpenedAt: Date.now() }
       : { id: `${Date.now()}`, name: deriveProjectName(path), path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
-      const next = [project, ...prev.filter((p) => p.path !== path)];
+      const next = existing
+        ? prev.map((p) => (p.path === path ? project : p))
+        : [project, ...prev];
       persistProjects(next, showToast, formatSaveProjectsError);
       return next;
     });
@@ -519,6 +693,7 @@ function App() {
 
     // 1) 立即把任务推到 state 让 view 切到 RunningView。worktree 字段先留空，
     //    避免 await create_task_worktree 期间用户停留在 NewTaskView，让人误以为没反应。
+    const now = Date.now();
     const baseTask: Task = {
       id: taskId,
       projectId: project.id,
@@ -527,7 +702,8 @@ function App() {
       agent,
       permissionMode,
       status: immediate ? "pending" : "todo",
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     };
     setTasks((prev) => {
       const next = [baseTask, ...prev];
@@ -600,7 +776,12 @@ function App() {
     setTasks((prev) => {
       const next = prev.map((t) =>
         t.id === task.id
-          ? { ...t, status: "pending" as TaskStatus, attentionRequestedAt: undefined }
+          ? {
+              ...t,
+              status: "pending" as TaskStatus,
+              updatedAt: Date.now(),
+              attentionRequestedAt: undefined,
+            }
           : t,
       );
       persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
@@ -712,7 +893,12 @@ function App() {
     setTasks((prev) => {
       const next = prev.map((t) =>
         t.id === taskId
-          ? { ...t, status: "pending" as TaskStatus, attentionRequestedAt: undefined }
+          ? {
+              ...t,
+              status: "pending" as TaskStatus,
+              updatedAt: Date.now(),
+              attentionRequestedAt: undefined,
+            }
           : t,
       );
       persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
@@ -983,6 +1169,22 @@ function App() {
     });
   }
 
+  // 拖拽结束时一次性提交新顺序;beforeId === null 表示拖到 visible 末尾。
+  // visibleIds 来自 ProjectRail 内部过滤后的 railProjects(去 hiddenFromRail/hub),
+  // src/dst 必须在这个子集里算,否则会无声打乱隐藏项的相对位置。
+  // 拖拽期间 ProjectRail 内部只用 transform 让位,不会调到这里,避免高频重渲染和写盘。
+  const handleCommitProjectOrder = useCallback(
+    (draggedId: string, beforeId: string | null, visibleIds: string[]) => {
+      setProjects((prev) => {
+        const next = reorderProjects(prev, visibleIds, draggedId, beforeId);
+        if (next === prev) return prev;
+        persistProjects(next, showToast, formatSaveProjectsError);
+        return next;
+      });
+    },
+    [showToast, formatSaveProjectsError],
+  );
+
   function updateTaskStatus(
     taskId: string,
     status: TaskStatus,
@@ -1003,7 +1205,7 @@ function App() {
         }
 
         changed = true;
-        const updated: Task = { ...task, status, attentionRequestedAt };
+        const updated: Task = { ...task, status, attentionRequestedAt, updatedAt: Date.now() };
         if (status === "failed" && failureReason) updated.failureReason = failureReason;
         return updated;
       });
@@ -1054,10 +1256,10 @@ function App() {
     () => [...projects].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt),
     [projects],
   );
-  const railProjects = useMemo(
-    () => [...projects].sort((a, b) => Number(a.id) - Number(b.id)),
-    [projects],
-  );
+  // rail 顺序直接由 projects 数组承载;拖拽通过 handleCommitProjectOrder 改变这个数组。
+  // 老版本在这里 sort 是为了给 backend 写入的"任意"顺序提供一个稳定视觉,
+  // 现在改由 init 时一次性迁移 + 用户拖拽决定。
+  const railProjects = projects;
   const mountedProjects = useMemo(
     () =>
       mountedProjectIds
@@ -1153,11 +1355,12 @@ function App() {
               onSnapshot={tm.handleSnapshot}
               onBack={handleBack}
               onSwitchProject={handleProjectClick}
+              onCommitProjectOrder={handleCommitProjectOrder}
               onOpen={handleOpen}
               themeVariant={themeVariant}
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
-              onThemeModeChange={setThemeMode}
+              onThemeModeChange={handleThemeModeChange}
               onToggleTheme={handleToggleTheme}
               terminalFontSize={terminalFontSize}
               onTerminalFontSizeChange={setTerminalFontSize}
@@ -1165,6 +1368,8 @@ function App() {
               onTaskDisplayWindowChange={setTaskDisplayWindow}
               attentionBadge={attentionBadge}
               onAttentionBadgeChange={setAttentionBadge}
+              terminalScrollback={terminalScrollback}
+              onTerminalScrollbackChange={handleTerminalScrollbackChange}
               uiFontFamily={uiFontFamily}
               onUiFontFamilyChange={setUiFontFamily}
               monoFontFamily={monoFontFamily}
@@ -1194,7 +1399,7 @@ function App() {
             themeVariant={themeVariant}
             themeMode={themeMode}
             systemPrefersDark={systemPrefersDark}
-            onThemeModeChange={setThemeMode}
+            onThemeModeChange={handleThemeModeChange}
             onToggleTheme={handleToggleTheme}
             terminalFontSize={terminalFontSize}
             onTerminalFontSizeChange={setTerminalFontSize}
@@ -1202,6 +1407,8 @@ function App() {
             onTaskDisplayWindowChange={setTaskDisplayWindow}
             attentionBadge={attentionBadge}
             onAttentionBadgeChange={setAttentionBadge}
+            terminalScrollback={terminalScrollback}
+            onTerminalScrollbackChange={handleTerminalScrollbackChange}
             uiFontFamily={uiFontFamily}
             onUiFontFamilyChange={setUiFontFamily}
             monoFontFamily={monoFontFamily}

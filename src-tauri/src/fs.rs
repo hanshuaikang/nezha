@@ -238,47 +238,76 @@ fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
 
 #[tauri::command]
 pub async fn open_in_system_file_manager(path: String, project_path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let target = validate_path_within(&path, &project_path, true)?;
         let is_dir = target.is_dir();
 
         #[cfg(target_os = "macos")]
-        let status = {
+        {
             let mut command = Command::new("open");
             if is_dir {
                 command.arg(&target);
             } else {
                 command.arg("-R").arg(&target);
             }
-            command.status()
-        };
+            let status = command
+                .status()
+                .map_err(|e| format!("Failed to launch system file manager: {}", e))?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("System file manager exited with status {}", status))
+            }
+        }
 
         #[cfg(target_os = "windows")]
-        let status = {
+        {
+            // `validate_path_within` canonicalizes the path, which on Windows yields a
+            // `\\?\` verbatim prefix that explorer.exe cannot parse for `/select`.
+            // Strip it back to a plain path so the file is actually highlighted —
+            // `\\?\UNC\server\share` (network / WSL paths) must become `\\server\share`,
+            // and `\\?\C:\dir` must become `C:\dir`.
+            let display = target.to_string_lossy();
+            let plain: std::borrow::Cow<str> = if let Some(rest) = display.strip_prefix(r"\\?\UNC\")
+            {
+                std::borrow::Cow::Owned(format!(r"\\{}", rest))
+            } else if let Some(rest) = display.strip_prefix(r"\\?\") {
+                std::borrow::Cow::Borrowed(rest)
+            } else {
+                std::borrow::Cow::Borrowed(display.as_ref())
+            };
+            let plain: &str = &plain;
             let mut command = Command::new("explorer");
             if is_dir {
-                command.arg(&target);
+                command.arg(plain);
             } else {
-                command.arg(format!("/select,{}", target.display()));
+                command.arg(format!("/select,{}", plain));
             }
-            command.status()
-        };
+            // explorer.exe returns exit code 1 even when it successfully opens a
+            // window, so its exit status is not a reliable failure signal —
+            // a successful launch is all we can meaningfully report on.
+            command
+                .status()
+                .map_err(|e| format!("Failed to launch system file manager: {}", e))?;
+            Ok(())
+        }
 
         #[cfg(all(unix, not(target_os = "macos")))]
-        let status = {
+        {
             let folder = if is_dir {
                 target.as_path()
             } else {
                 target.parent().ok_or_else(|| "Cannot resolve parent directory".to_string())?
             };
-            Command::new("xdg-open").arg(folder).status()
-        };
-
-        let status = status.map_err(|e| format!("Failed to launch system file manager: {}", e))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("System file manager exited with status {}", status))
+            let status = Command::new("xdg-open")
+                .arg(folder)
+                .status()
+                .map_err(|e| format!("Failed to launch system file manager: {}", e))?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("System file manager exited with status {}", status))
+            }
         }
     })
     .await

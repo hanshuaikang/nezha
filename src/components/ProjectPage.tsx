@@ -8,6 +8,7 @@ import type {
   ThemeMode,
   ThemeVariant,
   TerminalFontSize,
+  TerminalScrollback,
   TaskDisplayWindow,
   FontFamily,
 } from "../types";
@@ -63,6 +64,7 @@ export function ProjectPage({
   onSnapshot,
   onBack,
   onSwitchProject,
+  onCommitProjectOrder,
   onOpen,
   themeVariant,
   themeMode,
@@ -75,6 +77,8 @@ export function ProjectPage({
   onTaskDisplayWindowChange,
   attentionBadge,
   onAttentionBadgeChange,
+  terminalScrollback,
+  onTerminalScrollbackChange,
   uiFontFamily,
   onUiFontFamilyChange,
   monoFontFamily,
@@ -129,6 +133,11 @@ export function ProjectPage({
   onSnapshot: (taskId: string, snapshot: string) => void;
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
+  onCommitProjectOrder: (
+    draggedId: string,
+    beforeId: string | null,
+    visibleIds: string[],
+  ) => void;
   onOpen: () => void;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
@@ -141,6 +150,8 @@ export function ProjectPage({
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   attentionBadge: boolean;
   onAttentionBadgeChange: (enabled: boolean) => void;
+  terminalScrollback: TerminalScrollback;
+  onTerminalScrollbackChange: (value: TerminalScrollback) => void;
   uiFontFamily: FontFamily;
   onUiFontFamilyChange: (family: FontFamily) => void;
   monoFontFamily: FontFamily;
@@ -164,6 +175,7 @@ export function ProjectPage({
     handleFileTabClose,
     handleCloseOtherFileTabs,
     handleCloseTabsToRight,
+    handleCloseTabsToLeft,
     handleCloseAllFileTabs,
     handleDiffFileSelect,
     handleCommitSelect,
@@ -316,6 +328,7 @@ export function ProjectPage({
         activeProjectId={project.id}
         attentionBadge={attentionBadge}
         onSwitch={onSwitchProject}
+        onCommitProjectOrder={onCommitProjectOrder}
         onOpen={onOpen}
         singleProjectMode={hubMode}
       />
@@ -343,6 +356,8 @@ export function ProjectPage({
         onTaskDisplayWindowChange={onTaskDisplayWindowChange}
         attentionBadge={attentionBadge}
         onAttentionBadgeChange={onAttentionBadgeChange}
+        terminalScrollback={terminalScrollback}
+        onTerminalScrollbackChange={onTerminalScrollbackChange}
         uiFontFamily={uiFontFamily}
         onUiFontFamilyChange={onUiFontFamilyChange}
         monoFontFamily={monoFontFamily}
@@ -424,6 +439,7 @@ export function ProjectPage({
                 onCloseTab={handleFileTabClose}
                 onCloseOtherTabs={handleCloseOtherFileTabs}
                 onCloseTabsToRight={handleCloseTabsToRight}
+                onCloseTabsToLeft={handleCloseTabsToLeft}
                 onCloseAllTabs={handleCloseAllFileTabs}
                 themeVariant={themeVariant}
                 onRunMakeTarget={handleRunMakeTarget}
@@ -480,6 +496,7 @@ export function ProjectPage({
                   onGenerateName={() => onGenerateTaskName(task.id)}
                   themeVariant={themeVariant}
                   terminalFontSize={terminalFontSize}
+                  terminalScrollback={terminalScrollback}
                   monoFontFamily={monoFontFamily}
                 />
               );

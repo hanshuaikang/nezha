@@ -6,7 +6,7 @@ import {
   TERMINAL_FONT_SIZE_STEP,
   clampTerminalFontSize,
   DEFAULT_UI_FONT,
-  DEFAULT_MONO_FONT,
+  getDefaultMonoFont,
 } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
@@ -130,7 +130,7 @@ export function FontPanel({
         onChange={setPendingMonoFont}
         label={t("font.monoFontFamily")}
         hint={t("font.monoFontFamilyHint")}
-        defaultFont={DEFAULT_MONO_FONT}
+        defaultFont={getDefaultMonoFont()}
         preview={(
           <div style={s.fontInlinePreview}>
             <div style={s.fontPreviewHeaderRow}>

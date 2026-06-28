@@ -24,6 +24,7 @@ const FILE_FILTERS: FileFilter[] = [
   { id: "rust", label: "Rust", extensions: ["rs"] },
   { id: "py", label: "Python", extensions: ["py"] },
   { id: "go", label: "Go", extensions: ["go"] },
+  { id: "cpp", label: "C/C++", extensions: ["c", "h", "cpp", "cc", "cxx", "hpp", "hh", "hxx"] },
   { id: "web", label: "Web", extensions: ["html", "css", "scss"] },
   { id: "json", label: "JSON", extensions: ["json", "jsonc"] },
   { id: "yaml", label: "YAML", extensions: ["yml", "yaml"] },

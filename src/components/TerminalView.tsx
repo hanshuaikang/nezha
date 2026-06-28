@@ -4,22 +4,27 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import { useTerminalPathDrop } from "./useTerminalPathDrop";
 import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
 } from "../shortcuts";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
+import type { TerminalFontSize, TerminalScrollback, FontFamily, ThemeVariant } from "../types";
 import {
-  themeFor,
+  applyTerminalThemeOnPanel,
   initTerminal,
   loadWebglAddon,
   safeFit,
   createSmartWriter,
   attachMacWebKitTerminalGuard,
+  attachTerminalScrollbarAutoHide,
   applyTerminalFontSize,
   applyTerminalFontFamily,
+  applyDomCharSizeOverride,
+  refreshTerminalDisplay,
+  unregisterActiveTerminal,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
@@ -33,6 +38,7 @@ interface TerminalViewProps {
   onReady?: (generation: number) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: TerminalScrollback;
   monoFontFamily: FontFamily;
   isActive?: boolean;
   initialData?: string;
@@ -47,6 +53,7 @@ export function TerminalView({
   onReady,
   themeVariant,
   terminalFontSize,
+  terminalScrollback,
   monoFontFamily,
   isActive = true,
   initialData,
@@ -80,22 +87,50 @@ export function TerminalView({
     onResizeRef.current(cols, rows);
   }, []);
 
+  const insertDroppedPathText = useCallback((text: string) => {
+    onInputRef.current(text);
+    terminalRef.current?.focus();
+  }, []);
+
+  useTerminalPathDrop({
+    containerRef,
+    isActive,
+    onInsertText: insertDroppedPathText,
+  });
+
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
 
-    const { term, fitAddon } = initTerminal(themeVariant, 1000, terminalFontSize, monoFontFamily);
+    const { term, fitAddon, whenFontsReady } = initTerminal(
+      themeVariant,
+      terminalScrollback,
+      terminalFontSize,
+      monoFontFamily,
+    );
+    applyTerminalThemeOnPanel(term, themeVariant, container);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    let disposed = false;
 
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
+    // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
+    const disposeCharSizeOverride = applyDomCharSizeOverride(term);
+    const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
-    loadWebglAddon(term);
+    const webglHandle = loadWebglAddon(term);
 
     const size = safeFit(fitAddon, term, container);
     if (size) notifyResize(size.cols, size.rows);
+
+    // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
+    whenFontsReady.then(() => {
+      if (disposed) return;
+      const s = safeFit(fitAddon, term, container);
+      if (s) notifyResize(s.cols, s.rows);
+    });
 
     const focusTerminal = () => {
       window.requestAnimationFrame(() => {
@@ -150,6 +185,7 @@ export function TerminalView({
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term, container);
         if (s) notifyResize(s.cols, s.rows);
+        refreshTerminalDisplay(term);
         term.focus();
       });
     };
@@ -168,6 +204,10 @@ export function TerminalView({
     resizeObserver.observe(container);
 
     return () => {
+      disposed = true;
+      // 必须最先 unregister:后续任一 dispose 调用抛错会中断 cleanup,
+      // 让 term 永久滞留 activeTerminals,下次 sibling 广播命中 zombie。
+      unregisterActiveTerminal(term);
       try {
         const snapshot = serializeAddon.serialize();
         if (snapshot) onSnapshotRef.current?.(snapshot);
@@ -176,6 +216,9 @@ export function TerminalView({
       }
       onRegisterRef.current(null);
       fitAddonRef.current = null;
+      disposeCharSizeOverride();
+      webglHandle.dispose();
+      disposeScrollbarAutoHide();
       disposeMacWebKitGuard();
       disposeInputFix();
       disposeSmartCopy();
@@ -214,6 +257,7 @@ export function TerminalView({
       if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
       const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
       if (s) notifyResize(s.cols, s.rows);
+      refreshTerminalDisplay(terminalRef.current);
       terminalRef.current.focus();
     });
   }, [isActive, notifyResize]);
@@ -225,9 +269,11 @@ export function TerminalView({
   }, [isActive]);
 
   useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.options.theme = themeFor(themeVariant);
-    }
+    if (!terminalRef.current || !containerRef.current) return;
+    applyTerminalThemeOnPanel(terminalRef.current, themeVariant, containerRef.current);
+    // 主题/对比度变化后 xterm 算出的最终前景色变了，但 WebGL atlas 仍缓存
+    // 旧色的 glyph 纹理，不刷新会看到颜色和字形错位。
+    refreshTerminalDisplay(terminalRef.current);
   }, [themeVariant]);
 
   useEffect(() => {
@@ -243,18 +289,28 @@ export function TerminalView({
 
   useEffect(() => {
     if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
-    const size = applyTerminalFontFamily(
+    const result = applyTerminalFontFamily(
       terminalRef.current,
       fitAddonRef.current,
       monoFontFamily,
       containerRef.current,
     );
-    if (size) notifyResize(size.cols, size.rows);
+    if (!result) return;
+    if (result.immediate) notifyResize(result.immediate.cols, result.immediate.rows);
+    let cancelled = false;
+    result.whenSettled.then((s) => {
+      if (cancelled || !s) return;
+      notifyResize(s.cols, s.rows);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [monoFontFamily, notifyResize]);
 
   return (
     <div
       ref={containerRef}
+      className="nezha-xterm-host"
       style={{
         width: "100%",
         height: "100%",

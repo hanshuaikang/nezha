@@ -9,8 +9,8 @@ export interface Project {
 }
 
 export type AgentType = "claude" | "codex";
-export type ThemeMode = "system" | "dark" | "light" | "eyecare";
-export type ThemeVariant = "dark" | "light" | "eyecare";
+export type ThemeMode = "system" | "dark" | "light" | "eyecare" | "midnight";
+export type ThemeVariant = "dark" | "light" | "eyecare" | "midnight";
 export type PermissionMode = "ask" | "auto_edit" | "full_access";
 export type TaskDisplayWindow = 3 | 7 | 15 | 30 | "all";
 
@@ -38,11 +38,61 @@ export function clampTerminalFontSize(value: number): TerminalFontSize {
   return Math.min(TERMINAL_FONT_SIZE_MAX, Math.max(TERMINAL_FONT_SIZE_MIN, snapped));
 }
 
+export type TerminalScrollback = number;
+
+export const TERMINAL_SCROLLBACK_MIN = 500;
+export const TERMINAL_SCROLLBACK_MAX = 5000;
+export const TERMINAL_SCROLLBACK_STEP = 500;
+export const DEFAULT_TERMINAL_SCROLLBACK: TerminalScrollback = 1000;
+
+export function clampTerminalScrollback(value: unknown): TerminalScrollback {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_TERMINAL_SCROLLBACK;
+  const snapped =
+    Math.round(num / TERMINAL_SCROLLBACK_STEP) * TERMINAL_SCROLLBACK_STEP;
+  return Math.min(TERMINAL_SCROLLBACK_MAX, Math.max(TERMINAL_SCROLLBACK_MIN, snapped));
+}
+
 export type FontFamily = string;
 export const DEFAULT_UI_FONT: FontFamily =
   '"SF Pro Display", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif';
-export const DEFAULT_MONO_FONT: FontFamily =
+
+const MONO_FONT_WINDOWS: FontFamily = "Consolas";
+const MONO_FONT_WINDOWS_STACK: FontFamily =
+  'Consolas, "Cascadia Mono", "JetBrains Mono", "Fira Code", monospace';
+const MONO_FONT_MAC: FontFamily =
+  '"JetBrains Mono", "Fira Code", "SF Mono", Menlo, ui-monospace, monospace';
+const MONO_FONT_LINUX: FontFamily =
+  '"JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace';
+const MONO_FONT_FALLBACK: FontFamily =
   '"JetBrains Mono", "Fira Code", ui-monospace, monospace';
+const MONO_FONT_PR326_INITIAL_FALLBACK: FontFamily =
+  '"JetBrains Mono", "Fira Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, ui-monospace, monospace';
+
+export function getDefaultMonoFont(): FontFamily {
+  if (typeof navigator === "undefined") return MONO_FONT_FALLBACK;
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return MONO_FONT_WINDOWS;
+  if (/Mac OS X|Macintosh/i.test(ua)) return MONO_FONT_MAC;
+  if (/Linux/i.test(ua)) return MONO_FONT_LINUX;
+  return MONO_FONT_FALLBACK;
+}
+
+// 老版本 App.tsx 的 useEffect 无差别把当时的默认 mono 字体也写进 localStorage,
+// 导致后续改默认对老用户失效。所有"曾经作为自动默认值出现过"的字符串都视为
+// "用户未自定义",在 getInitialFontFamily 里清掉后回退到当前平台默认。
+const LEGACY_AUTO_MONO_FONTS: ReadonlySet<string> = new Set([
+  MONO_FONT_FALLBACK,
+  MONO_FONT_WINDOWS,
+  MONO_FONT_WINDOWS_STACK,
+  MONO_FONT_MAC,
+  MONO_FONT_LINUX,
+  MONO_FONT_PR326_INITIAL_FALLBACK,
+]);
+
+export function isAutoDefaultMonoFont(value: string): boolean {
+  return LEGACY_AUTO_MONO_FONTS.has(value.trim());
+}
 
 export type TaskStatus =
   | "todo"
@@ -64,6 +114,8 @@ export interface Task {
   permissionMode: PermissionMode;
   status: TaskStatus;
   createdAt: number;
+  /** 任务状态最近一次变更的时间戳；左侧任务列表按此字段排序与分组。缺省时回落到 createdAt。 */
+  updatedAt?: number;
   attentionRequestedAt?: number;
   starred?: boolean;
   failureReason?: string;

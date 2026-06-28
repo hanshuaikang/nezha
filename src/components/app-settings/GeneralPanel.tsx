@@ -1,11 +1,16 @@
 import type React from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, AlertTriangle } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
 import { useI18n, type AppLanguage } from "../../i18n";
 import {
+  clampTerminalScrollback,
   normalizeTaskDisplayWindow,
   TASK_DISPLAY_WINDOW_VALUES,
+  TERMINAL_SCROLLBACK_MIN,
+  TERMINAL_SCROLLBACK_MAX,
+  TERMINAL_SCROLLBACK_STEP,
   type TaskDisplayWindow,
+  type TerminalScrollback,
 } from "../../types";
 import s from "../../styles";
 
@@ -14,11 +19,15 @@ export function GeneralPanel({
   onTaskDisplayWindowChange,
   attentionBadge,
   onAttentionBadgeChange,
+  terminalScrollback,
+  onTerminalScrollbackChange,
 }: {
   taskDisplayWindow: TaskDisplayWindow;
   onTaskDisplayWindowChange: (window: TaskDisplayWindow) => void;
   attentionBadge: boolean;
   onAttentionBadgeChange: (enabled: boolean) => void;
+  terminalScrollback: TerminalScrollback;
+  onTerminalScrollbackChange: (value: TerminalScrollback) => void;
 }) {
   const { language, setLanguage, t } = useI18n();
 
@@ -63,6 +72,12 @@ export function GeneralPanel({
   const selectedTaskDisplayWindowLabel =
     taskDisplayWindowOptions.find((option) => option.value === taskDisplayWindow)?.label ??
     t("appSettings.taskDisplayRecentDays", { days: 3 });
+
+  const stepScrollback = (direction: 1 | -1) => {
+    onTerminalScrollbackChange(
+      clampTerminalScrollback(terminalScrollback + direction * TERMINAL_SCROLLBACK_STEP),
+    );
+  };
 
   return (
     <div
@@ -179,6 +194,52 @@ export function GeneralPanel({
           </span>
         </button>
         <span style={hintStyle}>{t("appSettings.attentionBadgeHint")}</span>
+      </div>
+
+      <div style={{ ...fieldStyle, marginTop: 18 }}>
+        <label style={labelStyle}>{t("appSettings.terminalScrollback")}</label>
+        <div style={s.fontSizeControls}>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={TERMINAL_SCROLLBACK_MIN}
+            max={TERMINAL_SCROLLBACK_MAX}
+            step={TERMINAL_SCROLLBACK_STEP}
+            value={terminalScrollback}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (Number.isFinite(next)) {
+                onTerminalScrollbackChange(clampTerminalScrollback(next));
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                stepScrollback(1);
+                return;
+              }
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                stepScrollback(-1);
+                return;
+              }
+              if (e.key !== "Tab") {
+                e.preventDefault();
+              }
+            }}
+            onPaste={(e) => e.preventDefault()}
+            aria-label={t("appSettings.terminalScrollback")}
+            style={s.settingsNumberInput}
+          />
+          <span style={s.fontSizeUnit}>{t("appSettings.terminalScrollbackUnit")}</span>
+        </div>
+        <span style={hintStyle}>{t("appSettings.terminalScrollbackHint")}</span>
+        {terminalScrollback > 3000 && (
+          <div style={s.settingsFieldWarning} role="alert">
+            <AlertTriangle size={13} strokeWidth={2} style={s.settingsFieldWarningIcon} />
+            <span>{t("appSettings.terminalScrollbackWarning")}</span>
+          </div>
+        )}
       </div>
     </div>
   );
