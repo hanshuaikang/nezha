@@ -16,15 +16,17 @@ export function ThemePanel({
   onThemeModeChange,
 }: ThemePanelProps) {
   const { t } = useI18n();
-  type ManualMode = Extract<ThemeMode, "dark" | "light" | "eyecare">;
-  const manualThemeModes: ManualMode[] = ["dark", "light", "eyecare"];
+  type ManualMode = Extract<ThemeMode, "dark" | "light" | "eyecare" | "midnight">;
+  const manualThemeModes: ManualMode[] = ["dark", "midnight", "light", "eyecare"];
   const currentModeLabel = systemPrefersDark ? t("theme.dark") : t("theme.light");
   const manualModeLabel =
     themeMode === "dark"
       ? t("theme.dark")
-      : themeMode === "eyecare"
-        ? t("theme.eyecare")
-        : t("theme.light");
+      : themeMode === "midnight"
+        ? t("theme.midnight")
+        : themeMode === "eyecare"
+          ? t("theme.eyecare")
+          : t("theme.light");
   const selectedLabel =
     themeMode === "system"
       ? t("theme.followingSystem", { mode: currentModeLabel })
@@ -83,6 +85,7 @@ export function ThemePanel({
     previewAccent: string;
   }) {
     const selected = themeMode === mode;
+    const isDark = mode === "dark" || mode === "midnight";
 
     return (
       <button
@@ -155,7 +158,7 @@ export function ThemePanel({
             style={{
               flex: 1,
               display: "grid",
-              gridTemplateColumns: mode === "dark" ? "28px 1fr" : "24px 1fr",
+              gridTemplateColumns: isDark ? "28px 1fr" : "24px 1fr",
               gap: 7,
             }}
           >
@@ -163,11 +166,11 @@ export function ThemePanel({
               style={{
                 borderRadius: 7,
                 background:
-                  mode === "dark"
+                  isDark
                     ? "rgba(255,255,255,0.05)"
                     : "rgba(23,27,36,0.06)",
                 border:
-                  mode === "dark"
+                  isDark
                     ? "1px solid rgba(255,255,255,0.06)"
                     : "1px solid rgba(23,27,36,0.06)",
                 display: "flex",
@@ -181,7 +184,7 @@ export function ThemePanel({
                   height: 5,
                   borderRadius: 999,
                   background: previewAccent,
-                  opacity: mode === "dark" ? 0.55 : 0.3,
+                  opacity: isDark ? 0.55 : 0.3,
                 }}
               />
               <span
@@ -189,7 +192,7 @@ export function ThemePanel({
                   height: 5,
                   borderRadius: 999,
                   background: previewAccent,
-                  opacity: mode === "dark" ? 0.28 : 0.16,
+                  opacity: isDark ? 0.28 : 0.16,
                 }}
               />
               <span
@@ -197,7 +200,7 @@ export function ThemePanel({
                   height: 5,
                   borderRadius: 999,
                   background: previewAccent,
-                  opacity: mode === "dark" ? 0.2 : 0.12,
+                  opacity: isDark ? 0.2 : 0.12,
                 }}
               />
             </div>
@@ -205,11 +208,11 @@ export function ThemePanel({
               style={{
                 borderRadius: 8,
                 background:
-                  mode === "dark"
+                  isDark
                     ? "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))"
                     : "linear-gradient(180deg, rgba(23,27,36,0.1), rgba(23,27,36,0.04))",
                 border:
-                  mode === "dark"
+                  isDark
                     ? "1px solid rgba(255,255,255,0.08)"
                     : "1px solid rgba(23,27,36,0.08)",
                 padding: 8,
@@ -233,7 +236,7 @@ export function ThemePanel({
                     height: 6,
                     borderRadius: 999,
                     background: previewAccent,
-                    opacity: mode === "dark" ? 0.75 : 0.2,
+                    opacity: isDark ? 0.75 : 0.2,
                   }}
                 />
                 <span
@@ -241,9 +244,9 @@ export function ThemePanel({
                     width: 12,
                     height: 12,
                     borderRadius: 4,
-                    background: mode === "dark" ? "rgba(255,255,255,0.12)" : "#ffffff",
+                    background: isDark ? "rgba(255,255,255,0.12)" : "#ffffff",
                     border:
-                      mode === "dark"
+                      isDark
                         ? "1px solid rgba(255,255,255,0.08)"
                         : "1px solid rgba(23,27,36,0.08)",
                   }}
@@ -260,9 +263,9 @@ export function ThemePanel({
                 <div
                   style={{
                     borderRadius: 6,
-                    background: mode === "dark" ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.9)",
+                    background: isDark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.9)",
                     border:
-                      mode === "dark"
+                      isDark
                         ? "1px solid rgba(255,255,255,0.06)"
                         : "1px solid rgba(23,27,36,0.06)",
                   }}
@@ -273,11 +276,11 @@ export function ThemePanel({
                       height: 18,
                       borderRadius: 6,
                       background:
-                        mode === "dark"
+                        isDark
                           ? "rgba(255,255,255,0.09)"
                           : "rgba(255,255,255,0.92)",
                       border:
-                        mode === "dark"
+                        isDark
                           ? "1px solid rgba(255,255,255,0.06)"
                           : "1px solid rgba(23,27,36,0.06)",
                     }}
@@ -287,11 +290,11 @@ export function ThemePanel({
                       flex: 1,
                       borderRadius: 6,
                       background:
-                        mode === "dark"
+                        isDark
                           ? "rgba(255,255,255,0.05)"
                           : "rgba(255,255,255,0.82)",
                       border:
-                        mode === "dark"
+                        isDark
                           ? "1px solid rgba(255,255,255,0.05)"
                           : "1px solid rgba(23,27,36,0.05)",
                     }}
@@ -424,7 +427,7 @@ export function ThemePanel({
           {t("theme.manualTheme")}
         </div>
         <div
-          style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}
+          style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}
           role="radiogroup"
           aria-label={t("theme.manualThemeAria")}
         >
@@ -435,6 +438,14 @@ export function ThemePanel({
             previewBackground: "#11151d",
             previewBorder: "rgba(255,255,255,0.08)",
             previewAccent: "#f1f4fb",
+          })}
+          {renderThemeOption({
+            mode: "midnight",
+            title: t("theme.midnight"),
+            description: t("theme.midnightDescription"),
+            previewBackground: "#1a1b1d",
+            previewBorder: "#222427",
+            previewAccent: "#e6e6e6",
           })}
           {renderThemeOption({
             mode: "light",

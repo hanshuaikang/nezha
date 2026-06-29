@@ -8,6 +8,7 @@ import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   normalizeSendShortcut,
 } from "../../shortcuts";
+import { DEFAULT_TERMINAL_SCROLLBACK } from "../../types";
 import s from "../../styles";
 import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings, type AgentKey } from "./types";
 import { getAgentExecutablePlaceholder } from "./shared";
@@ -73,6 +74,8 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    claude_force_default_tui: true,
+    terminal_scrollback: DEFAULT_TERMINAL_SCROLLBACK,
   };
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(emptySettings);
@@ -201,11 +204,28 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     }
   }
 
+  async function handleForceDefaultTuiToggle() {
+    const enabled = !settings.claude_force_default_tui;
+    const prev = settings;
+    setSettings((s) => ({ ...s, claude_force_default_tui: enabled }));
+    try {
+      const next = await invoke<AppSettings>("save_claude_force_default_tui", { enabled });
+      setSettings(next);
+      setOriginalSettings((o) => ({ ...o, claude_force_default_tui: next.claude_force_default_tui }));
+      skipNextChangeEventRef.current = true;
+      window.dispatchEvent(new Event(APP_SETTINGS_CHANGED_EVENT));
+    } catch (e) {
+      setSettings(prev);
+      setError(String(e));
+    }
+  }
+
   const isDirty = settings[pathField] !== originalSettings[pathField];
   const versionValue = versions[versionField];
+  const forceTuiEnabled = settings.claude_force_default_tui;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18, flexShrink: 0 }}>
       {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
 
       <div
@@ -280,6 +300,29 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
         />
         <span style={hintStyle}>{t("appSettings.versionsHint")}</span>
       </div>
+
+      {agentKey === "claude" && (
+        <div style={fieldStyle}>
+          <label style={labelStyle}>{t("appSettings.claudeForceDefaultTui")}</label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={forceTuiEnabled}
+            aria-label={t("appSettings.claudeForceDefaultTui")}
+            disabled={loading}
+            onClick={() => void handleForceDefaultTuiToggle()}
+            style={loading ? { ...s.agentPathToggleRow, ...s.agentPathToggleRowDisabled } : s.agentPathToggleRow}
+          >
+            <span style={s.agentPathToggleLabel}>
+              {t("appSettings.claudeForceDefaultTuiToggleLabel")}
+            </span>
+            <span style={forceTuiEnabled ? s.shortcutSwitchTrackOn : s.shortcutSwitchTrack}>
+              <span style={forceTuiEnabled ? s.shortcutSwitchThumbOn : s.shortcutSwitchThumb} />
+            </span>
+          </button>
+          <span style={hintStyle}>{t("appSettings.claudeForceDefaultTuiHint")}</span>
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
         {saved && (

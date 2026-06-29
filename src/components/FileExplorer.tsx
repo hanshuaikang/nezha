@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useCancellableInvoke } from "../hooks/useCancellableInvoke";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
@@ -9,7 +16,9 @@ import { useI18n } from "../i18n";
 import { writeClipboardText } from "./file-explorer/clipboard";
 import { FileExplorerContextMenu } from "./file-explorer/ContextMenu";
 import { CreateInputRow } from "./file-explorer/CreateInputRow";
+import { FileIcon } from "./file-explorer/FileIcon";
 import { TreeItem } from "./file-explorer/TreeItem";
+import { dispatchFileTreePointerDrag } from "./pathDrop";
 import {
   AUTO_REFRESH_MS,
   ROW_HEIGHT,
@@ -54,10 +63,30 @@ export function FileExplorer({
     parentPath: string;
     kind: CreateKind;
   } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    x: number;
+    y: number;
+    name: string;
+    path: string;
+    isDir: boolean;
+    extension?: string;
+    isGitignored?: boolean;
+  } | null>(null);
   const [creatingValue, setCreatingValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const commitInFlightRef = useRef(false);
   const deleteInFlightRef = useRef(false);
+  const dragPreviewFrameRef = useRef<number | null>(null);
+  const pendingDragPreviewPointRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    paths: string[];
+    dragging: boolean;
+  } | null>(null);
+  const suppressClickPathRef = useRef<string | null>(null);
+  const dragEndRef = useRef<(() => void) | null>(null);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
@@ -216,6 +245,8 @@ export function FileExplorer({
 
   const handleToggle = useCallback(
     (dirPath: string) => {
+      if (suppressClickPathRef.current === dirPath) return;
+
       // Invalidate any in-flight auto-refresh: it captured a snapshot before this
       // toggle and would otherwise apply that stale tree, collapsing the folder the
       // user just expanded (issue #194).
@@ -252,11 +283,126 @@ export function FileExplorer({
 
   const handleSelect = useCallback(
     (node: TreeNode) => {
+      if (suppressClickPathRef.current === node.path) return;
       setSelectedPath(node.path);
       onFileSelect(node.path, node.name);
     },
     [onFileSelect],
   );
+
+  const handlePointerDown = useCallback((event: ReactPointerEvent, node: TreeNode) => {
+    if (event.button !== 0) return;
+
+    // 极端情况下上一次会话未正常收尾(组件再次 mount 等),先兜底结束
+    dragEndRef.current?.();
+
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      paths: [node.path],
+      dragging: false,
+    };
+
+    const endSession = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerCancel, true);
+      if (dragPreviewFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragPreviewFrameRef.current);
+        dragPreviewFrameRef.current = null;
+      }
+      pendingDragPreviewPointRef.current = null;
+      pointerDragRef.current = null;
+      setDragPreview(null);
+      dragEndRef.current = null;
+    };
+    dragEndRef.current = endSession;
+
+    const schedulePreviewMove = (x: number, y: number) => {
+      pendingDragPreviewPointRef.current = { x, y };
+      if (dragPreviewFrameRef.current !== null) return;
+      dragPreviewFrameRef.current = window.requestAnimationFrame(() => {
+        dragPreviewFrameRef.current = null;
+        const point = pendingDragPreviewPointRef.current;
+        pendingDragPreviewPointRef.current = null;
+        if (!point) return;
+        setDragPreview((prev) =>
+          prev
+            ? {
+                ...prev,
+                x: point.x,
+                y: point.y,
+              }
+            : prev,
+        );
+      });
+    };
+
+    const finishDrag = (type: "drop" | "cancel", x: number, y: number) => {
+      const drag = pointerDragRef.current;
+      const wasDragging = !!drag?.dragging;
+      const dragPaths = drag?.paths ?? [node.path];
+      endSession();
+      if (!wasDragging) return;
+      if (type === "drop") {
+        dispatchFileTreePointerDrag({ type, paths: dragPaths, x, y });
+      }
+      suppressClickPathRef.current = node.path;
+      window.setTimeout(() => {
+        if (suppressClickPathRef.current === node.path) {
+          suppressClickPathRef.current = null;
+        }
+      }, 100);
+    };
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      const drag = pointerDragRef.current;
+      if (!drag || drag.pointerId !== moveEvent.pointerId) return;
+      const dx = moveEvent.clientX - drag.startX;
+      const dy = moveEvent.clientY - drag.startY;
+      if (!drag.dragging && Math.hypot(dx, dy) < 5) return;
+      if (!drag.dragging) {
+        drag.dragging = true;
+        setDragPreview({
+          x: moveEvent.clientX,
+          y: moveEvent.clientY,
+          name: node.name,
+          path: node.path,
+          isDir: node.is_dir,
+          extension: node.extension,
+          isGitignored: node.is_gitignored,
+        });
+      }
+      moveEvent.preventDefault();
+      schedulePreviewMove(moveEvent.clientX, moveEvent.clientY);
+    }
+
+    function handlePointerUp(upEvent: PointerEvent) {
+      const drag = pointerDragRef.current;
+      if (!drag || drag.pointerId !== upEvent.pointerId) return;
+      if (drag.dragging) {
+        upEvent.preventDefault();
+      }
+      finishDrag("drop", upEvent.clientX, upEvent.clientY);
+    }
+
+    function handlePointerCancel(cancelEvent: PointerEvent) {
+      const drag = pointerDragRef.current;
+      if (!drag || drag.pointerId !== cancelEvent.pointerId) return;
+      finishDrag("cancel", cancelEvent.clientX, cancelEvent.clientY);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerCancel, true);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      dragEndRef.current?.();
+    };
+  }, []);
 
   const ensureExpanded = useCallback(
     (dirPath: string) => {
@@ -410,6 +556,24 @@ export function FileExplorer({
 
   return (
     <div style={{ ...s.fileExplorerRoot, width }}>
+      {dragPreview && (
+        <div
+          style={{
+            ...s.fileTreeDragPreview,
+            left: dragPreview.x,
+            top: dragPreview.y,
+          }}
+        >
+          <FileIcon
+            name={dragPreview.name}
+            ext={dragPreview.extension}
+            isDir={dragPreview.isDir}
+            expanded={dragPreview.isDir}
+            isGitignored={dragPreview.isGitignored}
+          />
+          <span style={s.fileTreeDragPreviewLabel}>{dragPreview.name}</span>
+        </div>
+      )}
       {ctxMenu && (
         <FileExplorerContextMenu
           ctxMenu={ctxMenu}
@@ -475,9 +639,11 @@ export function FileExplorer({
                     depth={row.depth}
                     selectedPath={selectedPath}
                     contextPath={ctxMenu?.path ?? null}
+                    draggingPath={dragPreview?.path ?? null}
                     onSelect={handleSelect}
                     onToggle={handleToggle}
                     onContextMenu={handleContextMenu}
+                    onPointerDown={handlePointerDown}
                   />
                 </div>
               );

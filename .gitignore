@@ -34,3 +34,6 @@ bump-version.sh
 vite.config.js
 vite.config.d.ts
 .codex
+.codegraph/
+.planning/
+pnpm-workspace.yaml

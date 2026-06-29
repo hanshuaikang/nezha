@@ -430,9 +430,11 @@ fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_
 /// 为 Claude 命令构建 CommandBuilder，并根据 permission_mode 添加权限标志。
 fn build_claude_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     let mut c = CommandBuilder::new(agent_bin);
-    // Claude Code 自 v2.1.150 起默认开启 xterm 鼠标上报（mouse mode 1002），会拦截
-    // 终端原生框选——表现为运行时拖动看似选中却不进选区态、无法复制。关掉它后滚轮回退
-    // 到 xterm 自身 scrollback，用户运行时即可直接拖动框选。官方开关，仅影响 Claude。
+    // 仅 macOS 注入：Claude Code v2.1.150+ 默认开 xterm 鼠标上报（mode 1002），
+    // 会吞掉 macOS 端 xterm.js 的原生拖动框选；关掉后滚轮回退到 xterm scrollback。
+    // Windows 上 xterm.js + Claude 默认就能框选+滚轮（v0.4.0 已验证），加这个反而
+    // 让滚轮失效（见 anthropics/claude-code#51393），所以只对 macOS 启用。
+    #[cfg(target_os = "macos")]
     c.env("CLAUDE_CODE_DISABLE_MOUSE", "1");
     match permission_mode {
         "ask" => {
@@ -569,6 +571,18 @@ pub async fn run_task(
             .await
             .unwrap_or(false)
     };
+    // Claude 是否要传 --settings:hook 可信 或 (force_default_tui 开启且 Claude
+    // 版本支持 tui 字段) 任一为真即需要。判断逻辑与 hooks::nezha_claude_settings_needed
+    // 保持一致,使文件状态与命令行参数同步。
+    let claude_pass_settings = !is_codex
+        && (use_hooks
+            || tokio::task::spawn_blocking(|| {
+                let s = crate::app_settings::load_settings_internal();
+                s.claude_force_default_tui
+                    && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
+            })
+            .await
+            .unwrap_or(false));
 
     let mut cmd = if is_codex {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
@@ -590,12 +604,16 @@ pub async fn run_task(
             c.arg("--session-id");
             c.arg(sid);
         }
-        // Claude:hook 可信时通过 `--settings <Nezha 自有文件>` 传入 hooks,不修改用户的
-        // ~/.claude/settings.json(Claude 对 hooks 跨源 merge,用户 hook 不受影响)。
-        if use_hooks {
+        // Claude:通过 `--settings <Nezha 自有文件>` 一并注入 hooks(可信时)与
+        // tui:"default"(force_default_tui 开启时)。用户 ~/.claude/settings.json 中
+        // 未提及的 key 保留;`tui` 是有意覆盖,见 build_claude_settings_value 注释。
+        // 守卫文件存在性:防御上游 save_* 漏调 regenerate 导致路径过时的边角场景。
+        if claude_pass_settings {
             if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
-                c.arg("--settings");
-                c.arg(p.to_string_lossy().as_ref());
+                if p.exists() {
+                    c.arg("--settings");
+                    c.arg(p.to_string_lossy().as_ref());
+                }
             }
         }
         // 空 prompt 时不传 positional arg，让 Claude 进入交互式 REPL
@@ -814,6 +832,15 @@ pub async fn resume_task(
             .await
             .unwrap_or(false)
     };
+    let claude_pass_settings = agent != "codex"
+        && (use_hooks
+            || tokio::task::spawn_blocking(|| {
+                let s = crate::app_settings::load_settings_internal();
+                s.claude_force_default_tui
+                    && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
+            })
+            .await
+            .unwrap_or(false));
 
     let mut cmd = if agent == "codex" {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
@@ -829,11 +856,13 @@ pub async fn resume_task(
         let mut c = build_claude_cmd(&agent_bin, &permission_mode);
         c.arg("--resume");
         c.arg(&session_id);
-        // Claude:命令行 `--settings` 传入 Nezha 自有 hooks 文件,不改用户配置。
-        if use_hooks {
+        // 同 run_task:hooks + force_default_tui 共用 --settings 通道。
+        if claude_pass_settings {
             if let Ok(p) = crate::hooks::nezha_claude_settings_path() {
-                c.arg("--settings");
-                c.arg(p.to_string_lossy().as_ref());
+                if p.exists() {
+                    c.arg("--settings");
+                    c.arg(p.to_string_lossy().as_ref());
+                }
             }
         }
         c

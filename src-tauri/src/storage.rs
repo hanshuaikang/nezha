@@ -37,6 +37,8 @@ pub struct Task {
     pub status: String,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
+    #[serde(rename = "updatedAt", default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
     #[serde(rename = "attentionRequestedAt", skip_serializing_if = "Option::is_none")]
     pub attention_requested_at: Option<i64>,
     #[serde(rename = "claudeSessionId", skip_serializing_if = "Option::is_none")]

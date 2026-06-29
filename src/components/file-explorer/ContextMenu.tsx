@@ -1,6 +1,9 @@
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import s from "../../styles";
 import { useI18n } from "../../i18n";
 import type { ContextMenuState } from "./types";
+
+const VIEWPORT_MARGIN = 8;
 
 export function FileExplorerContextMenu({
   ctxMenu,
@@ -20,6 +23,34 @@ export function FileExplorerContextMenu({
   onCopyPath: (e: React.MouseEvent, path: string, withAt: boolean) => void;
 }) {
   const { t } = useI18n();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: ctxMenu.x, y: ctxMenu.y });
+
+  const updatePosition = useCallback(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    const rect = menu.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const maxX = Math.max(VIEWPORT_MARGIN, viewportWidth - rect.width - VIEWPORT_MARGIN);
+    const maxY = Math.max(VIEWPORT_MARGIN, viewportHeight - rect.height - VIEWPORT_MARGIN);
+
+    setPosition({
+      x: Math.min(Math.max(ctxMenu.x, VIEWPORT_MARGIN), maxX),
+      y: Math.min(Math.max(ctxMenu.y, VIEWPORT_MARGIN), maxY),
+    });
+  }, [ctxMenu.x, ctxMenu.y]);
+
+  useLayoutEffect(() => {
+    setPosition({ x: ctxMenu.x, y: ctxMenu.y });
+    updatePosition();
+  }, [ctxMenu.x, ctxMenu.y, updatePosition]);
+
+  useLayoutEffect(() => {
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
+  }, [updatePosition]);
 
   const items = [
     { label: t("file.newFile"), action: "newFile" },
@@ -47,7 +78,8 @@ export function FileExplorerContextMenu({
         }}
       />
       <div
-        style={{ ...s.fileCtxMenu, left: ctxMenu.x, top: ctxMenu.y }}
+        ref={menuRef}
+        style={{ ...s.fileCtxMenu, left: position.x, top: position.y }}
         onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => {
           e.preventDefault();

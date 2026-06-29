@@ -14,7 +14,7 @@ const notificationBodyStyle: CSSProperties = {
   whiteSpace: "pre-line",
   overflow: "hidden",
   display: "-webkit-box",
-  WebkitLineClamp: 3,
+  WebkitLineClamp: 5,
   WebkitBoxOrient: "vertical",
 };
 
@@ -203,9 +203,8 @@ export function NotificationBell() {
         >
           <div
             style={{
-              width: 420,
-              maxWidth: "calc(100vw - 32px)",
-              maxHeight: "72vh",
+              width: "min(920px, calc(100vw - 48px), calc((100vh - 96px) * 4 / 3))",
+              maxHeight: "calc(100vh - 96px)",
               background: "var(--bg-card)",
               border: "1px solid var(--border-medium)",
               borderRadius: 14,

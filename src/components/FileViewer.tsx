@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import * as Popover from "@radix-ui/react-popover";
-import { X, AlertCircle, Eye, PencilLine, MoreHorizontal, List, ChevronRight } from "lucide-react";
+import { X, AlertCircle, Eye, PencilLine, MoreHorizontal, List } from "lucide-react";
 import { getFileColor } from "../utils";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
@@ -28,7 +28,7 @@ import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { ruby } from "@codemirror/legacy-modes/mode/ruby";
 import { lua } from "@codemirror/legacy-modes/mode/lua";
 import { swift } from "@codemirror/legacy-modes/mode/swift";
-import { kotlin } from "@codemirror/legacy-modes/mode/clike";
+import { kotlin, csharp } from "@codemirror/legacy-modes/mode/clike";
 import { r } from "@codemirror/legacy-modes/mode/r";
 import type { Extension } from "@codemirror/state";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
@@ -163,6 +163,9 @@ function getLanguageExtension(fileName: string): Extension {
       return StreamLanguage.define(swift);
     case "kt":
       return StreamLanguage.define(kotlin);
+    case "cs":
+    case "csx":
+      return StreamLanguage.define(csharp);
     case "rb":
       return StreamLanguage.define(ruby);
     case "lua":
@@ -226,6 +229,8 @@ type ImagePreviewData = {
   byteLength: number;
 };
 
+const TOC_OPEN_STORAGE_KEY = "nezha:md-toc-open";
+
 function MarkdownToc({
   toc,
   activeId,
@@ -236,19 +241,39 @@ function MarkdownToc({
   onJump: (id: string) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const stored = window.localStorage.getItem(TOC_OPEN_STORAGE_KEY);
+      return stored === null ? false : stored === "1";
+    } catch {
+      return false;
+    }
+  });
   const minDepth = useMemo(() => Math.min(...toc.map((entry) => entry.depth)), [toc]);
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(TOC_OPEN_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        /* localStorage 不可用时静默忽略 */
+      }
+      return next;
+    });
+  };
 
   return (
     <div className={`md-toc${open ? "" : " md-toc-collapsed"}`}>
       <button
         type="button"
         className="md-toc-toggle"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={toggle}
         title={t("file.outline")}
+        aria-label={t("file.outline")}
       >
-        {open ? <List size={13} /> : <ChevronRight size={13} />}
-        <span>{t("file.outline")}</span>
+        <List size={13} />
+        {open && <span>{t("file.outline")}</span>}
       </button>
       {open && (
         <nav className="md-toc-list">
@@ -284,7 +309,7 @@ function FilePreviewPane({
   previewMode: boolean;
 }) {
   const editorTheme =
-    themeVariant === "dark"
+    themeVariant === "dark" || themeVariant === "midnight"
       ? githubDark
       : themeVariant === "eyecare"
         ? solarizedLight
@@ -471,7 +496,7 @@ function FilePreviewPane({
             />
           ) : content !== null ? (
             isMarkdown && previewMode ? (
-              <>
+              <div className="md-preview-pane">
                 <div ref={scrollRef} className="md-preview-scroll">
                   <div
                     className="md-preview"
@@ -481,7 +506,7 @@ function FilePreviewPane({
                 {toc.length > 0 && (
                   <MarkdownToc toc={toc} activeId={activeHeadingId} onJump={jumpToHeading} />
                 )}
-              </>
+              </div>
             ) : (
               <ReactCodeMirror
                 value={content}
@@ -545,6 +570,7 @@ export function FileViewer({
   onCloseTab,
   onCloseOtherTabs,
   onCloseTabsToRight,
+  onCloseTabsToLeft,
   onCloseAllTabs,
   themeVariant,
   onRunMakeTarget: _onRunMakeTarget,
@@ -556,6 +582,7 @@ export function FileViewer({
   onCloseTab: (path: string) => void;
   onCloseOtherTabs: (path: string) => void;
   onCloseTabsToRight: (path: string) => void;
+  onCloseTabsToLeft: (path: string) => void;
   onCloseAllTabs: () => void;
   themeVariant: ThemeVariant;
   onRunMakeTarget?: (target: string) => void;
@@ -563,14 +590,69 @@ export function FileViewer({
   const { t } = useI18n();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+  // Right-click context menu for a tab: anchored at the cursor, scoped to the
+  // tab that was right-clicked (which may differ from the active tab).
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const tabMenuRef = useRef<HTMLDivElement | null>(null);
+  // Resolved on-screen position after clamping the cursor point against the
+  // menu's *measured* size (see layout effect below). Null until measured, so
+  // the menu stays hidden for the one frame before we know where to put it.
+  const [tabMenuPos, setTabMenuPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Clamp the menu inside the viewport using its real rendered dimensions
+  // rather than hard-coded guesses — the width depends on the longest label,
+  // which varies by locale. Runs before paint, so there is no visible jump.
+  useLayoutEffect(() => {
+    if (!tabMenu || !tabMenuRef.current) return;
+    const { width, height } = tabMenuRef.current.getBoundingClientRect();
+    const margin = 8; // keep a small gap from the viewport edge
+    const left = Math.max(margin, Math.min(tabMenu.x, window.innerWidth - width - margin));
+    const top = Math.max(margin, Math.min(tabMenu.y, window.innerHeight - height - margin));
+    setTabMenuPos({ left, top });
+  }, [tabMenu]);
+
+  useEffect(() => {
+    if (!tabMenu) return;
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && tabMenuRef.current?.contains(event.target)) return;
+      setTabMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTabMenu(null);
+    };
+    const close = () => setTabMenu(null);
+    // Capture phase so a click anywhere (incl. another tab) closes first.
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [tabMenu]);
 
   useEffect(() => {
     setPreviewModes((prev) => {
       const next: Record<string, boolean> = {};
       for (const tab of tabs) {
-        if (prev[tab.path]) next[tab.path] = true;
+        if (tab.path in prev) {
+          // 已经初始化过的 tab：保留之前的状态（包括用户主动切到编辑模式）
+          next[tab.path] = prev[tab.path];
+        } else if (isMarkdownFile(tab.name)) {
+          // 新打开的 markdown 文件默认进入预览模式
+          next[tab.path] = true;
+        }
       }
-      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length !== nextKeys.length) return next;
+      for (const k of nextKeys) {
+        if (prev[k] !== next[k]) return next;
+      }
+      return prev;
     });
   }, [tabs]);
 
@@ -581,11 +663,20 @@ export function FileViewer({
 
   if (!activeTab) return null;
 
-  const activePreviewMode = !!previewModes[activeTab.path];
+  // 新打开的 markdown 文件 useEffect 同步 previewMode 前会有一帧 undefined，
+  // 直接根据文件名兜底默认值，避免闪一帧编辑器
+  const activePreviewMode = previewModes[activeTab.path] ?? isMarkdownFile(activeTab.name);
   const activeIsMarkdown = isMarkdownFile(activeTab.name);
   const canCloseOtherTabs = tabs.length > 1;
   const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
   const canCloseTabsToRight = activeTabIndex !== -1 && activeTabIndex < tabs.length - 1;
+  const canCloseTabsToLeft = activeTabIndex > 0;
+
+  // Context-menu actions are scoped to the right-clicked tab, not the active one.
+  const tabMenuIndex = tabMenu ? tabs.findIndex((tab) => tab.path === tabMenu.path) : -1;
+  const tabMenuCanCloseOthers = tabs.length > 1;
+  const tabMenuCanCloseRight = tabMenuIndex !== -1 && tabMenuIndex < tabs.length - 1;
+  const tabMenuCanCloseLeft = tabMenuIndex > 0;
 
   return (
     <div
@@ -630,6 +721,16 @@ export function FileViewer({
               <button
                 key={tab.path}
                 onClick={() => onSelectTab(tab.path)}
+                onContextMenu={(event) => {
+                  // Replace the webview's native menu (Reload / Save As / Print)
+                  // with tab-scoped close actions. The menu is scoped to this
+                  // tab via its path, so right-clicking does NOT change which
+                  // tab is active (matches editor conventions like VS Code).
+                  event.preventDefault();
+                  setMenuOpen(false);
+                  setTabMenuPos(null);
+                  setTabMenu({ x: event.clientX, y: event.clientY, path: tab.path });
+                }}
                 title={tab.path}
                 style={{
                   height: "100%",
@@ -722,7 +823,7 @@ export function FileViewer({
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                color: activePreviewMode ? "var(--accent)" : "var(--text-hint)",
+                color: "var(--text-hint)",
                 fontSize: 11.5,
                 fontFamily: "var(--font-ui)",
                 flexShrink: 0,
@@ -786,6 +887,17 @@ export function FileViewer({
                 </button>
                 <button
                   type="button"
+                  disabled={!canCloseTabsToLeft}
+                  onClick={() => {
+                    onCloseTabsToLeft(activeTab.path);
+                    setMenuOpen(false);
+                  }}
+                  className="file-viewer-tab-menu-item"
+                >
+                  {t("file.closeTabsToLeft")}
+                </button>
+                <button
+                  type="button"
                   disabled={tabs.length === 0}
                   onClick={() => {
                     onCloseAllTabs();
@@ -828,12 +940,82 @@ export function FileViewer({
                 fileName={tab.name}
                 projectPath={projectPath}
                 themeVariant={themeVariant}
-                previewMode={!!previewModes[tab.path]}
+                previewMode={previewModes[tab.path] ?? isMarkdownFile(tab.name)}
               />
             </div>
           );
         })}
       </div>
+
+      {tabMenu && tabMenuIndex !== -1 && (
+        <div
+          ref={tabMenuRef}
+          className="file-viewer-tab-menu"
+          style={{
+            position: "fixed",
+            // Fall back to the raw cursor point for the first (unmeasured)
+            // frame; the layout effect replaces it before the browser paints.
+            left: tabMenuPos?.left ?? tabMenu.x,
+            top: tabMenuPos?.top ?? tabMenu.y,
+            visibility: tabMenuPos ? "visible" : "hidden",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onCloseTab(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeThisTab")}
+          </button>
+          <button
+            type="button"
+            disabled={!tabMenuCanCloseOthers}
+            onClick={() => {
+              onCloseOtherTabs(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeOtherTabs")}
+          </button>
+          <button
+            type="button"
+            disabled={!tabMenuCanCloseRight}
+            onClick={() => {
+              onCloseTabsToRight(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeTabsToRight")}
+          </button>
+          <button
+            type="button"
+            disabled={!tabMenuCanCloseLeft}
+            onClick={() => {
+              onCloseTabsToLeft(tabMenu.path);
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeTabsToLeft")}
+          </button>
+          <button
+            type="button"
+            disabled={tabs.length === 0}
+            onClick={() => {
+              onCloseAllTabs();
+              setTabMenu(null);
+            }}
+            className="file-viewer-tab-menu-item"
+          >
+            {t("file.closeAllTabs")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

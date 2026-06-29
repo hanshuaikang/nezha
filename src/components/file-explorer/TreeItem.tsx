@@ -1,3 +1,4 @@
+import type React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import s from "../../styles";
 import { FileIcon } from "./FileIcon";
@@ -8,37 +9,45 @@ export function TreeItem({
   depth,
   selectedPath,
   contextPath,
+  draggingPath,
   onSelect,
   onToggle,
   onContextMenu,
+  onPointerDown,
 }: {
   node: TreeNode;
   depth: number;
   selectedPath: string | null;
   contextPath: string | null;
+  draggingPath: string | null;
   onSelect: (node: TreeNode) => void;
   onToggle: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+  onPointerDown: (e: React.PointerEvent, node: TreeNode) => void;
 }) {
   const isSelected = selectedPath === node.path;
   const isContextTarget = contextPath === node.path;
+  const isDragging = draggingPath === node.path;
   const isHighlighted = isSelected || isContextTarget;
   return (
     <div
+      draggable={false}
       onClick={() => (node.is_dir ? onToggle(node.path) : onSelect(node))}
       onContextMenu={(e) => onContextMenu(e, node)}
+      onPointerDown={(e) => onPointerDown(e, node)}
       style={{
         ...s.fileTreeRow,
+        ...(isDragging ? s.fileTreeRowDragging : null),
         paddingLeft: 8 + depth * 14,
-        background: isHighlighted ? "var(--bg-selected)" : "transparent",
+        background: isDragging || isHighlighted ? "var(--bg-selected)" : "transparent",
       }}
       onMouseEnter={(e) => {
-        if (!isHighlighted) {
+        if (!isHighlighted && !isDragging) {
           e.currentTarget.style.background = FILE_TREE_HOVER_BG;
         }
       }}
       onMouseLeave={(e) => {
-        if (!isHighlighted) {
+        if (!isHighlighted && !isDragging) {
           e.currentTarget.style.background = "transparent";
         }
       }}

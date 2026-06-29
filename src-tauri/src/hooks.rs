@@ -26,6 +26,10 @@ use crate::storage::atomic_write;
 /// 低于此版本注入的 hook 会被 trust 模型 skip 或拼 flag 报错,回退轮询 watcher。
 const CODEX_HOOK_MIN_VERSION: &str = "0.131.0";
 const CLAUDE_HOOK_MIN_VERSION: &str = "2.1.87";
+/// Claude settings.json 中 `tui` 字段引入版本(v2.1.110+ 才识别)。低于此版本时
+/// 不在 Nezha settings 文件里写 tui 字段、也不在命令行传 --settings,避免向旧版
+/// Claude 投喂未知 key 触发严格校验报错。
+pub const CLAUDE_TUI_MIN_VERSION: &str = "2.1.110";
 
 const HOOK_SCRIPT: &str = include_str!("nezha-hook.mjs");
 
@@ -153,30 +157,82 @@ fn hook_command(script: &str) -> String {
     format!("node \"{}\"", script)
 }
 
-/// 构造仅含 Nezha hooks 的 Claude settings 值。只放 `hooks`(数组型,Claude 会
-/// 跨来源 merge + 按 command 去重),不含任何标量 key,因此不会覆盖用户配置。
-fn build_claude_settings_value(_node_path: &str, script: &str) -> Value {
-    let entry = serde_json::json!({
-        "hooks": [{ "type": "command", "command": hook_command(script) }],
-    });
-    let mut hooks = Map::new();
-    for event in CLAUDE_EVENTS {
-        hooks.insert((*event).to_string(), Value::Array(vec![entry.clone()]));
+/// 构造 Nezha 自有 Claude settings 值。
+///
+/// - `include_hooks=true`:写入 hooks(数组型,Claude 会跨来源 merge + 按 command 去重),
+///   不覆盖用户配置。
+/// - `force_default_tui=true`:写入 `"tui": "default"` 标量字段——**有意覆盖**用户
+///   ~/.claude/settings.json 中的 tui 字段,强制走 classic 渲染。这是该 settings
+///   通道唯一的标量 key,其余字段一律不写。
+fn build_claude_settings_value(
+    _node_path: &str,
+    script: &str,
+    include_hooks: bool,
+    force_default_tui: bool,
+) -> Value {
+    let mut root = Map::new();
+    if force_default_tui {
+        root.insert("tui".to_string(), Value::String("default".to_string()));
     }
-    serde_json::json!({ "hooks": Value::Object(hooks) })
+    if include_hooks {
+        let entry = serde_json::json!({
+            "hooks": [{ "type": "command", "command": hook_command(script) }],
+        });
+        let mut hooks = Map::new();
+        for event in CLAUDE_EVENTS {
+            hooks.insert((*event).to_string(), Value::Array(vec![entry.clone()]));
+        }
+        root.insert("hooks".to_string(), Value::Object(hooks));
+    }
+    Value::Object(root)
 }
 
 /// 写入 Nezha 自有 Claude settings 文件。用 serde_json 序列化——Windows 路径里的
 /// 反斜杠会被正确转义;且传给 Claude 的是纯文件路径,不经历命令行字符串转义,
 /// 跨平台(含 Windows CreateProcess)安全。
-fn write_claude_settings(node_path: &str, script: &str) -> Result<PathBuf, String> {
+fn write_claude_settings(
+    node_path: &str,
+    script: &str,
+    include_hooks: bool,
+    force_default_tui: bool,
+) -> Result<PathBuf, String> {
     let dir = hooks_dir()?;
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
     let path = nezha_claude_settings_path()?;
-    let value = build_claude_settings_value(node_path, script);
+    let value = build_claude_settings_value(node_path, script, include_hooks, force_default_tui);
     let raw = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)?;
     Ok(path)
+}
+
+/// 当前 Nezha 自有 settings 文件是否需要存在。两个来源任一为真就需要:
+/// hook 链路可用 或 (AppSettings 开启 force_default_tui 且 Claude 版本支持 tui 字段)。
+fn nezha_claude_settings_needed() -> (bool, bool) {
+    let hooks_ok = usable_for("claude");
+    let force_tui = crate::app_settings::load_settings_internal().claude_force_default_tui
+        && crate::app_settings::claude_version_gte(CLAUDE_TUI_MIN_VERSION);
+    (hooks_ok, force_tui)
+}
+
+/// 按当前 AppSettings + hook 状态重新生成 Nezha 自有 settings 文件;两者都不需要
+/// 时删除文件,让 `--settings` 不再传入(`pty.rs` 看到路径不存在就跳过)。
+/// 在 `app_settings::save_*` 与 `install_hooks` / `uninstall_hooks` 之后调用,
+/// 保证文件内容与开关状态同步。
+pub fn regenerate_claude_settings() -> Result<(), String> {
+    let (include_hooks, force_default_tui) = nezha_claude_settings_needed();
+    let path = nezha_claude_settings_path()?;
+    if !include_hooks && !force_default_tui {
+        if path.exists() {
+            let _ = fs::remove_file(&path);
+        }
+        return Ok(());
+    }
+    let node = detect_node().unwrap_or_default();
+    let script = script_path()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    write_claude_settings(&node, &script, include_hooks, force_default_tui).map(|_| ())
 }
 
 // ── Claude 旧版注入清理(迁移用)─────────────────────────────────────────────
@@ -476,7 +532,11 @@ pub fn ensure_installed() -> HookInstallStatus {
 
     // Claude:命令行 --settings 模式——把 hooks 写进 Nezha 自有文件,启动任务时通过
     // `--settings <path>` 传入,完全不修改用户的 ~/.claude/settings.json。
-    match write_claude_settings(&node, &script) {
+    // force_default_tui 由 AppSettings 控制,跟 hooks 共用同一份 settings 文件;
+    // 但仅当 Claude 版本 ≥ CLAUDE_TUI_MIN_VERSION 才写 tui 字段,避免旧版严格校验报错。
+    let force_default_tui = crate::app_settings::load_settings_internal().claude_force_default_tui
+        && crate::app_settings::claude_version_gte(CLAUDE_TUI_MIN_VERSION);
+    match write_claude_settings(&node, &script, true, force_default_tui) {
         Ok(_) => status.claude_installed = true,
         Err(e) => status.error = format!("claude settings: {}", e),
     }
@@ -502,11 +562,22 @@ pub fn ensure_installed() -> HookInstallStatus {
 
 /// 卸载 Nezha 注入的 hooks(不删除脚本本身)。
 pub fn uninstall() -> Result<(), String> {
-    // Claude:删除 Nezha 自有 settings 文件,并清理旧版本可能残留在用户
-    // ~/.claude/settings.json 里的注入条目。
-    if let Ok(p) = nezha_claude_settings_path() {
-        let _ = fs::remove_file(&p);
-    }
+    // Claude:settings 文件由 regenerate 按 AppSettings 决定——若 force_default_tui
+    // 仍开启则保留 tui 字段、移除 hooks 字段;否则删文件。同时清理旧版本可能残留在
+    // 用户 ~/.claude/settings.json 里的注入条目。
+    // 先刷新 cache,使 usable_for("claude") 返回 false,regenerate 不再写 hooks。
+    cache_status(HookInstallStatus {
+        node_path: detect_node().unwrap_or_default(),
+        script_path: script_path()
+            .ok()
+            .filter(|p| p.exists())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        claude_installed: false,
+        codex_installed: false,
+        error: String::new(),
+    });
+    regenerate_claude_settings()?;
     let claude = claude_settings_path()?;
     uninject_claude_settings_at(&claude)?;
     let codex = codex_config_path()?;
@@ -525,14 +596,28 @@ pub fn current_status() -> HookInstallStatus {
             .unwrap_or_default(),
         ..Default::default()
     };
-    // Claude 命令行模式:Nezha 自有 settings 文件存在即视为就绪。
+    // Claude 命令行模式:Nezha 自有 settings 文件 *且* 文件含 hooks 字段才算就绪——
+    // force_default_tui 单独开启时文件存在但只含 tui 字段,不视为 hook 已安装。
     if let Ok(p) = nezha_claude_settings_path() {
-        status.claude_installed = p.exists();
+        status.claude_installed = claude_settings_has_hooks(&p);
     }
     if let Ok(p) = codex_config_path() {
         status.codex_installed = codex_config_has_nezha(&p);
     }
     status
+}
+
+fn claude_settings_has_hooks(path: &Path) -> bool {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+        return false;
+    };
+    value
+        .get("hooks")
+        .and_then(|v| v.as_object())
+        .is_some_and(|h| !h.is_empty())
 }
 
 fn codex_config_has_nezha(path: &Path) -> bool {
@@ -600,26 +685,48 @@ mod tests {
     // ── Claude settings 构造(命令行 --settings 模式)────────────────────────
 
     #[test]
-    fn claude_settings_value_has_all_events_no_scalar_keys() {
-        let v = build_claude_settings_value("/node", "/script.mjs");
-        // 顶层只有 hooks,绝不含 model 等标量 key(否则会覆盖用户配置)
+    fn claude_settings_value_hooks_only() {
+        let v = build_claude_settings_value("/node", "/script.mjs", true, false);
+        // 仅 include_hooks=true 时顶层只有 hooks,无 tui 等标量 key
         let root = v.as_object().expect("object");
         assert_eq!(root.len(), 1);
         assert!(root.contains_key("hooks"));
         for event in CLAUDE_EVENTS {
             let arr = v["hooks"][event].as_array().expect("array");
             assert_eq!(arr.len(), 1);
-            // 裸 node + 双引号脚本路径,跨 shell 安全(不含 node 全路径)。
             let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
             assert_eq!(cmd, "node \"/script.mjs\"");
         }
     }
 
     #[test]
+    fn claude_settings_value_force_tui_only() {
+        let v = build_claude_settings_value("/node", "", false, true);
+        let root = v.as_object().expect("object");
+        assert_eq!(root.len(), 1);
+        assert_eq!(root.get("tui").and_then(|t| t.as_str()), Some("default"));
+        assert!(!root.contains_key("hooks"));
+    }
+
+    #[test]
+    fn claude_settings_value_force_tui_with_hooks() {
+        let v = build_claude_settings_value("/node", "/script.mjs", true, true);
+        let root = v.as_object().expect("object");
+        assert_eq!(root.len(), 2);
+        assert_eq!(root.get("tui").and_then(|t| t.as_str()), Some("default"));
+        assert!(root.contains_key("hooks"));
+    }
+
+    #[test]
     fn claude_settings_value_escapes_windows_paths() {
         // 命令是裸 node + 双引号脚本路径;序列化后脚本路径的反斜杠必须被正确转义,
         // 保证 Windows 路径是合法 JSON。
-        let v = build_claude_settings_value(r"C:\node.exe", r"C:\hooks\nezha-hook.mjs");
+        let v = build_claude_settings_value(
+            r"C:\node.exe",
+            r"C:\hooks\nezha-hook.mjs",
+            true,
+            false,
+        );
         let raw = serde_json::to_string(&v).unwrap();
         assert!(raw.contains(r"C:\\hooks\\nezha-hook.mjs"));
         // 回环解析得到原始命令

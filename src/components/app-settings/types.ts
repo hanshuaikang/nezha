@@ -37,6 +37,8 @@ export interface AppSettings {
   codex_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
+  claude_force_default_tui: boolean;
+  terminal_scrollback: number;
 }
 
 export interface AgentVersions {

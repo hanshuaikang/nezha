@@ -1,4 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
+import { APP_PLATFORM } from "../platform";
 
 /** Threshold below which we use the fast synchronous path. */
 const FAST_PATH_MAX_LINES = 200;
@@ -186,6 +187,27 @@ export function attachSmartCopy(
     ) {
       e.preventDefault();
       keyOptions.onNewline();
+      return false;
+    }
+
+    // Windows / Linux WebView 下 Ctrl+V 不会触发 xterm textarea 的 paste 事件，
+    // 需要手动读剪贴板并通过 term.paste() 注入。macOS WKWebView 走 Cmd+V 原生路径。
+    if (
+      e.type === "keydown" &&
+      APP_PLATFORM !== "macos" &&
+      e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      (e.key === "v" || e.key === "V")
+    ) {
+      e.preventDefault();
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text) terminal.paste(text);
+        })
+        .catch(() => {});
       return false;
     }
 

@@ -5,16 +5,21 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "./terminalCopyHelper";
+import { useTerminalPathDrop } from "./useTerminalPathDrop";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "../types";
 import {
-  themeFor,
+  applyTerminalThemeOnPanel,
   initTerminal,
   loadWebglAddon,
   safeFit,
   createSmartWriter,
   attachMacWebKitTerminalGuard,
+  attachTerminalScrollbarAutoHide,
   applyTerminalFontSize,
   applyTerminalFontFamily,
+  applyDomCharSizeOverride,
+  refreshTerminalDisplay,
+  unregisterActiveTerminal,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
@@ -99,6 +104,20 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       [shellId],
     );
 
+    const insertDroppedPathText = useCallback(
+      (text: string) => {
+        invoke("send_input", { taskId: shellId, data: text }).catch(console.error);
+        terminalRef.current?.focus();
+      },
+      [shellId],
+    );
+
+    useTerminalPathDrop({
+      containerRef,
+      isActive,
+      onInsertText: insertDroppedPathText,
+    });
+
     useEffect(() => {
       if (!containerRef.current) return;
       const container = containerRef.current;
@@ -106,12 +125,21 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
 
-      const { term, fitAddon } = initTerminal(themeVariantRef.current, 5000, terminalFontSizeRef.current, monoFontFamilyRef.current);
+      const { term, fitAddon, whenFontsReady } = initTerminal(
+        themeVariantRef.current,
+        5000,
+        terminalFontSizeRef.current,
+        monoFontFamilyRef.current,
+      );
+      applyTerminalThemeOnPanel(term, themeVariantRef.current, container);
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
       term.open(container);
+      // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
+      const disposeCharSizeOverride = applyDomCharSizeOverride(term);
+      const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
       const disposeInputFix = attachMacWebKitShiftInputFix(term);
-      loadWebglAddon(term);
+      const webglHandle = loadWebglAddon(term);
       const writer = createSmartWriter(term);
       const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
@@ -124,6 +152,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         lastSizeRef.current = { cols: s.cols, rows: s.rows };
         invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
+
+      // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
+      whenFontsReady.then(() => {
+        if (cleaned) return;
+        fit();
+      });
 
       initTimeoutId = window.setTimeout(() => {
         if (cleaned) return;
@@ -167,11 +201,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
         window.requestAnimationFrame(() => {
           fit();
-        const t = terminalRef.current;
-        if (t) {
+          const t = terminalRef.current;
+          if (t) {
+            refreshTerminalDisplay(t);
             t.focus();
-        }
-      });
+          }
+        });
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -190,6 +225,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       return () => {
         cleaned = true;
+        // 必须最先 unregister:后续任一 dispose 调用抛错会中断 cleanup,
+        // 让 term 永久滞留 activeTerminals,下次 sibling 广播命中 zombie。
+        unregisterActiveTerminal(term);
         if (initTimeoutId !== null) {
           window.clearTimeout(initTimeoutId);
         }
@@ -203,6 +241,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         terminalRef.current = null;
         fitAddonRef.current = null;
+        disposeCharSizeOverride();
+        webglHandle.dispose();
+        disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
         term.dispose();
@@ -222,13 +263,17 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
           }
         }
+        refreshTerminalDisplay(terminalRef.current);
         terminalRef.current.focus();
       });
     }, [isActive, shellId]);
 
     useEffect(() => {
-      if (terminalRef.current) {
-        terminalRef.current.options.theme = themeFor(themeVariant);
+      if (terminalRef.current && containerRef.current) {
+        applyTerminalThemeOnPanel(terminalRef.current, themeVariant, containerRef.current);
+        // 主题/对比度变化后 xterm 算出的最终前景色变了，但 WebGL atlas 仍缓存
+        // 旧色的 glyph 纹理，不刷新会看到颜色和字形错位。
+        refreshTerminalDisplay(terminalRef.current);
       }
     }, [themeVariant]);
 
@@ -249,27 +294,40 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
     useEffect(() => {
       if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
-      const size = applyTerminalFontFamily(
+      const result = applyTerminalFontFamily(
         terminalRef.current,
         fitAddonRef.current,
         monoFontFamily,
         containerRef.current,
       );
-      if (!size) return;
-      const last = lastSizeRef.current;
-      if (last && last.cols === size.cols && last.rows === size.rows) return;
-      lastSizeRef.current = { cols: size.cols, rows: size.rows };
-      invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+      if (!result) return;
+      const pushResize = (size: { cols: number; rows: number } | null) => {
+        if (!size) return;
+        const last = lastSizeRef.current;
+        if (last && last.cols === size.cols && last.rows === size.rows) return;
+        lastSizeRef.current = { cols: size.cols, rows: size.rows };
+        invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+      };
+      pushResize(result.immediate);
+      let cancelled = false;
+      result.whenSettled.then((s) => {
+        if (cancelled) return;
+        pushResize(s);
+      });
+      return () => {
+        cancelled = true;
+      };
     }, [monoFontFamily, shellId]);
 
     return (
       <div
         ref={containerRef}
+        className="nezha-xterm-host nezha-shell-xterm-host"
         style={{
           position: "absolute",
           inset: 0,
           overflow: "hidden",
-          padding: "4px 6px",
+          padding: "4px 0 16px 6px",
           cursor: "text",
           visibility: isActive ? "visible" : "hidden",
           pointerEvents: isActive ? "auto" : "none",
@@ -361,7 +419,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           borderTop: "1px solid var(--border-dim)",
           display: "flex",
           flexDirection: "column",
-          background: themeFor(themeVariant).background,
+          background: "var(--bg-panel)",
         }}
       >
         {onResizeStart && (

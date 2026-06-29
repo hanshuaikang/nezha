@@ -287,18 +287,6 @@ pub async fn generate_task_name(
     }
     let is_codex = agent == "codex";
 
-    // 临时策略：claude `-p` 计费变动期间，命名一律改用 codex（headless）生成，
-    // 规避 claude headless 额度消耗。codex 未安装则直接报错——不回落 claude
-    // （claude -p 当前不可用）。注意 session 摘要仍按任务真实 agent（is_codex）
-    // 读取，只有“生成标题的模型 + 输出解析”改用 naming_agent，故 claude 任务依旧
-    // 能带上自己的会话上下文。
-    let naming_agent = if crate::app_settings::codex_available() {
-        "codex"
-    } else {
-        return Err("codex 未安装，无法生成任务名称。请安装 codex 后重试。".to_string());
-    };
-    let naming_is_codex = naming_agent == "codex";
-
     // 1. 校验 project_path 合法（M-3）
     let project_for_validation = project_path.clone();
     tokio::task::spawn_blocking(move || validate_project_path_for_naming(&project_for_validation))
@@ -331,8 +319,7 @@ pub async fn generate_task_name(
 
     // 4. 调用 agent 子进程（kill-on-timeout）
     let output =
-        run_naming_agent_with_timeout(naming_agent, &project_path, &full_prompt, NAMING_TIMEOUT)
-            .await?;
+        run_naming_agent_with_timeout(&agent, &project_path, &full_prompt, NAMING_TIMEOUT).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -343,7 +330,7 @@ pub async fn generate_task_name(
     let raw = String::from_utf8_lossy(&output.stdout).into_owned();
     // Codex 只接受最后一个 `codex` 输出段里的 <TITLE>，避免命中 prompt 回显里的示例；
     // 未命中再回退到 banner 过滤。
-    let answer = if naming_is_codex {
+    let answer = if is_codex {
         extract_codex_titled_answer(&raw).unwrap_or_else(|| extract_codex_final_message(&raw))
     } else {
         extract_titled_answer(&raw).unwrap_or_else(|| raw.trim().to_string())
