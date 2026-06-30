@@ -37,7 +37,7 @@ import { ProjectPage } from "./components/ProjectPage";
 import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
 import { KanbanView, OPEN_KANBAN_VIEW_EVENT } from "./components/KanbanView";
 import { useToast } from "./components/Toast";
-import { isHideWindowShortcut } from "./shortcuts";
+import { isHideWindowShortcut, isToggleKanbanShortcut } from "./shortcuts";
 import { APP_PLATFORM } from "./platform";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
@@ -414,6 +414,19 @@ function App() {
     }
     window.addEventListener("keydown", handleHideWindow, true);
     return () => window.removeEventListener("keydown", handleHideWindow, true);
+  }, []);
+
+  useEffect(() => {
+    // Cmd+K (macOS) / Alt+K (其他平台) 切换看板浮层。全平台启用——平台差异由
+    // isToggleKanbanShortcut 内部处理（非 mac 用 Alt 以避开终端 Ctrl+K / Ctrl+Shift+C）。
+    // 捕获阶段拦截，先于 xterm 处理；浮层内的 Esc 关闭仍由 KanbanView 自己负责。
+    function handleToggleKanban(event: KeyboardEvent) {
+      if (!isToggleKanbanShortcut(event, APP_PLATFORM)) return;
+      event.preventDefault();
+      setShowKanban((prev) => !prev);
+    }
+    window.addEventListener("keydown", handleToggleKanban, true);
+    return () => window.removeEventListener("keydown", handleToggleKanban, true);
   }, []);
 
   useEffect(() => {

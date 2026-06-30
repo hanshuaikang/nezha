@@ -294,6 +294,18 @@ export const dialogs = {
     cursor: "default",
     opacity: 0.65,
   },
+  shortcutReadonlyKey: {
+    width: 132,
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 8px",
+    background: "transparent",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 7,
+    color: "var(--text-secondary)",
+    cursor: "default",
+    userSelect: "none",
+  },
   shortcutHint: {
     display: "inline-flex",
     alignItems: "center",

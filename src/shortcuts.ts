@@ -9,6 +9,8 @@ export interface PromptKeyEventLike {
   metaKey: boolean;
   ctrlKey: boolean;
   shiftKey: boolean;
+  /** Optional: real KeyboardEvents always carry it; kept optional so plain test literals stay valid. */
+  altKey?: boolean;
 }
 
 export function normalizeSendShortcut(value: unknown): SendShortcut {
@@ -54,6 +56,41 @@ export function isHideWindowShortcut(
   return platform === "macos"
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
+}
+
+/**
+ * Cmd+K (macOS) / Alt+K (其他平台) —— 切换看板浮层（开/关）。
+ * 非 macOS 用 Alt 而非 Ctrl 修饰键，是为了避开终端占用：Ctrl+K 是 readline 的
+ * kill-line，Ctrl+Shift+C/V 是终端复制粘贴命名空间。在全局 keydown 捕获阶段匹配，
+ * 先于 xterm 处理。展示键位见 getKanbanShortcutKeys —— 两者共用同一套平台定义。
+ */
+export function isToggleKanbanShortcut(
+  event: PromptKeyEventLike,
+  platform: AppPlatform,
+): boolean {
+  if (event.key !== "k" && event.key !== "K") {
+    return false;
+  }
+  if (event.shiftKey) {
+    return false;
+  }
+  return platform === "macos"
+    ? event.metaKey && !event.ctrlKey && !event.altKey
+    : Boolean(event.altKey) && !event.metaKey && !event.ctrlKey;
+}
+
+/**
+ * 看板切换快捷键的展示键位：macOS 为 ["⌘", "K"]，其他平台为 ["Alt", "K"]。
+ * 与 isToggleKanbanShortcut 共用同一套平台键位定义，保证提示与实际触发一致。
+ */
+export function getKanbanShortcutKeys(platform: AppPlatform): string[] {
+  return platform === "macos" ? ["⌘", "K"] : ["Alt", "K"];
+}
+
+/** 纯文本标签（用于 HTML title 等场景）：macOS 紧凑成 "⌘K"，其他平台用 "Alt + K"。 */
+export function getKanbanShortcutLabel(platform: AppPlatform): string {
+  const keys = getKanbanShortcutKeys(platform);
+  return platform === "macos" ? keys.join("") : keys.join(" + ");
 }
 
 export function shouldInsertPromptNewlineKey(

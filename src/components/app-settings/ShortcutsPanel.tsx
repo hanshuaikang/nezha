@@ -9,6 +9,7 @@ import {
   DEFAULT_SEND_SHORTCUT,
   DEFAULT_SHIFT_ENTER_NEWLINE,
   getAltEnterNewlineKeys,
+  getKanbanShortcutKeys,
   getNewlineShortcutKeys,
   getSendShortcutKeys,
   getShiftEnterNewlineKeys,
@@ -219,6 +220,14 @@ export function ShortcutsPanel() {
               </span>
             </button>
             <div style={s.shortcutHint}>{terminalNewlineHint}</div>
+          </div>
+          {/* 看板快捷键不可配置（固定 Cmd+K / Alt+K），只读展示，键位与 isToggleKanbanShortcut 同源 */}
+          <div style={s.shortcutField}>
+            <label style={s.shortcutFieldLabel}>{t("appSettings.kanbanShortcut")}</label>
+            <div style={s.shortcutReadonlyKey}>
+              {renderShortcutKeys(getKanbanShortcutKeys(APP_PLATFORM))}
+            </div>
+            <div style={s.shortcutHint}>{t("appSettings.kanbanShortcutHint")}</div>
           </div>
         </div>
       )}

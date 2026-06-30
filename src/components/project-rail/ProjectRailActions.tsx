@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ChevronsRight, LayoutGrid, Plus } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { APP_PLATFORM } from "../../platform";
+import { getKanbanShortcutLabel } from "../../shortcuts";
 import s from "../../styles";
 import { OPEN_KANBAN_VIEW_EVENT } from "../KanbanView";
 
@@ -21,7 +23,7 @@ export function ProjectRailActions({
   return (
     <>
       <button
-        title={t("kanban.title")}
+        title={`${t("kanban.title")} (${getKanbanShortcutLabel(APP_PLATFORM)})`}
         onClick={() => window.dispatchEvent(new CustomEvent(OPEN_KANBAN_VIEW_EVENT))}
         onMouseEnter={() => setKanbanHov(true)}
         onMouseLeave={() => setKanbanHov(false)}
