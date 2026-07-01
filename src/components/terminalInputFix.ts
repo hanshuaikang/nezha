@@ -1,6 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
 import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "../platform";
-import type { XTermWithPrivates } from "./xterm-private";
 
 type TerminalWithInput = Pick<Terminal, "input" | "textarea">;
 
@@ -205,7 +204,10 @@ const NON_PRINTABLE_KEYS = new Set([
 
 function isMultiCharRemoteInput(key: string): boolean {
   return (
-    key.length > 1 && !NON_PRINTABLE_KEYS.has(key) && /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}]+$/u.test(key)
+    key.length > 1 &&
+    !NON_PRINTABLE_KEYS.has(key) &&
+    // 远程输入法可能一次性发送带换行/制表符的多行文本（如粘贴），一并放行。
+    /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}\r\n\t]+$/u.test(key)
   );
 }
 
@@ -213,16 +215,16 @@ function isMultiCharRemoteInput(key: string): boolean {
  * 修复 macOS WKWebView 在手机 / Pad 远程输入法（如 UU 远程）下，终端只能收到
  * 第一个字符的问题。
  *
- * 远程输入法会直接把候选词作为 KeyboardEvent.key 发送（例如 key="测试"），而
- * xterm 的 keypress 处理只会按 keyCode 发第一个字。这里在 capture 阶段拦截这
- * 种多字符 keypress，直接发送完整 key 文本。
+ * 远程输入法会把整段文本作为 KeyboardEvent.key 发送（例如 key="测试"、
+ * key="Hello\nWorld"），而 xterm 的 keypress 处理只会按 keyCode 发第一个字。
+ * 这里在 capture 阶段拦截这种多字符 keypress，通过公共 API `Terminal.input()`
+ * 发送完整 key 文本，避免依赖 `_core.coreService.triggerDataEvent` 私有入口。
  */
 export function patchMacWebKitInputEvent(term: Terminal): () => void {
   if (!IS_MAC_WEBKIT) {
     return () => {};
   }
 
-  const core = (term as XTermWithPrivates)._core;
   const element = term.element;
   const textarea = term.textarea;
   if (!element || !textarea) {
@@ -233,7 +235,7 @@ export function patchMacWebKitInputEvent(term: Terminal): () => void {
     if (event.target !== textarea) return;
     if (!isMultiCharRemoteInput(event.key)) return;
 
-    core.coreService.triggerDataEvent(event.key, true);
+    term.input(event.key, true);
     event.preventDefault();
     event.stopImmediatePropagation();
   };
