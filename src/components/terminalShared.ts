@@ -5,11 +5,12 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
 import type { ThemeVariant } from "../types";
 // xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
-import type { XTermWithPrivates } from "./xterm-private";
+import type { XTermRasterizedGlyph, XTermWithPrivates } from "./xterm-private";
 
 // xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
 // 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
 const XTERM_SCROLLBAR_WIDTH = 12;
+const TERMINAL_VERTICAL_ALIGN_SHIFT_PX = 1;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -515,9 +516,52 @@ function refreshCharSizeAfterFontReady(term: Terminal, fontFamily: string): void
     if (term.options.fontFamily !== fontFamily) return;
     term.options.fontFamily = `${fontFamily}, monospace`;
     term.options.fontFamily = fontFamily;
+    applyTerminalVerticalAlignCompensation(term);
   } catch {
     /* term 已 dispose 的正常 race */
   }
+}
+
+function applyTerminalVerticalAlignCompensation(term: Terminal): void {
+  const core = (term as XTermWithPrivates)._core;
+  const renderService = core?._renderService;
+  const atlas = renderService?._renderer?.value?._charAtlas;
+  if (!atlas || atlas.__nezhaVerticalAlignPatched) return;
+
+  const deviceShift = Math.round(TERMINAL_VERTICAL_ALIGN_SHIFT_PX * window.devicePixelRatio);
+  if (deviceShift <= 0) return;
+
+  const shiftedGlyphCache = new WeakMap<XTermRasterizedGlyph, XTermRasterizedGlyph>();
+  const shiftFontGlyph = (glyph: XTermRasterizedGlyph): XTermRasterizedGlyph => {
+    const cached = shiftedGlyphCache.get(glyph);
+    if (cached) return cached;
+    const shifted = {
+      ...glyph,
+      offset: { ...glyph.offset, y: glyph.offset.y - deviceShift },
+    };
+    shiftedGlyphCache.set(glyph, shifted);
+    return shifted;
+  };
+
+  const originalGetGlyph = atlas.getRasterizedGlyph.bind(atlas);
+  const originalGetCombinedGlyph = atlas.getRasterizedGlyphCombinedChar.bind(atlas);
+
+  atlas.getRasterizedGlyph = (code, bg, fg, ext, restrictToCellHeight, domContainer) => {
+    const glyph = originalGetGlyph(code, bg, fg, ext, restrictToCellHeight, domContainer);
+    return shouldShiftTerminalGlyph(code) ? shiftFontGlyph(glyph) : glyph;
+  };
+  atlas.getRasterizedGlyphCombinedChar = (chars, bg, fg, ext, restrictToCellHeight, domContainer) =>
+    shiftFontGlyph(originalGetCombinedGlyph(chars, bg, fg, ext, restrictToCellHeight, domContainer));
+  atlas.__nezhaVerticalAlignPatched = true;
+  renderService?.refreshRows?.(0, term.rows - 1);
+}
+
+function shouldShiftTerminalGlyph(code: number): boolean {
+  // xterm customGlyphs already draws these cell-filling symbols at the right position.
+  // Shift font-rendered text and Nerd Font icons; keep Powerline and box/block glyphs stable.
+  if (code >= 0xe0a4 && code <= 0xe0d6) return false;
+  if (code >= 0x2500 && code <= 0x259f) return false;
+  return true;
 }
 
 export function initTerminal(
@@ -760,6 +804,7 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
         addon = null;
       });
       term.loadAddon(addon);
+      applyTerminalVerticalAlignCompensation(term);
       scheduleTextureAtlasRefresh(term);
       void whenFontEventuallyReady(fontFamily, fontSize).then(() => {
         if (!disposed && term.element) {
@@ -812,6 +857,7 @@ export function safeFit(
     if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return null;
     if (dims.cols < 2 || dims.rows < 2) return null;
     fitAddon.fit();
+    applyTerminalVerticalAlignCompensation(term);
     return { cols: term.cols, rows: term.rows };
   } catch {
     return null;
@@ -830,6 +876,7 @@ export function applyTerminalFontSize(
   if (term.options.fontSize === fontSize) return null;
   term.options.fontSize = fontSize;
   const result = safeFit(fitAddon, term, container);
+  applyTerminalVerticalAlignCompensation(term);
   scheduleTextureAtlasRefresh(term);
   return result;
 }
@@ -851,10 +898,13 @@ export function applyTerminalFontFamily(
   term.options.fontFamily = fontFamily;
   const fontSize = typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
   const immediate = safeFit(fitAddon, term, container);
+  applyTerminalVerticalAlignCompensation(term);
   const whenSettled = waitForFontReady(fontFamily, fontSize).then(() => {
     refreshCharSizeAfterFontReady(term, fontFamily);
     scheduleTextureAtlasRefresh(term);
-    return safeFit(fitAddon, term, container);
+    const settled = safeFit(fitAddon, term, container);
+    applyTerminalVerticalAlignCompensation(term);
+    return settled;
   });
   return { immediate, whenSettled };
 }

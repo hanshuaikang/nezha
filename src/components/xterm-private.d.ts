@@ -9,6 +9,8 @@
  * 升级 xterm 时检查（源参考 `node_modules/@xterm/xterm/src/browser/services/CharSizeService.ts`）：
  *   - `Terminal._core._charSizeService._measureStrategy.measure()` 是否仍存在
  *   - `IMeasureResult` 字段是否仍是 `{ width, height }`
+ *   - `Terminal._core._renderService._renderer.value._charAtlas` 是否仍存在
+ *   - `ITextureAtlas.getRasterizedGlyph*()` 和 `IRasterizedGlyph.offset` 是否仍兼容
  *
  * 字段名在 minified bundle 中未被 mangle（DI service token + class field），
  * 但 xterm 团队不承诺稳定。
@@ -35,6 +37,43 @@ export interface XTermCharSizeService {
 
 export interface XTermCore {
   _charSizeService?: XTermCharSizeService;
+  _renderService?: {
+    refreshRows?(start: number, end: number): void;
+    _renderer?: {
+      value?: {
+        _charAtlas?: XTermTextureAtlas;
+      };
+    };
+  };
+}
+
+export interface XTermRasterizedGlyph {
+  offset: { x: number; y: number };
+  texturePage: number;
+  texturePosition: { x: number; y: number };
+  texturePositionClipSpace: { x: number; y: number };
+  size: { x: number; y: number };
+  sizeClipSpace: { x: number; y: number };
+}
+
+export interface XTermTextureAtlas {
+  getRasterizedGlyph(
+    code: number,
+    bg: number,
+    fg: number,
+    ext: number,
+    restrictToCellHeight: boolean,
+    domContainer: HTMLElement | undefined,
+  ): XTermRasterizedGlyph;
+  getRasterizedGlyphCombinedChar(
+    chars: string,
+    bg: number,
+    fg: number,
+    ext: number,
+    restrictToCellHeight: boolean,
+    domContainer: HTMLElement | undefined,
+  ): XTermRasterizedGlyph;
+  __nezhaVerticalAlignPatched?: boolean;
 }
 
 /** 包含 `_core` 私有入口的 Terminal——命名带 "Private" 便于 grep 定位。 */
