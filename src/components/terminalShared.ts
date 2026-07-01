@@ -10,7 +10,7 @@ import type { XTermRasterizedGlyph, XTermWithPrivates } from "./xterm-private";
 // xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
 // 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
 const XTERM_SCROLLBAR_WIDTH = 12;
-const TERMINAL_VERTICAL_ALIGN_SHIFT_PX = 1;
+const TERMINAL_LINE_HEIGHT = 1.1;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -528,7 +528,7 @@ function applyTerminalVerticalAlignCompensation(term: Terminal): void {
   const atlas = renderService?._renderer?.value?._charAtlas;
   if (!atlas || atlas.__nezhaVerticalAlignPatched) return;
 
-  const deviceShift = Math.round(TERMINAL_VERTICAL_ALIGN_SHIFT_PX * window.devicePixelRatio);
+  const deviceShift = Math.round(getTerminalVerticalAlignShift(term) * window.devicePixelRatio);
   if (deviceShift <= 0) return;
 
   const shiftedGlyphCache = new WeakMap<XTermRasterizedGlyph, XTermRasterizedGlyph>();
@@ -556,6 +556,11 @@ function applyTerminalVerticalAlignCompensation(term: Terminal): void {
   renderService?.refreshRows?.(0, term.rows - 1);
 }
 
+function getTerminalVerticalAlignShift(term: Terminal): number {
+  const fontSize = typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
+  return Math.max(1, Math.min(2, Math.round(fontSize / 12)));
+}
+
 function shouldShiftTerminalGlyph(code: number): boolean {
   // xterm customGlyphs already draws these cell-filling symbols at the right position.
   // Shift font-rendered text and Nerd Font icons; keep Powerline and box/block glyphs stable.
@@ -576,6 +581,7 @@ export function initTerminal(
     cursorBlink: true,
     fontFamily,
     fontSize,
+    lineHeight: TERMINAL_LINE_HEIGHT,
     theme: themeFor(variant),
     minimumContrastRatio: minimumContrastRatioFor(variant),
     allowProposedApi: true,
