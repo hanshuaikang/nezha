@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { LayoutGrid, Star, X } from "lucide-react";
 import type { Project, Task, TaskStatus } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
@@ -39,10 +40,10 @@ function columnForStatus(status: TaskStatus): ColumnKey | null {
 
 const COLUMN_ORDER: ColumnKey[] = ["running", "attention", "awaiting"];
 
-const COLUMN_DOT_COLOR: Record<ColumnKey, string> = {
-  running: "var(--accent)",
-  attention: "var(--warning)",
-  awaiting: "var(--success)",
+const COLUMN_DOT_STYLE: Record<ColumnKey, CSSProperties> = {
+  running: s.kanbanColumnDotRunning,
+  attention: s.kanbanColumnDotAttention,
+  awaiting: s.kanbanColumnDotAwaiting,
 };
 
 function taskTitle(task: Task): string {
@@ -60,7 +61,7 @@ function KanbanCard({ task, onClick }: { task: Task; onClick: () => void }) {
   return (
     <button
       type="button"
-      style={{ ...s.kanbanCard, ...(hov ? s.kanbanCardHover : null) }}
+      style={hov ? s.kanbanCardHover : s.kanbanCard}
       onClick={onClick}
       title={taskTitle(task)}
       onMouseEnter={() => setHov(true)}
@@ -83,7 +84,7 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   return (
     <button
       type="button"
-      style={{ ...s.kanbanCloseBtn, ...(hov ? s.kanbanCloseBtnHover : null) }}
+      style={hov ? s.kanbanCloseBtnHover : s.kanbanCloseBtn}
       onClick={onClose}
       title={t("kanban.close")}
       aria-label={t("kanban.close")}
@@ -111,10 +112,7 @@ function ProjectHeader({
   return (
     <button
       type="button"
-      style={{
-        ...s.kanbanProjectHeader,
-        ...(hov ? s.kanbanProjectHeaderHover : null),
-      }}
+      style={hov ? s.kanbanProjectHeaderHover : s.kanbanProjectHeader}
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -245,10 +243,7 @@ export function KanbanView({
                   <div key={col} style={s.kanbanColumn}>
                     <div style={s.kanbanColumnHeader}>
                       <span
-                        style={{
-                          ...s.kanbanColumnDot,
-                          background: COLUMN_DOT_COLOR[col],
-                        }}
+                        style={COLUMN_DOT_STYLE[col]}
                         aria-hidden
                       />
                       <span style={s.kanbanColumnTitle}>

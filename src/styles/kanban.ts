@@ -1,5 +1,66 @@
 import type React from "react";
 
+const kanbanCloseBtn = {
+  width: 24,
+  height: 24,
+  display: "flex",
+  alignItems: "center" as const,
+  justifyContent: "center" as const,
+  border: "1px solid var(--border-dim)",
+  background: "transparent",
+  borderRadius: 6,
+  cursor: "pointer",
+  color: "var(--text-muted)",
+  transition: "background 0.12s, color 0.12s, border-color 0.12s",
+};
+
+const kanbanProjectHeader = {
+  display: "flex",
+  alignItems: "center" as const,
+  gap: 8,
+  marginBottom: 6,
+  cursor: "pointer",
+  border: "none",
+  background: "transparent",
+  padding: "2px 4px",
+  borderRadius: 6,
+  width: "fit-content",
+  textAlign: "left" as const,
+  transition: "background 0.12s",
+};
+
+const kanbanColumnDot = {
+  width: 6,
+  height: 6,
+  borderRadius: "50%",
+  flexShrink: 0,
+};
+
+const kanbanCard = {
+  display: "flex",
+  alignItems: "center" as const,
+  gap: 6,
+  padding: "4px 6px",
+  background: "transparent",
+  border: "1px solid transparent",
+  borderRadius: 6,
+  cursor: "pointer",
+  textAlign: "left" as const,
+  width: "100%",
+  transition: "background 0.12s, border-color 0.12s",
+};
+
+const railIconBtn = {
+  width: 32,
+  height: 32,
+  display: "flex",
+  alignItems: "center" as const,
+  justifyContent: "center" as const,
+  borderRadius: 8,
+  cursor: "pointer",
+  transition: "background 0.12s, color 0.12s",
+};
+
 export const kanban = {
   kanbanOverlay: {
     position: "fixed" as const,
@@ -26,19 +87,10 @@ export const kanban = {
     marginBottom: 2,
   },
   kanbanCloseBtn: {
-    width: 24,
-    height: 24,
-    display: "flex",
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    border: "1px solid var(--border-dim)",
-    background: "transparent",
-    borderRadius: 6,
-    cursor: "pointer",
-    color: "var(--text-muted)",
-    transition: "background 0.12s, color 0.12s, border-color 0.12s",
+    ...kanbanCloseBtn,
   },
   kanbanCloseBtnHover: {
+    ...kanbanCloseBtn,
     background: "var(--bg-hover)",
     color: "var(--text-primary)",
     borderColor: "var(--border-medium)",
@@ -72,20 +124,10 @@ export const kanban = {
     borderBottom: "1px solid var(--border-dim)",
   },
   kanbanProjectHeader: {
-    display: "flex",
-    alignItems: "center" as const,
-    gap: 8,
-    marginBottom: 6,
-    cursor: "pointer",
-    border: "none",
-    background: "transparent",
-    padding: "2px 4px",
-    borderRadius: 6,
-    width: "fit-content",
-    textAlign: "left" as const,
-    transition: "background 0.12s",
+    ...kanbanProjectHeader,
   },
   kanbanProjectHeaderHover: {
+    ...kanbanProjectHeader,
     background: "var(--bg-hover)",
   },
   kanbanProjectName: {
@@ -130,11 +172,17 @@ export const kanban = {
     marginBottom: 2,
     borderBottom: "1px dashed var(--border-dim)",
   },
-  kanbanColumnDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    flexShrink: 0,
+  kanbanColumnDotRunning: {
+    ...kanbanColumnDot,
+    background: "var(--accent)",
+  },
+  kanbanColumnDotAttention: {
+    ...kanbanColumnDot,
+    background: "var(--warning)",
+  },
+  kanbanColumnDotAwaiting: {
+    ...kanbanColumnDot,
+    background: "var(--success)",
   },
   kanbanColumnTitle: {
     fontSize: 11,
@@ -157,39 +205,63 @@ export const kanban = {
     fontStyle: "italic" as const,
   },
   kanbanCard: {
-    display: "flex",
-    alignItems: "center" as const,
-    gap: 6,
-    padding: "4px 6px",
-    background: "transparent",
-    border: "1px solid transparent",
-    borderRadius: 6,
-    cursor: "pointer",
-    textAlign: "left" as const,
-    width: "100%",
-    transition: "background 0.12s, border-color 0.12s",
+    ...kanbanCard,
   },
   kanbanCardHover: {
+    ...kanbanCard,
     background: "var(--bg-hover)",
     borderColor: "var(--border-medium)",
   },
   // ProjectRail 底部看板入口按钮 —— 与折叠按钮（ChevronsRight）同款无边框样式
   railKanbanBtn: {
-    width: 32,
-    height: 32,
-    display: "flex",
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
+    ...railIconBtn,
     background: "none",
     border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
     color: "var(--text-hint)",
-    transition: "background 0.12s, color 0.12s",
   },
   railKanbanBtnHover: {
+    ...railIconBtn,
     background: "var(--bg-hover)",
+    border: "none",
     color: "var(--text-muted)",
+  },
+  railExpandBtn: {
+    ...railIconBtn,
+    background: "none",
+    border: "none",
+    color: "var(--text-hint)",
+  },
+  railExpandBtnHover: {
+    ...railIconBtn,
+    background: "var(--bg-hover)",
+    border: "none",
+    color: "var(--text-muted)",
+  },
+  railExpandBtnOpen: {
+    ...railIconBtn,
+    background: "var(--accent-subtle)",
+    border: "none",
+    color: "var(--accent)",
+  },
+  railExpandIcon: {
+    transform: "none",
+    transition: "transform 0.18s",
+  },
+  railExpandIconOpen: {
+    transform: "rotate(180deg)",
+    transition: "transform 0.18s",
+  },
+  railAddBtn: {
+    ...railIconBtn,
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-medium)",
+    color: "var(--text-muted)",
+  },
+  railAddBtnHover: {
+    ...railIconBtn,
+    background: "var(--bg-hover)",
+    border: "1px solid var(--border-medium)",
+    color: "var(--text-primary)",
   },
   kanbanCardStatus: {
     flexShrink: 0,

@@ -47,6 +47,7 @@ function finish() {
         cwd: pick(payload, "cwd"),
         tool_name: pick(payload, "tool_name", "toolName"),
         permission_mode: pick(payload, "permission_mode", "permissionMode"),
+        notification_type: pick(payload, "notification_type", "notificationType"),
       }) + "\n";
     mkdirSync(eventDir, { recursive: true });
     appendFileSync(join(eventDir, "events.jsonl"), line);

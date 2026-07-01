@@ -5,8 +5,8 @@
 //! - 每个文件维护 byte offset,只读增量行
 //! - 解析每行 JSON 后,按 event 字段 dispatch:
 //!   * SessionStart → 注册 session 到 TaskManager + emit `task-session`
-//!   * Notification(Claude) / PermissionRequest(Codex) → `task-status` = input_required
-//!     (agent 真正需要用户介入:工具审批、问询)
+//!   * PermissionRequest(Codex) / Notification(Claude permission_prompt、elicitation_dialog)
+//!     → `task-status` = input_required(agent 真正需要用户介入:工具审批、问询)
 //!   * UserPromptSubmit / PostToolUse → `task-status` = running(清除 input/awaiting)
 //!   * Stop(Claude & Codex)→ `task-status` = awaiting_review(交互式 REPL 一轮结束、
 //!     等待用户验收;进程不退出,PTY exit monitor 不会触发)。Claude 不能靠 Notification
@@ -51,6 +51,8 @@ struct HookEvent {
     session_id: String,
     #[serde(default)]
     transcript_path: String,
+    #[serde(default)]
+    notification_type: String,
 }
 
 pub fn start(app: AppHandle) {
@@ -155,9 +157,16 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
     }
     match ev.event.as_str() {
         "SessionStart" => handle_session_start(app, ev),
-        // Claude 的 Notification 与 Codex 的 PermissionRequest 都表示"等待用户输入"
-        // (Claude 工具审批/提问通知;Codex 工具审批/网络升级请求)。
-        "Notification" | "PermissionRequest" => emit_active_status(app, ev, "input_required"),
+        // Claude 的 Notification 包含多种类型:permission_prompt / elicitation_dialog
+        // 才是真正需要用户介入;idle_prompt 只是 Stop 后等待下一条 prompt 的延迟通知,
+        // 不能覆盖 Stop 已经发出的 awaiting_review。
+        "Notification" => {
+            if notification_requires_attention(ev) {
+                emit_active_status(app, ev, "input_required");
+            }
+        }
+        // Codex 有独立 PermissionRequest 事件,不混入 idle 语义。
+        "PermissionRequest" => emit_active_status(app, ev, "input_required"),
         // 重新回到工作状态、清除 input_required 的两条信号:
         // - UserPromptSubmit:用户提交了下一条 prompt。
         // - PostToolUse:工具执行成功后触发(ask 模式下即审批通过后)。工具审批
@@ -174,6 +183,17 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
         "Stop" => emit_active_status(app, ev, "awaiting_review"),
         // SubagentStop(子代理结束)主代理仍在工作,不主动 emit。
         _ => {}
+    }
+}
+
+fn notification_requires_attention(ev: &HookEvent) -> bool {
+    match ev.notification_type.as_str() {
+        // 旧版 bridge 未记录 notification_type;保留旧行为,避免升级过程中漏掉审批。
+        "" => true,
+        "permission_prompt" | "elicitation_dialog" => true,
+        "idle_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response" => false,
+        // 未知新类型宁可保守标记为需要关注,后续再按实测收敛。
+        _ => true,
     }
 }
 
@@ -269,5 +289,41 @@ pub fn cleanup_task_events(task_id: &str) {
     last_status().lock().remove(task_id);
     if let Ok(dir) = crate::hooks::events_dir_for(task_id) {
         let _ = fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hook_event(event: &str) -> HookEvent {
+        HookEvent {
+            task_id: "task-1".to_string(),
+            agent: "claude".to_string(),
+            event: event.to_string(),
+            session_id: String::new(),
+            transcript_path: String::new(),
+            notification_type: String::new(),
+        }
+    }
+
+    #[test]
+    fn claude_idle_notification_does_not_request_attention() {
+        let mut ev = hook_event("Notification");
+        ev.notification_type = "idle_prompt".to_string();
+        assert!(!notification_requires_attention(&ev));
+    }
+
+    #[test]
+    fn claude_permission_notification_requests_attention() {
+        let mut ev = hook_event("Notification");
+        ev.notification_type = "permission_prompt".to_string();
+        assert!(notification_requires_attention(&ev));
+    }
+
+    #[test]
+    fn legacy_notification_without_type_keeps_old_attention_behavior() {
+        let ev = hook_event("Notification");
+        assert!(notification_requires_attention(&ev));
     }
 }
