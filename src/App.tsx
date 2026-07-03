@@ -826,6 +826,9 @@ function App() {
       }
     }
 
+    // Agent cwd 恒为 project.path（workspace 根）——多 repo 项目下 agent 才能同时看到所有 sub-repo。
+    // sub-repo picker（effectiveRepoPath）只用于 git 面板 / branch bar / worktree 落地位置，
+    // 不参与 agent 启动路径；worktree 模式仍以 worktree 路径为 cwd（隔离语义生效）。
     invokeRunTask(
       {
         ...baseTask,
@@ -834,7 +837,7 @@ function App() {
         baseBranch: resolvedBaseBranch,
         worktreeRepo: worktreePath ? effectiveRepoPath : undefined,
       },
-      worktreePath ?? effectiveRepoPath,
+      worktreePath ?? project.path,
       images,
       texts,
     );

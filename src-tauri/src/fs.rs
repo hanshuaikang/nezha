@@ -308,7 +308,7 @@ pub async fn open_in_system_file_manager(path: String, project_path: String) -> 
 pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         validate_path_within(&path, &project_path, true)?;
-        read_dir_entries_blocking(&path, &project_path)
+        read_dir_entries_blocking(&path)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -322,15 +322,15 @@ pub async fn read_compact_dir_entries(
     tauri::async_runtime::spawn_blocking(move || {
         validate_path_within(&path, &project_path, true)?;
         let entries = read_dir_entries_raw(&path)?;
-        read_compact_dir_entries_blocking(entries, &project_path)
+        read_compact_dir_entries_blocking(entries, &path)
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
-fn read_dir_entries_blocking(path: &str, project_path: &str) -> Result<Vec<FsEntry>, String> {
+fn read_dir_entries_blocking(path: &str) -> Result<Vec<FsEntry>, String> {
     let mut result = read_dir_entries_raw(path)?;
-    mark_gitignored(&mut result, project_path);
+    mark_gitignored(&mut result, path);
     Ok(result)
 }
 
@@ -374,7 +374,7 @@ fn read_dir_entries_raw(path: &str) -> Result<Vec<FsEntry>, String> {
 /// In-process gitignore matcher replacing the previous per-directory-read
 /// `git check-ignore --stdin` subprocess (a spawn per tree refresh per directory).
 ///
-/// Semantics: `.gitignore` files from the project root down to the entry's parent
+/// Semantics: `.gitignore` files from the nearest repository root down to the entry's parent
 /// (deepest wins), then `.git/info/exclude`, then the user's global gitignore.
 /// Known divergence from git: a whitelist (`!pattern`) in a deeper file wins here
 /// even when a parent directory is excluded higher up, whereas git never
@@ -391,8 +391,13 @@ struct IgnoreMatcher {
 }
 
 impl IgnoreMatcher {
-    fn new(project_path: &str) -> Self {
-        let project_root = std::path::PathBuf::from(project_path);
+    fn new(dir: &str) -> Self {
+        let dir = std::path::PathBuf::from(dir);
+        let project_root = dir
+            .ancestors()
+            .find(|ancestor| ancestor.join(".git").exists())
+            .map(Path::to_path_buf)
+            .unwrap_or(dir);
         let (global, _) = ignore::gitignore::Gitignore::global();
         // `.git` is a plain file in worktrees; `is_file()` then fails and we skip, matching git.
         let exclude_path = project_root.join(".git").join("info").join("exclude");
@@ -467,11 +472,11 @@ impl IgnoreMatcher {
     }
 }
 
-fn mark_gitignored(result: &mut [FsEntry], project_path: &str) {
+fn mark_gitignored(result: &mut [FsEntry], dir: &str) {
     if result.is_empty() {
         return;
     }
-    let mut matcher = IgnoreMatcher::new(project_path);
+    let mut matcher = IgnoreMatcher::new(dir);
     for entry in result {
         entry.is_gitignored = matcher.is_ignored(Path::new(&entry.path), entry.is_dir);
     }
@@ -479,9 +484,9 @@ fn mark_gitignored(result: &mut [FsEntry], project_path: &str) {
 
 fn read_compact_dir_entries_blocking(
     entries: Vec<FsEntry>,
-    project_path: &str,
+    dir: &str,
 ) -> Result<Vec<FsEntry>, String> {
-    let mut matcher = IgnoreMatcher::new(project_path);
+    let mut matcher = IgnoreMatcher::new(dir);
     entries
         .into_iter()
         .map(|mut entry| {
