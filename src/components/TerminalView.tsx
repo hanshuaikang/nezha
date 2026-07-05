@@ -96,6 +96,7 @@ export function TerminalView({
     containerRef,
     isActive,
     onInsertText: insertDroppedPathText,
+    externalDrops: true,
   });
 
   useEffect(() => {
