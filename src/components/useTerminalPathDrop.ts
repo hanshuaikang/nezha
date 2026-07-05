@@ -33,8 +33,12 @@ function handleExternalDragDrop(payload: DragDropEvent) {
   }
   lastExternalDrop = { key, at: now };
 
-  // Tauri 给的是物理像素坐标，换算成 CSS 坐标再做命中判定
-  const scale = window.devicePixelRatio || 1;
+  // Tauri 一律把坐标包成 PhysicalPosition，但 wry 只有 Windows（ScreenToClient
+  // 后的客户区坐标）是真物理像素；macOS（NSDraggingInfo.draggingLocation）和
+  // Linux（GTK widget 坐标）本就是逻辑坐标（上游 mislabel）。因此只在 Windows
+  // 除以 devicePixelRatio，其余平台直接当 CSS 坐标用——Retina 屏上误除会把
+  // 坐标砍半导致命中判定永远落空。
+  const scale = APP_PLATFORM === "windows" ? window.devicePixelRatio || 1 : 1;
   const x = payload.position.x / scale;
   const y = payload.position.y / scale;
 
