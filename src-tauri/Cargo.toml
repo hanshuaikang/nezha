@@ -24,7 +24,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +43,11 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 uuid = { version = "1", features = ["v4"] }
 trash = "=5.2.6"
 font-kit = "=0.14.3"
+
+# 仅 Windows:关闭到托盘后进程常驻,需单实例守卫防止再次打开图标时启动重复后端
+# (两套 watcher/hook 抢写同一批 ~/.nezha 文件)。
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [profile.dev]
 debug = 0
