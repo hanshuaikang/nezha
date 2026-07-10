@@ -27,14 +27,13 @@ import {
   unregisterActiveTerminal,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { attachTerminalFilePaste } from "./terminalFilePaste";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
-  onRegisterTerminal: (
-    writeFn: ((data: string, callback?: () => void) => void) | null,
-  ) => number;
+  onRegisterTerminal: (writeFn: ((data: string, callback?: () => void) => void) | null) => number;
   onReady?: (generation: number) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
@@ -44,6 +43,9 @@ interface TerminalViewProps {
   initialData?: string;
   initialSnapshot?: string;
   onSnapshot?: (snapshot: string) => void;
+  projectPath?: string;
+  taskId?: string;
+  onPasteFileError?: (error: unknown) => void;
 }
 
 export function TerminalView({
@@ -59,6 +61,9 @@ export function TerminalView({
   initialData,
   initialSnapshot,
   onSnapshot,
+  projectPath,
+  taskId,
+  onPasteFileError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -68,10 +73,12 @@ export function TerminalView({
   const onRegisterRef = useRef(onRegisterTerminal);
   const onReadyRef = useRef(onReady);
   const onSnapshotRef = useRef(onSnapshot);
+  const onPasteFileErrorRef = useRef(onPasteFileError);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const shiftEnterNewlineRef = useRef<boolean>(DEFAULT_SHIFT_ENTER_NEWLINE);
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
+  onPasteFileErrorRef.current = onPasteFileError;
 
   // Keep refs current on every render
   onInputRef.current = onInput;
@@ -173,6 +180,16 @@ export function TerminalView({
       matchesNewline: (e) => matchesTerminalNewline(e, shiftEnterNewlineRef.current),
       onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
     });
+    const disposeFilePaste =
+      projectPath && taskId
+        ? attachTerminalFilePaste({
+            container,
+            projectPath,
+            taskId,
+            onInput: (data) => onInputRef.current(data),
+            onError: (error) => onPasteFileErrorRef.current?.(error),
+          })
+        : () => {};
     const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
     const disposeOnData = { dispose: () => linuxIME.dispose() };
 
@@ -223,6 +240,7 @@ export function TerminalView({
       disposeMacWebKitGuard();
       disposeInputFix();
       disposeSmartCopy();
+      disposeFilePaste();
       disposeOnData.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();

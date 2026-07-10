@@ -171,6 +171,34 @@ export const dialogs = {
     marginTop: 1,
     color: "var(--warning)",
   },
+  settingsField: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+  },
+  settingsFieldSpaced: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    marginTop: 18,
+  },
+  settingsFieldLabel: {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--text-secondary)",
+    marginBottom: 5,
+  },
+  settingsFieldHint: {
+    fontSize: 11,
+    color: "var(--text-hint)",
+    marginTop: 3,
+  },
+  settingsFieldError: {
+    color: "var(--danger)",
+    fontSize: 12.5,
+    marginTop: 12,
+  },
   settingsNumberInput: {
     width: 86,
     height: 28,
@@ -492,6 +520,20 @@ export const dialogs = {
   },
   settingsInputWithFlex: {
     flex: 1,
+  },
+  settingsAttachmentNumberInput: {
+    width: 110,
+    height: 28,
+    padding: "0 6px",
+    borderRadius: 6,
+    border: "1px solid var(--border-medium)",
+    background: "var(--bg-card)",
+    color: "var(--text-secondary)",
+    fontSize: 12,
+    fontWeight: 600,
+    fontFamily: "var(--font-mono)",
+    textAlign: "center" as const,
+    outline: "none",
   },
   settingsUnitText: {
     color: "var(--text-hint)",

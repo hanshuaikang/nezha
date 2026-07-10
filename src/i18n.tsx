@@ -65,6 +65,14 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.attentionBadgeToggle": "Show pending-confirmation count",
     "appSettings.attentionBadgeHint":
       "Show a yellow count badge on the project rail for tasks awaiting your confirmation. When off, a yellow dot is shown instead.",
+    "appSettings.attachmentPaste": "Attachment Paste",
+    "appSettings.attachmentPasteToggle": "Enable Cmd + V image and file paste",
+    "appSettings.attachmentPasteHint":
+      "Applies to running task terminals and embedded shell terminals on macOS.",
+    "appSettings.attachmentMaxSize": "Single Attachment Limit",
+    "appSettings.attachmentMaxCount": "Task Attachment Limit",
+    "appSettings.attachmentMaxCountHint":
+      "Older files in the task attachment folder are removed first when the limit would be exceeded.",
     "appSettings.terminalScrollback": "Terminal Scrollback",
     "appSettings.terminalScrollbackUnit": "lines",
     "appSettings.terminalScrollbackHint":
@@ -597,6 +605,12 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.attentionBadgeToggle": "显示待确认任务数量",
     "appSettings.attentionBadgeHint":
       "在项目栏为等待你确认的任务显示黄色数量角标。关闭后则显示黄色小圆点。",
+    "appSettings.attachmentPaste": "附件粘贴",
+    "appSettings.attachmentPasteToggle": "开启 Cmd + V 粘贴图片与附件",
+    "appSettings.attachmentPasteHint": "仅作用于 macOS 上的运行中任务终端和嵌入式 Shell 终端。",
+    "appSettings.attachmentMaxSize": "单个附件最大体积",
+    "appSettings.attachmentMaxCount": "任务最大附件数量",
+    "appSettings.attachmentMaxCountHint": "超过上限前会优先删除任务附件目录里的旧文件。",
     "appSettings.terminalScrollback": "终端滚动缓冲",
     "appSettings.terminalScrollbackUnit": "行",
     "appSettings.terminalScrollbackHint":

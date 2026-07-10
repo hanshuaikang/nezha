@@ -13,6 +13,7 @@ import {
   type TerminalScrollback,
 } from "../../types";
 import s from "../../styles";
+import { AttachmentPasteSettings } from "./AttachmentPasteSettings";
 
 export function GeneralPanel({
   taskDisplayWindow,
@@ -241,6 +242,8 @@ export function GeneralPanel({
           </div>
         )}
       </div>
+
+      <AttachmentPasteSettings />
     </div>
   );
 }
