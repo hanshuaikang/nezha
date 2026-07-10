@@ -12,20 +12,28 @@ export type NavKey =
   | "thanks"
   | "community"
   | "claude"
-  | "codex";
+  | "codex"
+  | "pi";
 
 export interface HookInstallStatus {
   node_path: string;
   script_path: string;
+  pi_extension_path: string;
   claude_installed: boolean;
   codex_installed: boolean;
+  pi_installed: boolean;
   error?: string;
 }
 
-export type HookReadinessReason = "ok" | "no_node" | "not_installed" | "version_too_low";
+export type HookReadinessReason =
+  | "ok"
+  | "agent_missing"
+  | "no_node"
+  | "not_installed"
+  | "version_too_low";
 
 export interface HookAgentReadiness {
-  agent: "claude" | "codex";
+  agent: "claude" | "codex" | "pi";
   usable: boolean;
   reason: HookReadinessReason;
   detectedVersion: string;
@@ -35,6 +43,7 @@ export interface HookAgentReadiness {
 export interface AppSettings {
   claude_path: string;
   codex_path: string;
+  pi_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
   claude_force_default_tui: boolean;
@@ -44,9 +53,10 @@ export interface AppSettings {
 export interface AgentVersions {
   claude_version: string;
   codex_version: string;
+  pi_version: string;
 }
 
-export type AgentKey = "claude" | "codex";
+export type AgentKey = "claude" | "codex" | "pi";
 
 export type NavSection = "application" | "agents" | "community" | "about";
 

@@ -8,6 +8,8 @@
 //! - Codex:在 `~/.codex/config.toml` 中用 `# >>> nezha-managed-begin >>>` /
 //!   `# <<< nezha-managed-end <<<` 注释包裹的区域整体替换。区域外的用户内容
 //!   按字符串切片完整保留。
+//! - Pi:启动任务时通过 `--extension <Nezha 自有 ts 文件>` 加载事件桥,不修改
+//!   用户 Pi 配置。
 //! - hook 脚本依靠 NEZHA_TASK_ID + NEZHA_EVENT_DIR 环境变量守卫;用户手动跑
 //!   agent 时 hook 立即 exit 0,无任何副作用。
 
@@ -26,12 +28,14 @@ use crate::storage::atomic_write;
 /// 低于此版本注入的 hook 会被 trust 模型 skip 或拼 flag 报错,回退轮询 watcher。
 const CODEX_HOOK_MIN_VERSION: &str = "0.131.0";
 const CLAUDE_HOOK_MIN_VERSION: &str = "2.1.87";
+const PI_HOOK_MIN_VERSION: &str = "0.79.3";
 /// Claude settings.json 中 `tui` 字段引入版本(v2.1.110+ 才识别)。低于此版本时
 /// 不在 Nezha settings 文件里写 tui 字段、也不在命令行传 --settings,避免向旧版
 /// Claude 投喂未知 key 触发严格校验报错。
 pub const CLAUDE_TUI_MIN_VERSION: &str = "2.1.110";
 
 const HOOK_SCRIPT: &str = include_str!("nezha-hook.mjs");
+const PI_EXTENSION: &str = include_str!("nezha-pi-extension.ts");
 
 const NEZHA_MARKER_FIELD: &str = "_nezha_managed";
 
@@ -63,8 +67,10 @@ const CODEX_EVENTS: &[&str] = &[
 pub struct HookInstallStatus {
     pub node_path: String,
     pub script_path: String,
+    pub pi_extension_path: String,
     pub claude_installed: bool,
     pub codex_installed: bool,
+    pub pi_installed: bool,
     /// 安装期间发生的错误说明(展示给用户,可选)
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub error: String,
@@ -82,6 +88,10 @@ pub fn hooks_dir() -> Result<PathBuf, String> {
 
 pub fn script_path() -> Result<PathBuf, String> {
     Ok(hooks_dir()?.join("nezha-hook.mjs"))
+}
+
+pub fn pi_extension_path() -> Result<PathBuf, String> {
+    Ok(hooks_dir()?.join("nezha-pi-extension.ts"))
 }
 
 pub fn events_root() -> Result<PathBuf, String> {
@@ -129,6 +139,14 @@ pub fn write_hook_script() -> Result<PathBuf, String> {
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
     let path = script_path()?;
     atomic_write(&path, HOOK_SCRIPT)?;
+    Ok(path)
+}
+
+pub fn write_pi_extension() -> Result<PathBuf, String> {
+    let dir = hooks_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
+    let path = pi_extension_path()?;
+    atomic_write(&path, PI_EXTENSION)?;
     Ok(path)
 }
 
@@ -297,7 +315,10 @@ fn build_codex_block(_node_path: &str, script: &str) -> String {
         // Codex 的 `command` 只能是字符串(无 args 数组),在 Windows 上经
         // `cmd.exe /C` 执行、Unix 经 `/bin/sh -lc` 执行;裸 `node "<script>"`
         // 两边都成立。toml_quote 负责把内层的 `"` 与路径反斜杠转义成合法 TOML。
-        out.push_str(&format!("command = {}\n", toml_quote(&hook_command(script))));
+        out.push_str(&format!(
+            "command = {}\n",
+            toml_quote(&hook_command(script))
+        ));
         out.push('\n');
     }
     out.push_str(CODEX_END);
@@ -446,35 +467,41 @@ pub fn cache_status(status: HookInstallStatus) {
 pub struct HookAgentReadiness {
     pub agent: String,
     pub usable: bool,
-    /// "ok" | "no_node" | "not_installed" | "version_too_low"
+    /// "ok" | "agent_missing" | "no_node" | "not_installed" | "version_too_low"
     pub reason: String,
     pub detected_version: String,
     pub min_version: String,
 }
 
 fn readiness_for(agent: &str, status: &HookInstallStatus) -> HookAgentReadiness {
-    let (installed, min_version, detected) = if agent == "codex" {
-        (
+    let (installed, min_version, detected) = match agent {
+        "codex" => (
             status.codex_installed,
             CODEX_HOOK_MIN_VERSION,
             crate::app_settings::detect_codex_version().unwrap_or_default(),
-        )
-    } else {
-        (
+        ),
+        "pi" => (
+            status.pi_installed,
+            PI_HOOK_MIN_VERSION,
+            crate::app_settings::detect_pi_version().unwrap_or_default(),
+        ),
+        _ => (
             status.claude_installed,
             CLAUDE_HOOK_MIN_VERSION,
             crate::app_settings::detect_claude_version().unwrap_or_default(),
-        )
+        ),
     };
 
     let version_ok = !detected.is_empty()
-        && if agent == "codex" {
-            crate::app_settings::codex_version_gte(min_version)
-        } else {
-            crate::app_settings::claude_version_gte(min_version)
+        && match agent {
+            "codex" => crate::app_settings::codex_version_gte(min_version),
+            "pi" => crate::app_settings::pi_version_gte(min_version),
+            _ => crate::app_settings::claude_version_gte(min_version),
         };
 
-    let reason = if status.node_path.is_empty() {
+    let reason = if detected.is_empty() {
+        "agent_missing"
+    } else if agent != "pi" && status.node_path.is_empty() {
         "no_node"
     } else if !installed {
         "not_installed"
@@ -500,13 +527,19 @@ fn readiness_for(agent: &str, status: &HookInstallStatus) -> HookAgentReadiness 
 /// 版本号统一走 `*_version_gte` 的全局带缓存探测,不再读取项目级 config 中的版本字段。
 pub fn usable_for(agent: &str) -> bool {
     let status = status_cache().lock().clone();
-    if status.node_path.is_empty() {
-        return false;
-    }
-    if agent == "codex" {
-        status.codex_installed && crate::app_settings::codex_version_gte(CODEX_HOOK_MIN_VERSION)
-    } else {
-        status.claude_installed && crate::app_settings::claude_version_gte(CLAUDE_HOOK_MIN_VERSION)
+    match agent {
+        "codex" => {
+            !status.node_path.is_empty()
+                && status.codex_installed
+                && crate::app_settings::codex_version_gte(CODEX_HOOK_MIN_VERSION)
+        }
+        "claude" => {
+            !status.node_path.is_empty()
+                && status.claude_installed
+                && crate::app_settings::claude_version_gte(CLAUDE_HOOK_MIN_VERSION)
+        }
+        "pi" => status.pi_installed && crate::app_settings::pi_version_gte(PI_HOOK_MIN_VERSION),
+        _ => false,
     }
 }
 
@@ -515,11 +548,7 @@ pub fn usable_for(agent: &str) -> bool {
 /// 启动期一次性安装。失败不阻塞,仅返回状态。
 pub fn ensure_installed() -> HookInstallStatus {
     let mut status = HookInstallStatus::default();
-    let Some(node) = detect_node() else {
-        status.error = "node not found in PATH".into();
-        return status;
-    };
-    status.node_path = node.clone();
+    status.node_path = detect_node().unwrap_or_default();
 
     let script = match write_hook_script() {
         Ok(p) => p.to_string_lossy().into_owned(),
@@ -529,6 +558,24 @@ pub fn ensure_installed() -> HookInstallStatus {
         }
     };
     status.script_path = script.clone();
+
+    match write_pi_extension() {
+        Ok(p) => {
+            status.pi_extension_path = p.to_string_lossy().into_owned();
+            status.pi_installed = true;
+        }
+        Err(e) => status.error = format!("pi extension: {}", e),
+    }
+
+    if status.node_path.is_empty() {
+        if status.error.is_empty() {
+            status.error = "node not found in PATH".into();
+        } else {
+            status.error = format!("{}; node not found in PATH", status.error);
+        }
+        return status;
+    }
+    let node = status.node_path.clone();
 
     // Claude:命令行 --settings 模式——把 hooks 写进 Nezha 自有文件,启动任务时通过
     // `--settings <path>` 传入,完全不修改用户的 ~/.claude/settings.json。
@@ -573,11 +620,20 @@ pub fn uninstall() -> Result<(), String> {
             .filter(|p| p.exists())
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
+        pi_extension_path: pi_extension_path()
+            .ok()
+            .filter(|p| p.exists())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         claude_installed: false,
         codex_installed: false,
+        pi_installed: false,
         error: String::new(),
     });
     regenerate_claude_settings()?;
+    if let Ok(p) = pi_extension_path() {
+        let _ = fs::remove_file(&p);
+    }
     let claude = claude_settings_path()?;
     uninject_claude_settings_at(&claude)?;
     let codex = codex_config_path()?;
@@ -594,6 +650,11 @@ pub fn current_status() -> HookInstallStatus {
             .filter(|p| p.exists())
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
+        pi_extension_path: pi_extension_path()
+            .ok()
+            .filter(|p| p.exists())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         ..Default::default()
     };
     // Claude 命令行模式:Nezha 自有 settings 文件 *且* 文件含 hooks 字段才算就绪——
@@ -603,6 +664,9 @@ pub fn current_status() -> HookInstallStatus {
     }
     if let Ok(p) = codex_config_path() {
         status.codex_installed = codex_config_has_nezha(&p);
+    }
+    if let Ok(p) = pi_extension_path() {
+        status.pi_installed = p.exists();
     }
     status
 }
@@ -636,7 +700,7 @@ pub async fn get_hook_status() -> Result<HookInstallStatus, String> {
         .map_err(|e| e.to_string())
 }
 
-/// 返回 claude / codex 两个 agent 的 hook 就绪状态(node + 安装 + 版本)。
+/// 返回 claude / codex / pi 三个 agent 的 hook 就绪状态(安装 + 版本)。
 #[tauri::command]
 pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
     tokio::task::spawn_blocking(|| {
@@ -647,6 +711,7 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
         vec![
             readiness_for("claude", &status),
             readiness_for("codex", &status),
+            readiness_for("pi", &status),
         ]
     })
     .await
@@ -721,12 +786,8 @@ mod tests {
     fn claude_settings_value_escapes_windows_paths() {
         // 命令是裸 node + 双引号脚本路径;序列化后脚本路径的反斜杠必须被正确转义,
         // 保证 Windows 路径是合法 JSON。
-        let v = build_claude_settings_value(
-            r"C:\node.exe",
-            r"C:\hooks\nezha-hook.mjs",
-            true,
-            false,
-        );
+        let v =
+            build_claude_settings_value(r"C:\node.exe", r"C:\hooks\nezha-hook.mjs", true, false);
         let raw = serde_json::to_string(&v).unwrap();
         assert!(raw.contains(r"C:\\hooks\\nezha-hook.mjs"));
         // 回环解析得到原始命令
@@ -845,6 +906,42 @@ command = \"echo user-stop\"\n";
         assert_eq!(toml_quote("plain"), "\"plain\"");
         assert_eq!(toml_quote("with \"quote\""), "\"with \\\"quote\\\"\"");
         assert_eq!(toml_quote("with\\back"), "\"with\\\\back\"");
+    }
+
+    #[test]
+    fn pi_extension_asset_registers_expected_events() {
+        for event in [
+            "session_start",
+            "input",
+            "agent_start",
+            "turn_start",
+            "model_select",
+            "tool_execution_end",
+            "agent_end",
+        ] {
+            assert!(PI_EXTENSION.contains(&format!("pi.on(\"{}\"", event)));
+        }
+        assert!(PI_EXTENSION.contains("getSessionId"));
+        assert!(PI_EXTENSION.contains("getSessionFile"));
+        assert!(PI_EXTENSION.contains("getContextUsage"));
+        assert!(PI_EXTENSION.contains("contextWindow"));
+        assert!(PI_EXTENSION.contains(".nezha-metrics.json"));
+        assert!(PI_EXTENSION.contains("events.jsonl"));
+    }
+
+    #[test]
+    fn pi_readiness_does_not_require_node() {
+        let status = HookInstallStatus {
+            node_path: String::new(),
+            script_path: String::new(),
+            pi_extension_path: "/tmp/nezha-pi-extension.ts".to_string(),
+            claude_installed: false,
+            codex_installed: false,
+            pi_installed: true,
+            error: String::new(),
+        };
+        let readiness = readiness_for("pi", &status);
+        assert_ne!(readiness.reason, "no_node");
     }
 
     // ── 文件级集成 ──────────────────────────────────────────────────────────

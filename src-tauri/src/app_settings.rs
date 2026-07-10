@@ -42,6 +42,7 @@ fn clamp_terminal_scrollback(value: u32) -> u32 {
 
 static CACHED_CLAUDE_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static CACHED_CODEX_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
+static CACHED_PI_VERSION: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
 static SETTINGS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub fn get_login_shell_env() -> &'static [(String, String)] {
@@ -58,6 +59,8 @@ pub struct AppSettings {
     pub claude_path: String,
     #[serde(default)]
     pub codex_path: String,
+    #[serde(default)]
+    pub pi_path: String,
     #[serde(default = "default_send_shortcut")]
     pub send_shortcut: String,
     #[serde(default = "default_shift_enter_newline")]
@@ -76,6 +79,7 @@ impl Default for AppSettings {
         Self {
             claude_path: String::new(),
             codex_path: String::new(),
+            pi_path: String::new(),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
             claude_force_default_tui: default_claude_force_default_tui(),
@@ -99,6 +103,13 @@ fn get_agent_configured_path(settings: &AppSettings, agent: &str) -> String {
                 settings.codex_path.clone()
             }
         }
+        "pi" => {
+            if settings.pi_path.is_empty() {
+                "pi".to_string()
+            } else {
+                settings.pi_path.clone()
+            }
+        }
         _ => {
             if settings.claude_path.is_empty() {
                 "claude".to_string()
@@ -113,9 +124,8 @@ fn clear_cached_versions() {
     *CACHED_CLAUDE_VERSION
         .get_or_init(|| Mutex::new(None))
         .lock() = None;
-    *CACHED_CODEX_VERSION
-        .get_or_init(|| Mutex::new(None))
-        .lock() = None;
+    *CACHED_CODEX_VERSION.get_or_init(|| Mutex::new(None)).lock() = None;
+    *CACHED_PI_VERSION.get_or_init(|| Mutex::new(None)).lock() = None;
 }
 
 fn settings_lock() -> &'static Mutex<()> {
@@ -123,7 +133,8 @@ fn settings_lock() -> &'static Mutex<()> {
 }
 
 fn nezha_dir() -> Result<PathBuf, String> {
-    let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let home =
+        crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
 
@@ -166,7 +177,11 @@ fn path_file_name_eq(path: &Path, expected: &str) -> bool {
 
 #[cfg(windows)]
 fn find_scoped_package_root(path: &Path, scope: &str, package: &str) -> Option<PathBuf> {
-    let mut current = if path.is_dir() { Some(path) } else { path.parent() };
+    let mut current = if path.is_dir() {
+        Some(path)
+    } else {
+        path.parent()
+    };
     while let Some(dir) = current {
         let parent = dir.parent()?;
         if path_file_name_eq(dir, package) && path_file_name_eq(parent, scope) {
@@ -185,7 +200,12 @@ fn npm_package_root_from_shim(path: &Path, scope: &str, package: &str) -> Option
 }
 
 #[cfg(windows)]
-fn candidate_from_ancestors(path: &Path, scope: &str, package: &str, relative: &[&str]) -> Option<PathBuf> {
+fn candidate_from_ancestors(
+    path: &Path,
+    scope: &str,
+    package: &str,
+    relative: &[&str],
+) -> Option<PathBuf> {
     let package_root = find_scoped_package_root(path, scope, package)
         .or_else(|| npm_package_root_from_shim(path, scope, package))?;
     let mut candidate = package_root;
@@ -196,7 +216,9 @@ fn candidate_from_ancestors(path: &Path, scope: &str, package: &str, relative: &
 }
 
 #[cfg(windows)]
-fn codex_vendor_artifact_from_vendor_root(vendor_root: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
+fn codex_vendor_artifact_from_vendor_root(
+    vendor_root: &Path,
+) -> Option<(PathBuf, Option<PathBuf>)> {
     if !vendor_root.is_dir() {
         return None;
     }
@@ -221,7 +243,11 @@ fn codex_vendor_artifact_from_vendor_root(vendor_root: &Path) -> Option<(PathBuf
 
 #[cfg(windows)]
 fn resolve_codex_vendor_artifact(path: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
-    if path_file_name_eq(path, "codex.exe") && path.parent().is_some_and(|parent| path_file_name_eq(parent, "codex")) {
+    if path_file_name_eq(path, "codex.exe")
+        && path
+            .parent()
+            .is_some_and(|parent| path_file_name_eq(parent, "codex"))
+    {
         let arch_root = path.parent()?.parent()?;
         let path_dir = arch_root.join("path");
         return Some((path.to_path_buf(), path_dir.is_dir().then_some(path_dir)));
@@ -250,7 +276,9 @@ fn resolve_codex_vendor_artifact(path: &Path) -> Option<(PathBuf, Option<PathBuf
             package_dirs.sort();
 
             for package_dir in package_dirs {
-                if let Some(found) = codex_vendor_artifact_from_vendor_root(&package_dir.join("vendor")) {
+                if let Some(found) =
+                    codex_vendor_artifact_from_vendor_root(&package_dir.join("vendor"))
+                {
                     return Some(found);
                 }
             }
@@ -305,7 +333,8 @@ fn resolve_agent_launch_spec_from_path(agent: &str, path: &str) -> AgentLaunchSp
         "codex" => {
             if let Some((program, path_dir)) = resolve_codex_vendor_artifact(resolved_path) {
                 let mut extra_env = Vec::new();
-                if let Some(path_value) = prepend_to_path(&path_dir.into_iter().collect::<Vec<_>>()) {
+                if let Some(path_value) = prepend_to_path(&path_dir.into_iter().collect::<Vec<_>>())
+                {
                     extra_env.push(("PATH".to_string(), path_value));
                 }
                 extra_env.push(("CODEX_MANAGED_BY_NPM".to_string(), "1".to_string()));
@@ -335,6 +364,7 @@ fn normalize_settings(settings: AppSettings) -> AppSettings {
     AppSettings {
         claude_path: resolve_agent_launch_spec_from_path("claude", &settings.claude_path).program,
         codex_path: resolve_agent_launch_spec_from_path("codex", &settings.codex_path).program,
+        pi_path: resolve_agent_launch_spec_from_path("pi", &settings.pi_path).program,
         send_shortcut: normalize_send_shortcut(settings.send_shortcut),
         terminal_shift_enter_newline: settings.terminal_shift_enter_newline,
         claude_force_default_tui: settings.claude_force_default_tui,
@@ -352,6 +382,7 @@ fn load_settings_unlocked() -> AppSettings {
         let settings = normalize_settings(AppSettings {
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
+            pi_path: detect_path("pi"),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
             claude_force_default_tui: default_claude_force_default_tui(),
@@ -413,13 +444,18 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn save_agent_paths(claude_path: String, codex_path: String) -> Result<AppSettings, String> {
+pub async fn save_agent_paths(
+    claude_path: String,
+    codex_path: String,
+    pi_path: String,
+) -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(move || {
         let normalized = {
             let _guard = settings_lock().lock();
             let mut settings = load_settings_unlocked();
             settings.claude_path = claude_path;
             settings.codex_path = codex_path;
+            settings.pi_path = pi_path;
 
             let dir = nezha_dir()?;
             fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -525,6 +561,7 @@ pub async fn detect_agent_paths() -> Result<AppSettings, String> {
         let mut settings = load_settings_internal();
         settings.claude_path = detect_path("claude");
         settings.codex_path = detect_path("codex");
+        settings.pi_path = detect_path("pi");
         Ok(normalize_settings(settings))
     })
     .await
@@ -558,6 +595,8 @@ fn detect_versions_for_settings(settings: &AppSettings) -> AgentVersions {
         claude_version: detect_version(&get_agent_launch_spec_from_settings(settings, "claude"))
             .unwrap_or_default(),
         codex_version: detect_version(&get_agent_launch_spec_from_settings(settings, "codex"))
+            .unwrap_or_default(),
+        pi_version: detect_version(&get_agent_launch_spec_from_settings(settings, "pi"))
             .unwrap_or_default(),
     }
 }
@@ -595,6 +634,18 @@ pub fn detect_codex_version() -> Option<String> {
     detected
 }
 
+pub fn detect_pi_version() -> Option<String> {
+    let cache = CACHED_PI_VERSION.get_or_init(|| Mutex::new(None));
+    let mut guard = cache.lock();
+    if let Some(version) = guard.clone() {
+        return version;
+    }
+
+    let detected = detect_version(&get_agent_launch_spec("pi"));
+    *guard = Some(detected.clone());
+    detected
+}
+
 /// 版本号统一走全局带缓存的探测；探测失败视为不满足。
 pub fn claude_version_gte(min_version: &str) -> bool {
     match detect_claude_version() {
@@ -611,8 +662,18 @@ pub fn codex_version_gte(min_version: &str) -> bool {
     }
 }
 
+/// 版本号统一走全局带缓存的探测；探测失败视为不满足。
+pub fn pi_version_gte(min_version: &str) -> bool {
+    match detect_pi_version() {
+        Some(v) => parse_semver(&v) >= parse_semver(min_version),
+        None => false,
+    }
+}
+
 #[tauri::command]
-pub async fn detect_agent_versions_for_settings(settings: AppSettings) -> Result<AgentVersions, String> {
+pub async fn detect_agent_versions_for_settings(
+    settings: AppSettings,
+) -> Result<AgentVersions, String> {
     tokio::task::spawn_blocking(move || detect_versions_for_settings(&settings))
         .await
         .map_err(|e| e.to_string())
@@ -622,6 +683,7 @@ pub async fn detect_agent_versions_for_settings(settings: AppSettings) -> Result
 pub struct AgentVersions {
     pub claude_version: String,
     pub codex_version: String,
+    pub pi_version: String,
 }
 
 static SYSTEM_FONTS: OnceLock<Vec<String>> = OnceLock::new();

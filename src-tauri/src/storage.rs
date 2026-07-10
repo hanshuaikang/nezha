@@ -40,7 +40,10 @@ pub struct Task {
     pub created_at: i64,
     #[serde(rename = "updatedAt", default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
-    #[serde(rename = "attentionRequestedAt", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "attentionRequestedAt",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub attention_requested_at: Option<i64>,
     #[serde(rename = "claudeSessionId", skip_serializing_if = "Option::is_none")]
     pub claude_session_id: Option<String>,
@@ -50,6 +53,10 @@ pub struct Task {
     pub codex_session_id: Option<String>,
     #[serde(rename = "codexSessionPath", skip_serializing_if = "Option::is_none")]
     pub codex_session_path: Option<String>,
+    #[serde(rename = "piSessionId", skip_serializing_if = "Option::is_none")]
+    pub pi_session_id: Option<String>,
+    #[serde(rename = "piSessionPath", skip_serializing_if = "Option::is_none")]
+    pub pi_session_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub starred: Option<bool>,
     #[serde(rename = "failureReason", skip_serializing_if = "Option::is_none")]
@@ -71,7 +78,8 @@ pub struct Task {
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
 pub(crate) fn nezha_dir() -> Result<PathBuf, String> {
-    let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let home =
+        crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
 
@@ -183,4 +191,58 @@ pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
         let _ = fs::remove_file(&tmp);
         e.to_string()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_deserializes_without_pi_session_fields() {
+        let raw = r#"{
+          "id": "t1",
+          "projectId": "p1",
+          "prompt": "hello",
+          "agent": "claude",
+          "permissionMode": "ask",
+          "status": "done",
+          "createdAt": 1
+        }"#;
+        let task: Task = serde_json::from_str(raw).unwrap();
+        assert!(task.pi_session_id.is_none());
+        assert!(task.pi_session_path.is_none());
+    }
+
+    #[test]
+    fn task_serializes_pi_session_fields() {
+        let task = Task {
+            id: "t1".to_string(),
+            project_id: "p1".to_string(),
+            name: None,
+            prompt: "hello".to_string(),
+            agent: "pi".to_string(),
+            permission_mode: "ask".to_string(),
+            status: "done".to_string(),
+            created_at: 1,
+            updated_at: None,
+            attention_requested_at: None,
+            claude_session_id: None,
+            claude_session_path: None,
+            codex_session_id: None,
+            codex_session_path: None,
+            pi_session_id: Some("sid".to_string()),
+            pi_session_path: Some("/tmp/session.jsonl".to_string()),
+            starred: None,
+            failure_reason: None,
+            worktree_path: None,
+            worktree_branch: None,
+            base_branch: None,
+            worktree_discarded: None,
+            additions: None,
+            deletions: None,
+        };
+        let value = serde_json::to_value(task).unwrap();
+        assert_eq!(value["piSessionId"], "sid");
+        assert_eq!(value["piSessionPath"], "/tmp/session.jsonl");
+    }
 }

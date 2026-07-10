@@ -9,7 +9,7 @@ import type {
   FontFamily,
   ThemeVariant,
 } from "../types";
-import { permissionModeLabel } from "../types";
+import { agentLabel, permissionModeLabel, taskSessionId, taskSessionPath } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
@@ -59,6 +59,13 @@ function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`;
+}
+
+function formatContextTokens(metrics: SessionMetrics): string {
+  if (metrics.context_window <= 0) return formatTokens(metrics.context_tokens);
+  return `${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
+    (metrics.context_tokens / metrics.context_window) * 100,
+  )}%)`;
 }
 
 function formatFileSize(bytes: number): string {
@@ -143,8 +150,8 @@ export function RunningView({
     task.status === "awaiting_review";
   const isDetached = task.status === "detached";
   const isInterrupted = task.status === "interrupted";
-  const sessionPath = task.claudeSessionPath ?? task.codexSessionPath;
-  const resumeSessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
+  const sessionPath = taskSessionPath(task);
+  const resumeSessionId = taskSessionId(task);
   const restoreState = getRestoreState?.() ?? {};
 
   const { snapshot: usageSnapshot } = useUsageSnapshot(visible && ENABLE_USAGE_INSIGHTS);
@@ -215,7 +222,7 @@ export function RunningView({
           prompt: task.prompt,
           agent: task.agent,
           createdAt: task.createdAt,
-          sessionId: task.agent === "codex" ? task.codexSessionId : task.claudeSessionId,
+          sessionId: taskSessionId(task),
           worktreeBranch: task.worktreeBranch,
           baseBranch: task.baseBranch,
           additions: task.additions,
@@ -534,10 +541,11 @@ export function RunningView({
       >
         <div style={s.runMetaRow}>
           <span style={s.runMetaFixed}>
-            {task.agent === "claude" ? "✦ Claude Code" : "⬡ Codex"} ·{" "}
+            {task.agent === "claude" ? "✦" : task.agent === "codex" ? "⬡" : "π"}{" "}
+            {agentLabel(task.agent)} ·{" "}
             {permissionModeLabel(task.permissionMode, task.agent)}
           </span>
-          {ENABLE_USAGE_INSIGHTS && usageSnapshot && (task.agent === "claude"
+          {ENABLE_USAGE_INSIGHTS && usageSnapshot && task.agent !== "pi" && (task.agent === "claude"
             ? usageSnapshot.claude.status === "available" && (
                 <>
                   {usageSnapshot.claude.data.fiveHour && (
@@ -586,12 +594,10 @@ export function RunningView({
               <>
                 <MetricPill label={t("running.duration")} value={formatDuration(metrics.duration_secs)} />
                 <MetricPill label={t("running.tokens")} value={formatTokens(metrics.total_tokens)} />
-                {metrics.context_window > 0 && metrics.context_tokens > 0 && (
+                {metrics.context_tokens > 0 && (
                   <MetricPill
                     label={t("running.context")}
-                    value={`${formatTokens(metrics.context_tokens)} / ${formatTokens(metrics.context_window)} (${Math.round(
-                      (metrics.context_tokens / metrics.context_window) * 100,
-                    )}%)`}
+                    value={formatContextTokens(metrics)}
                   />
                 )}
               </>

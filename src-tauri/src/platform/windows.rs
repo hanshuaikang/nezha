@@ -9,14 +9,16 @@ static LOGIN_SHELL_PATH: OnceLock<String> = OnceLock::new();
 pub(crate) fn home_dir() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .map(PathBuf::from)
-        .or_else(|| match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
-            (Some(drive), Some(path)) => {
-                let mut full = PathBuf::from(drive);
-                full.push(PathBuf::from(path));
-                Some(full)
-            }
-            _ => None,
-        })
+        .or_else(
+            || match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+                (Some(drive), Some(path)) => {
+                    let mut full = PathBuf::from(drive);
+                    full.push(PathBuf::from(path));
+                    Some(full)
+                }
+                _ => None,
+            },
+        )
 }
 
 pub(crate) fn login_shell_env() -> &'static [(String, String)] {

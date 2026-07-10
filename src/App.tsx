@@ -18,6 +18,8 @@ import type {
 } from "./types";
 import {
   isActiveTaskStatus,
+  taskSessionId,
+  taskSessionPath,
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
   DEFAULT_TERMINAL_SCROLLBACK,
@@ -933,8 +935,8 @@ function App() {
 
   function handleResumeTask(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
-    const sessionId = task?.agent === "codex" ? task.codexSessionId : task?.claudeSessionId;
     if (!task) return;
+    const sessionId = taskSessionId(task);
     if (!sessionId) {
       showToast(t("running.resumeUnavailable"), "warning");
       return;
@@ -968,7 +970,7 @@ function App() {
   async function handleReconnectTask(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
-    const sessionId = task.agent === "codex" ? task.codexSessionId : task.claudeSessionId;
+    const sessionId = taskSessionId(task);
     if (!sessionId) {
       showToast(t("running.resumeUnavailable"), "warning");
       return;
@@ -1128,10 +1130,7 @@ function App() {
     const project = projects.find((p) => p.id === task.projectId);
     if (!project) return;
     // 按 agent 选择对应字段，避免历史数据两个字段都有时取错
-    const sessionPath =
-      task.agent === "codex"
-        ? (task.codexSessionPath ?? null)
-        : (task.claudeSessionPath ?? null);
+    const sessionPath = taskSessionPath(task) ?? null;
     // 点击瞬间的快照，用于 await 完成后的并发校验（防止用户期间 rerun/resume/手改名）
     const expectedPriorName = task.name ?? "";
     const expectedPrompt = task.prompt;
@@ -1155,10 +1154,7 @@ function App() {
         if ((current.name ?? "") !== expectedPriorName) return prev;
         if (current.prompt !== expectedPrompt) return prev;
         if (current.status !== expectedStatus) return prev;
-        const currentSessionPath =
-          current.agent === "codex"
-            ? (current.codexSessionPath ?? null)
-            : (current.claudeSessionPath ?? null);
+        const currentSessionPath = taskSessionPath(current) ?? null;
         if (currentSessionPath !== expectedSessionPath) return prev;
 
         const next = prev.map((x) => (x.id === taskId ? { ...x, name: trimmed || undefined } : x));
@@ -1283,12 +1279,16 @@ function App() {
             return task;
           changed = true;
           return { ...task, claudeSessionId: sessionId, claudeSessionPath: sessionPath };
-        } else {
+        }
+        if (task.agent === "codex") {
           if (task.codexSessionId === sessionId && task.codexSessionPath === sessionPath)
             return task;
           changed = true;
           return { ...task, codexSessionId: sessionId, codexSessionPath: sessionPath };
         }
+        if (task.piSessionId === sessionId && task.piSessionPath === sessionPath) return task;
+        changed = true;
+        return { ...task, piSessionId: sessionId, piSessionPath: sessionPath };
       });
 
       if (changed) {

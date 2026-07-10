@@ -42,28 +42,30 @@ export function renderShortcutKeys(keys: string[], keyStyle = shortcutKeyStyle) 
 
 export function getAgentSettingsFilePath(agent: AgentKey): string {
   if (APP_PLATFORM === "windows") {
-    return agent === "claude"
-      ? "%USERPROFILE%\\.claude\\settings.json"
-      : "%USERPROFILE%\\.codex\\config.toml";
+    if (agent === "claude") return "%USERPROFILE%\\.claude\\settings.json";
+    if (agent === "codex") return "%USERPROFILE%\\.codex\\config.toml";
+    return "%USERPROFILE%\\.pi\\agent\\settings.json";
   }
 
-  return agent === "claude" ? "~/.claude/settings.json" : "~/.codex/config.toml";
+  if (agent === "claude") return "~/.claude/settings.json";
+  if (agent === "codex") return "~/.codex/config.toml";
+  return "~/.pi/agent/settings.json";
 }
 
 export function getAgentExecutablePlaceholder(agent: AgentKey): string {
   if (APP_PLATFORM === "windows") {
-    return agent === "claude"
-      ? "claude or C:\\Users\\<you>\\AppData\\Roaming\\npm\\claude.cmd"
-      : "codex or C:\\Users\\<you>\\AppData\\Roaming\\npm\\codex.cmd";
+    if (agent === "claude") return "claude or C:\\Users\\<you>\\AppData\\Roaming\\npm\\claude.cmd";
+    if (agent === "codex") return "codex or C:\\Users\\<you>\\AppData\\Roaming\\npm\\codex.cmd";
+    return "pi or C:\\Users\\<you>\\AppData\\Roaming\\npm\\pi.cmd";
   }
 
   if (APP_PLATFORM === "macos") {
-    return agent === "claude"
-      ? "claude or /opt/homebrew/bin/claude"
-      : "codex or /opt/homebrew/bin/codex";
+    if (agent === "claude") return "claude or /opt/homebrew/bin/claude";
+    if (agent === "codex") return "codex or /opt/homebrew/bin/codex";
+    return "pi or /opt/homebrew/bin/pi";
   }
 
-  return agent === "claude"
-    ? "claude or /usr/local/bin/claude"
-    : "codex or /usr/local/bin/codex";
+  if (agent === "claude") return "claude or /usr/local/bin/claude";
+  if (agent === "codex") return "codex or /usr/local/bin/codex";
+  return "pi or /usr/local/bin/pi";
 }

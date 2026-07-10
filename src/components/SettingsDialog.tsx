@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as RadixSelect from "@radix-ui/react-select";
 import { X, FolderOpen, ChevronDown, Check } from "lucide-react";
 import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
+import { AGENT_TYPES, agentLabel } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
@@ -197,10 +198,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
                 <Select
                   value={agentDefault}
                   onChange={setAgentDefault}
-                  options={[
-                    { value: "claude", label: "Claude Code" },
-                    { value: "codex", label: "Codex" },
-                  ]}
+                  options={AGENT_TYPES.map((agent) => ({ value: agent, label: agentLabel(agent) }))}
                 />
               </div>
               <div style={s.modalField}>

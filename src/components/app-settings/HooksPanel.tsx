@@ -32,8 +32,10 @@ export function HooksPanel() {
       setStatus({
         node_path: "",
         script_path: "",
+        pi_extension_path: "",
         claude_installed: false,
         codex_installed: false,
+        pi_installed: false,
         error: String(err),
       });
     }
@@ -55,8 +57,10 @@ export function HooksPanel() {
       setStatus((prev) => ({
         node_path: prev?.node_path ?? "",
         script_path: prev?.script_path ?? "",
+        pi_extension_path: prev?.pi_extension_path ?? "",
         claude_installed: false,
         codex_installed: false,
+        pi_installed: false,
         error: String(err),
       }));
     } finally {
@@ -76,15 +80,27 @@ export function HooksPanel() {
 
   const nodeOk = !!status?.node_path;
   const busy = action !== "idle";
-  const uninstallDisabled = busy || (!status?.claude_installed && !status?.codex_installed);
+  const uninstallDisabled =
+    busy || (!status?.claude_installed && !status?.codex_installed && !status?.pi_installed);
 
-  // 已安装 + 有 node 后,额外展示版本是否达到 hook 门槛(生效 / 已回退轮询)。
-  const renderVersionLine = (agentKey: "claude" | "codex", installed: boolean) => {
+  // 已安装后,额外展示版本是否达到 hook 门槛(生效 / 已回退轮询)。
+  const renderVersionLine = (agentKey: "claude" | "codex" | "pi", installed: boolean) => {
     const r = readiness.find((x) => x.agent === agentKey);
-    if (!r || !installed || r.reason === "no_node" || r.reason === "not_installed") {
+    if (!r) {
       return null;
     }
-    const agentName = agentKey === "claude" ? "Claude Code" : "Codex";
+    const agentName = agentKey === "claude" ? "Claude Code" : agentKey === "codex" ? "Codex" : "Pi";
+    if (r.reason === "agent_missing") {
+      return (
+        <div style={s.hooksPanelSubRow}>
+          <span style={s.hooksPanelRowSpacer} />
+          <span style={s.hooksPanelVersionLow}>{t("appSettings.hooks.agentMissing", { agent: agentName })}</span>
+        </div>
+      );
+    }
+    if (!installed || r.reason === "no_node" || r.reason === "not_installed") {
+      return null;
+    }
     const ok = r.usable;
     return (
       <div style={s.hooksPanelSubRow}>
@@ -146,6 +162,21 @@ export function HooksPanel() {
           </span>
         </div>
         {renderVersionLine("codex", !!status?.codex_installed)}
+        <div style={s.hooksPanelRow}>
+          <StatusIcon ok={!!status?.pi_installed} />
+          <span>
+            {status?.pi_installed
+              ? t("appSettings.hooks.piInstalled")
+              : t("appSettings.hooks.piMissing")}
+          </span>
+        </div>
+        {status?.pi_extension_path ? (
+          <div style={s.hooksPanelSubRow}>
+            <span style={s.hooksPanelRowSpacer} />
+            <span>{t("appSettings.hooks.piExtensionPath", { path: status.pi_extension_path })}</span>
+          </div>
+        ) : null}
+        {renderVersionLine("pi", !!status?.pi_installed)}
         {status?.error ? (
           <div style={s.hooksPanelErrorRow}>
             <AlertCircle size={14} />

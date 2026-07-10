@@ -840,7 +840,11 @@ pub async fn cleanup_installations_for_project(project_id: String) -> Result<usi
         let mut file = load_installations_internal();
         let original_len = file.installations.len();
 
-        for ins in file.installations.iter().filter(|i| i.project_id == project_id) {
+        for ins in file
+            .installations
+            .iter()
+            .filter(|i| i.project_id == project_id)
+        {
             let link = Path::new(&ins.link_path);
             if let Ok(meta) = fs::symlink_metadata(link) {
                 if meta.file_type().is_symlink() {
@@ -849,7 +853,8 @@ pub async fn cleanup_installations_for_project(project_id: String) -> Result<usi
             }
         }
 
-        file.installations.retain(|ins| ins.project_id != project_id);
+        file.installations
+            .retain(|ins| ins.project_id != project_id);
         let removed = original_len - file.installations.len();
         if removed > 0 {
             save_installations_internal(&file)?;

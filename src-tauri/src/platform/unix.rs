@@ -12,7 +12,9 @@ pub(crate) fn home_dir() -> Option<std::path::PathBuf> {
 }
 
 pub(crate) fn login_shell_env() -> &'static [(String, String)] {
-    LOGIN_SHELL_ENV.get_or_init(resolve_login_shell_env).as_slice()
+    LOGIN_SHELL_ENV
+        .get_or_init(resolve_login_shell_env)
+        .as_slice()
 }
 
 pub(crate) fn login_shell_path() -> &'static str {

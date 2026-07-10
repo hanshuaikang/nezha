@@ -9,7 +9,7 @@ const DEFAULT_CONFIG: &str = r#"# Nezha project configuration
 # https://github.com/hanshuaikang/nezha
 
 [agent]
-# Default agent to use for new tasks: "claude" or "codex"
+# Default agent to use for new tasks: "claude", "codex", or "pi"
 default = "claude"
 # Default permission mode for new tasks: "ask", "auto_edit", or "full_access"
 default_permission_mode = "ask"
@@ -114,8 +114,7 @@ pub fn write_project_config(project_path: String, config: ProjectConfig) -> Resu
 }
 
 fn home_dir() -> Result<std::path::PathBuf, String> {
-    crate::platform::home_dir()
-        .ok_or_else(|| "Cannot find home directory".to_string())
+    crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())
 }
 
 fn agent_config_path(agent: &str) -> Result<std::path::PathBuf, String> {
@@ -123,6 +122,7 @@ fn agent_config_path(agent: &str) -> Result<std::path::PathBuf, String> {
     match agent {
         "claude" => Ok(home.join(".claude").join("settings.json")),
         "codex" => Ok(home.join(".codex").join("config.toml")),
+        "pi" => Ok(home.join(".pi").join("agent").join("settings.json")),
         _ => Err(format!("Unknown agent: {}", agent)),
     }
 }
@@ -140,7 +140,9 @@ pub fn read_agent_config_file(agent: String) -> Result<Option<String>, String> {
     if !path.exists() {
         return Ok(None);
     }
-    fs::read_to_string(&path).map(Some).map_err(|e| e.to_string())
+    fs::read_to_string(&path)
+        .map(Some)
+        .map_err(|e| e.to_string())
 }
 
 /// Writes raw content back to the agent's local settings file.

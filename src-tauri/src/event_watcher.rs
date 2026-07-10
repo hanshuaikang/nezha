@@ -7,8 +7,9 @@
 //!   * SessionStart → 注册 session 到 TaskManager + emit `task-session`
 //!   * PermissionRequest(Codex) / Notification(Claude permission_prompt、elicitation_dialog)
 //!     → `task-status` = input_required(agent 真正需要用户介入:工具审批、问询)
-//!   * UserPromptSubmit / PostToolUse → `task-status` = running(清除 input/awaiting)
-//!   * Stop(Claude & Codex)→ `task-status` = awaiting_review(交互式 REPL 一轮结束、
+//!   * UserPromptSubmit / AgentStart / TurnStart / PostToolUse → `task-status` = running
+//!     (清除 input/awaiting)
+//!   * Stop(Claude / Codex / Pi)→ `task-status` = awaiting_review(交互式 REPL 一轮结束、
 //!     等待用户验收;进程不退出,PTY exit monitor 不会触发)。Claude 不能靠 Notification
 //!     兜底——其"空闲等待输入" Notification 约 60s 后才触发,会让角标晚一分钟才出现。
 //!     语义上 Stop 表示"agent 自认为做完了",和工具审批是不同信号,前端看板要分列。
@@ -32,7 +33,7 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::session::{ClaudeSessionInfo, CodexSessionInfo};
+use crate::session::{ClaudeSessionInfo, CodexSessionInfo, PiSessionInfo};
 use crate::TaskManager;
 
 /// watcher 不可用(初始化失败)时的回退轮询间隔;watcher 正常时也用作兜底唤醒
@@ -53,6 +54,50 @@ struct HookEvent {
     transcript_path: String,
     #[serde(default)]
     notification_type: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HookSessionTarget {
+    Claude,
+    Codex,
+    Pi,
+}
+
+fn session_target_for_agent(agent: &str) -> HookSessionTarget {
+    match agent {
+        "codex" => HookSessionTarget::Codex,
+        "pi" => HookSessionTarget::Pi,
+        _ => HookSessionTarget::Claude,
+    }
+}
+
+fn status_for_hook_event(event: &str) -> Option<&'static str> {
+    match event {
+        "PermissionRequest" => Some("input_required"),
+        "UserPromptSubmit" | "AgentStart" | "TurnStart" | "PostToolUse" => Some("running"),
+        "Stop" => Some("awaiting_review"),
+        _ => None,
+    }
+}
+
+fn should_skip_session_start(
+    target: HookSessionTarget,
+    existing_session_id: &str,
+    existing_session_path: &str,
+    existing_is_placeholder: bool,
+    next_session_id: &str,
+    next_session_path: &str,
+) -> bool {
+    if existing_session_id != next_session_id {
+        return false;
+    }
+    if target == HookSessionTarget::Claude && existing_is_placeholder {
+        return false;
+    }
+    if next_session_path.is_empty() {
+        return true;
+    }
+    existing_session_path == next_session_path
 }
 
 pub fn start(app: AppHandle) {
@@ -155,34 +200,18 @@ fn dispatch(app: &AppHandle, ev: &HookEvent) {
     if ev.task_id.is_empty() {
         return;
     }
-    match ev.event.as_str() {
-        "SessionStart" => handle_session_start(app, ev),
-        // Claude 的 Notification 包含多种类型:permission_prompt / elicitation_dialog
-        // 才是真正需要用户介入;idle_prompt 只是 Stop 后等待下一条 prompt 的延迟通知,
-        // 不能覆盖 Stop 已经发出的 awaiting_review。
-        "Notification" => {
-            if notification_requires_attention(ev) {
-                emit_active_status(app, ev, "input_required");
-            }
+    if ev.event == "SessionStart" {
+        handle_session_start(app, ev);
+        return;
+    }
+    if ev.event == "Notification" {
+        if notification_requires_attention(ev) {
+            emit_active_status(app, ev, "input_required");
         }
-        // Codex 有独立 PermissionRequest 事件,不混入 idle 语义。
-        "PermissionRequest" => emit_active_status(app, ev, "input_required"),
-        // 重新回到工作状态、清除 input_required 的两条信号:
-        // - UserPromptSubmit:用户提交了下一条 prompt。
-        // - PostToolUse:工具执行成功后触发(ask 模式下即审批通过后)。工具审批
-        //   不会触发 UserPromptSubmit,必须靠 PostToolUse 才能把 input_required 复位。
-        "UserPromptSubmit" | "PostToolUse" => emit_active_status(app, ev, "running"),
-        // Claude 与 Codex 都以交互式 REPL 方式启动,一轮结束后进程不退出、停在等待用户
-        // 下一条输入,PTY exit monitor 不会触发终态;此时 Stop 表示"本轮结束、等待用户
-        // 验收",映射为 awaiting_review(已完成待确认)。
-        // 注意:Claude 的 Stop 必须在此处理,不能依赖 Notification 兜底——Claude Code 的
-        // "空闲等待输入" Notification 是在空闲约 60s 后才触发(实测 Stop→Notification 恰为
-        // +60s),会让角标晚整整一分钟才出现。需要工具审批时的 Notification 才是即时触发的
-        // (即 ask 模式很快的原因)。emit_active_status 的 child_handles 存活守卫确保进程
-        // 真正退出后不会误发,真正退出仍交给 PTY exit monitor 覆写为 done/failed。
-        "Stop" => emit_active_status(app, ev, "awaiting_review"),
-        // SubagentStop(子代理结束)主代理仍在工作,不主动 emit。
-        _ => {}
+        return;
+    }
+    if let Some(status) = status_for_hook_event(&ev.event) {
+        emit_active_status(app, ev, status);
     }
 }
 
@@ -204,42 +233,89 @@ fn handle_session_start(app: &AppHandle, ev: &HookEvent) {
     let tm = app.state::<TaskManager>();
     let session_path = ev.transcript_path.clone();
 
-    // 已注册过且 session_id 一致则跳过,避免重复 emit
-    let already = match ev.agent.as_str() {
-        "codex" => tm
+    // 已注册过且 session_id / session_path 一致则跳过,避免重复 emit。
+    // 某些 agent 可能先上报 session_id、后上报 transcript_path；这种路径补全必须放行。
+    let target = session_target_for_agent(&ev.agent);
+    let already = match target {
+        HookSessionTarget::Codex => tm
             .codex_sessions
             .lock()
             .get(&ev.task_id)
-            .map(|info| info.session_id == ev.session_id)
+            .map(|info| {
+                should_skip_session_start(
+                    target,
+                    &info.session_id,
+                    &info.session_path,
+                    false,
+                    &ev.session_id,
+                    &session_path,
+                )
+            })
             .unwrap_or(false),
-        _ => tm
+        HookSessionTarget::Pi => tm
+            .pi_sessions
+            .lock()
+            .get(&ev.task_id)
+            .map(|info| {
+                should_skip_session_start(
+                    target,
+                    &info.session_id,
+                    &info.session_path,
+                    false,
+                    &ev.session_id,
+                    &session_path,
+                )
+            })
+            .unwrap_or(false),
+        HookSessionTarget::Claude => tm
             .claude_sessions
             .lock()
             .get(&ev.task_id)
-            .map(|info| info.session_id == ev.session_id && !info.is_placeholder)
+            .map(|info| {
+                should_skip_session_start(
+                    target,
+                    &info.session_id,
+                    &info.session_path,
+                    info.is_placeholder,
+                    &ev.session_id,
+                    &session_path,
+                )
+            })
             .unwrap_or(false),
     };
     if already {
         return;
     }
 
-    if ev.agent == "codex" {
-        tm.codex_sessions.lock().insert(
-            ev.task_id.clone(),
-            CodexSessionInfo {
-                session_id: ev.session_id.clone(),
-                session_path: session_path.clone(),
-            },
-        );
-    } else {
-        tm.claude_sessions.lock().insert(
-            ev.task_id.clone(),
-            ClaudeSessionInfo {
-                session_id: ev.session_id.clone(),
-                session_path: session_path.clone(),
-                is_placeholder: false,
-            },
-        );
+    match target {
+        HookSessionTarget::Codex => {
+            tm.codex_sessions.lock().insert(
+                ev.task_id.clone(),
+                CodexSessionInfo {
+                    session_id: ev.session_id.clone(),
+                    session_path: session_path.clone(),
+                },
+            );
+        }
+        HookSessionTarget::Pi => {
+            tm.pi_sessions.lock().insert(
+                ev.task_id.clone(),
+                PiSessionInfo {
+                    session_id: ev.session_id.clone(),
+                    session_path: session_path.clone(),
+                },
+            );
+        }
+        HookSessionTarget::Claude => {
+            tm.claude_sessions.lock().insert(
+                ev.task_id.clone(),
+                ClaudeSessionInfo {
+                    session_id: ev.session_id.clone(),
+                    session_path: session_path.clone(),
+                    is_placeholder: false,
+                },
+            );
+        }
     }
     if !session_path.is_empty() {
         let mut claimed = tm.claimed_session_paths.lock();
@@ -295,6 +371,64 @@ pub fn cleanup_task_events(task_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pi_events_map_to_expected_statuses() {
+        assert_eq!(status_for_hook_event("AgentStart"), Some("running"));
+        assert_eq!(status_for_hook_event("TurnStart"), Some("running"));
+        assert_eq!(status_for_hook_event("PostToolUse"), Some("running"));
+        assert_eq!(status_for_hook_event("Stop"), Some("awaiting_review"));
+    }
+
+    #[test]
+    fn pi_session_start_targets_pi_session_store() {
+        assert_eq!(session_target_for_agent("pi"), HookSessionTarget::Pi);
+        assert_eq!(session_target_for_agent("codex"), HookSessionTarget::Codex);
+        assert_eq!(
+            session_target_for_agent("claude"),
+            HookSessionTarget::Claude
+        );
+    }
+
+    #[test]
+    fn session_start_allows_later_path_upgrade_for_same_session() {
+        assert!(!should_skip_session_start(
+            HookSessionTarget::Pi,
+            "sid",
+            "",
+            false,
+            "sid",
+            "/tmp/session.jsonl",
+        ));
+        assert!(should_skip_session_start(
+            HookSessionTarget::Pi,
+            "sid",
+            "/tmp/session.jsonl",
+            false,
+            "sid",
+            "/tmp/session.jsonl",
+        ));
+        assert!(should_skip_session_start(
+            HookSessionTarget::Pi,
+            "sid",
+            "",
+            false,
+            "sid",
+            "",
+        ));
+    }
+
+    #[test]
+    fn claude_placeholder_session_start_is_not_skipped() {
+        assert!(!should_skip_session_start(
+            HookSessionTarget::Claude,
+            "sid",
+            "/tmp/session.jsonl",
+            true,
+            "sid",
+            "/tmp/session.jsonl",
+        ));
+    }
 
     fn hook_event(event: &str) -> HookEvent {
         HookEvent {

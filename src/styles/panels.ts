@@ -12,6 +12,71 @@ const thanksNameBase: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const composeCardBase: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 820,
+  background: "var(--bg-card)",
+  border: "1px solid var(--border-medium)",
+  borderRadius: 24,
+  boxShadow: "var(--shadow-compose)",
+  overflow: "visible",
+};
+
+const toolbarMenuItemBase: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "8px 10px",
+  borderRadius: 6,
+  fontSize: 13,
+  color: "var(--text-primary)",
+  cursor: "pointer",
+  outline: "none",
+  userSelect: "none",
+};
+
+const toolbarMenuButtonBase: React.CSSProperties = {
+  ...toolbarMenuItemBase,
+  width: "100%",
+  border: "none",
+};
+
+const toolbarSwitchTrackBase: React.CSSProperties = {
+  width: 36,
+  height: 20,
+  borderRadius: 999,
+  padding: 2,
+  display: "inline-flex",
+  alignItems: "center",
+  boxSizing: "border-box",
+  transition: "background 0.15s",
+};
+
+const toolbarSwitchThumbBase: React.CSSProperties = {
+  width: 16,
+  height: 16,
+  borderRadius: 999,
+  background: "var(--bg-card)",
+  boxShadow: "var(--shadow-switch-thumb)",
+  transition: "transform 0.15s",
+};
+
+const sendBtnBase: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  background: "var(--primary-action-bg)",
+  color: "var(--primary-action-fg)",
+  border: "none",
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
+  boxShadow: "var(--shadow-control)",
+  whiteSpace: "nowrap",
+  transition: "opacity 0.15s, background 0.15s",
+};
+
 export const panels = {
   newTaskOuter: {
     flex: 1,
@@ -60,13 +125,11 @@ export const panels = {
     fontSize: 12,
   },
   composeCard: {
-    width: "100%",
-    maxWidth: 820,
-    background: "var(--bg-card)",
-    border: "1px solid var(--border-medium)",
-    borderRadius: 24,
-    boxShadow: "var(--shadow-compose)",
-    overflow: "visible",
+    ...composeCardBase,
+  },
+  composeCardRelative: {
+    ...composeCardBase,
+    position: "relative",
   },
   agentMissingMdBanner: {
     display: "flex",
@@ -88,6 +151,27 @@ export const panels = {
     minWidth: 0,
     flex: 1,
   },
+  agentMissingMdIcon: {
+    color: "var(--warning)",
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  agentMissingMdText: {
+    fontSize: 13,
+    lineHeight: 1.55,
+    color: "var(--text-secondary)",
+  },
+  agentMissingMdStrong: {
+    fontWeight: 650,
+    color: "var(--text-primary)",
+  },
+  agentMissingMdCode: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 12,
+    background: "var(--warning-code-bg)",
+    padding: "0 4px",
+    borderRadius: 3,
+  },
   agentMissingMdInitBtn: {
     alignSelf: "flex-start",
     display: "inline-flex",
@@ -95,6 +179,21 @@ export const panels = {
     gap: 6,
     padding: "4px 10px",
     background: "transparent",
+    color: "var(--warning)",
+    border: "1px solid var(--warning-border)",
+    borderRadius: 6,
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "background 120ms ease",
+  },
+  agentMissingMdInitBtnHover: {
+    alignSelf: "flex-start",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 10px",
+    background: "var(--warning-surface)",
     color: "var(--warning)",
     border: "1px solid var(--warning-border)",
     borderRadius: 6,
@@ -320,16 +419,34 @@ export const panels = {
     zIndex: 9999,
   },
   toolbarMenuItem: {
-    display: "flex",
+    ...toolbarMenuItemBase,
+  },
+  toolbarMenuItemHover: {
+    ...toolbarMenuItemBase,
+    background: "var(--accent-subtle)",
+  },
+  toolbarMenuButton: {
+    ...toolbarMenuButtonBase,
+    background: "none",
+  },
+  toolbarMenuButtonHover: {
+    ...toolbarMenuButtonBase,
+    background: "var(--accent-subtle)",
+  },
+  toolbarMenuSwitchButton: {
+    ...toolbarMenuButtonBase,
+    background: "none",
+    justifyContent: "space-between",
+  },
+  toolbarMenuSwitchButtonHover: {
+    ...toolbarMenuButtonBase,
+    background: "var(--accent-subtle)",
+    justifyContent: "space-between",
+  },
+  toolbarMenuInlineLabel: {
+    display: "inline-flex",
     alignItems: "center",
     gap: 8,
-    padding: "8px 10px",
-    borderRadius: 6,
-    fontSize: 13,
-    color: "var(--text-primary)",
-    cursor: "pointer",
-    outline: "none",
-    userSelect: "none" as const,
   },
   toolbarMenuSeparator: {
     height: 1,
@@ -341,24 +458,42 @@ export const panels = {
     height: 14,
     flexShrink: 0,
   },
-  toolbarSwitchTrack: {
-    width: 36,
-    height: 20,
-    borderRadius: 999,
-    padding: 2,
-    background: "var(--border-medium)",
+  toolbarMenuItemCodexIcon: {
+    width: 14,
+    height: 14,
+    flexShrink: 0,
+    opacity: 0.72,
+  },
+  toolbarMenuItemPiIcon: {
+    width: 14,
+    height: 14,
+    flexShrink: 0,
     display: "inline-flex",
     alignItems: "center",
-    boxSizing: "border-box" as const,
-    transition: "background 0.15s",
+    justifyContent: "center",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  toolbarSwitchTrack: {
+    ...toolbarSwitchTrackBase,
+    background: "var(--border-medium)",
+  },
+  toolbarSwitchTrackOn: {
+    ...toolbarSwitchTrackBase,
+    background: "var(--primary-action-bg)",
   },
   toolbarSwitchThumb: {
-    width: 16,
-    height: 16,
-    borderRadius: 999,
-    background: "var(--bg-card)",
-    boxShadow: "var(--shadow-switch-thumb)",
-    transition: "transform 0.15s",
+    ...toolbarSwitchThumbBase,
+  },
+  toolbarSwitchThumbOn: {
+    ...toolbarSwitchThumbBase,
+    transform: "translateX(16px)",
+  },
+  toolbarChevronIcon: {
+    opacity: 0.58,
+  },
+  toolbarHiddenFileInput: {
+    display: "none",
   },
   sendSplit: {
     display: "inline-flex",
@@ -380,23 +515,37 @@ export const panels = {
     transition: "opacity 0.15s",
   },
   sendBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
+    ...sendBtnBase,
     minWidth: 82,
     minHeight: 36,
     padding: "7px 15px",
-    background: "var(--primary-action-bg)",
-    color: "var(--primary-action-fg)",
-    border: "none",
     borderRadius: 10,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer",
-    boxShadow: "var(--shadow-control)",
-    whiteSpace: "nowrap" as const,
-    transition: "opacity 0.15s, background 0.15s",
+  },
+  sendBtnPrimarySegment: {
+    ...sendBtnBase,
+    minWidth: 82,
+    minHeight: 36,
+    padding: "7px 15px",
+    borderRadius: "6px 0 0 6px",
+    borderRight: "1px solid rgba(255,255,255,0.18)",
+  },
+  sendBtnMenuSegment: {
+    ...sendBtnBase,
+    minWidth: 22,
+    minHeight: 32,
+    padding: "6px 5px",
+    borderRadius: "0 6px 6px 0",
+    borderLeft: "none",
+  },
+  saveTodoMenuItem: {
+    ...toolbarMenuButtonBase,
+    background: "transparent",
+  },
+  saveTodoMenuItemDisabled: {
+    ...toolbarMenuButtonBase,
+    cursor: "not-allowed",
+    background: "transparent",
+    opacity: 0.4,
   },
   sendShortcutIcon: {
     display: "inline-flex",

@@ -1,6 +1,7 @@
 import { useState, memo } from "react";
 import { Trash2, Star, Play, GitBranch } from "lucide-react";
 import type { Task } from "../../types";
+import { agentLabel } from "../../types";
 import { StatusIcon } from "../StatusIcon";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
@@ -32,6 +33,36 @@ function statusLabelKey(status: Task["status"]): string {
   }
 }
 
+function AgentBadge({ task, hidden }: { task: Task; hidden: boolean }) {
+  const badgeStyle =
+    task.agent === "claude"
+      ? hidden
+        ? s.taskAgentBadgeClaudeHidden
+        : s.taskAgentBadgeClaude
+      : task.agent === "codex"
+        ? hidden
+          ? s.taskAgentBadgeCodexHidden
+          : s.taskAgentBadgeCodex
+        : hidden
+          ? s.taskAgentBadgePiHidden
+          : s.taskAgentBadgePi;
+
+  if (task.agent === "pi") {
+    return (
+      <span title={agentLabel(task.agent)} style={badgeStyle}>
+        π
+      </span>
+    );
+  }
+  return (
+    <img
+      src={task.agent === "claude" ? claudeLogo : chatgptLogo}
+      title={agentLabel(task.agent)}
+      style={badgeStyle}
+    />
+  );
+}
+
 export const TaskListItem = memo(
   function TaskListItem({
     task,
@@ -51,21 +82,23 @@ export const TaskListItem = memo(
     const { t } = useI18n();
     const [hov, setHov] = useState(false);
     const displayTitle = task.name ?? task.prompt;
+    const cardStyle = selected ? s.taskCardSelected : hov ? s.taskCardHover : s.taskCardDefault;
+    const starStyle = task.starred
+      ? s.taskStarBtnStarred
+      : hov
+        ? s.taskStarBtnHover
+        : s.taskStarBtnHidden;
     return (
       <div
-        style={{
-          ...s.taskCard,
-          position: "relative",
-          background: selected ? "var(--bg-selected)" : hov ? "var(--bg-hover)" : "transparent",
-        }}
+        style={cardStyle}
         onMouseEnter={() => setHov(true)}
         onMouseLeave={() => setHov(false)}
         onClick={onClick}
       >
-        <div style={{ flexShrink: 0, marginTop: 1 }}>
+        <div style={s.taskStatusWrap}>
           <StatusIcon status={task.status} />
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={s.taskMainContent}>
           <div style={s.taskCardTitle}>
             {displayTitle.slice(0, 70)}
             {displayTitle.length > 70 ? "…" : ""}
@@ -84,25 +117,11 @@ export const TaskListItem = memo(
               )}
           </div>
         </div>
-        <img
-          src={task.agent === "claude" ? claudeLogo : chatgptLogo}
-          title={task.agent === "claude" ? "Claude Code" : "Codex"}
-          style={{
-            ...s.agentBadge,
-            position: "absolute",
-            right: 16,
-            top: 11,
-            opacity: hov ? 0 : 1,
-            filter: task.agent === "codex" ? "var(--agent-badge-filter)" : "none",
-            pointerEvents: "none",
-            transition: "opacity 0.12s ease",
-            zIndex: 1,
-          }}
-        />
+        <AgentBadge task={task} hidden={hov} />
         {task.worktreePath && task.worktreeBranch && (
           <span
             title={t("task.worktreeBadge", { branch: task.worktreeBranch })}
-            style={{ ...s.worktreeBadge, opacity: hov ? 0 : 1 }}
+            style={hov ? s.worktreeBadgeHidden : s.worktreeBadgeVisible}
           >
             <GitBranch size={11} strokeWidth={2.2} />
           </span>
@@ -111,12 +130,7 @@ export const TaskListItem = memo(
           type="button"
           aria-label={task.starred ? t("task.unstar") : t("task.star")}
           title={task.starred ? t("task.unstar") : t("task.star")}
-          style={{
-            ...s.taskStarBtn,
-            opacity: task.starred ? 1 : hov ? 0.7 : 0,
-            pointerEvents: task.starred || hov ? "auto" : "none",
-            color: task.starred ? "var(--star-fg)" : "var(--text-hint)",
-          }}
+          style={starStyle}
           onClick={(e) => {
             e.stopPropagation();
             onToggleStar();
@@ -129,7 +143,7 @@ export const TaskListItem = memo(
             type="button"
             aria-label={t("task.runNow")}
             title={t("task.runNow")}
-            style={{ ...s.taskPlayBtn, opacity: hov ? 1 : 0.5 }}
+            style={hov ? s.taskPlayBtnVisible : s.taskPlayBtnDim}
             onClick={(e) => {
               e.stopPropagation();
               onRunTodo();
@@ -142,11 +156,7 @@ export const TaskListItem = memo(
           type="button"
           aria-label={t("task.deleteTask")}
           title={t("task.deleteTask")}
-          style={{
-            ...s.taskDeleteBtn,
-            opacity: hov ? 1 : 0,
-            pointerEvents: hov ? "auto" : "none",
-          }}
+          style={hov ? s.taskDeleteBtnVisible : s.taskDeleteBtnHidden}
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
