@@ -3,6 +3,7 @@ import type { AppPlatform } from "./platform";
 export type SendShortcut = "mod_enter" | "enter";
 
 export const DEFAULT_SEND_SHORTCUT: SendShortcut = "mod_enter";
+export const DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED = true;
 
 export interface PromptKeyEventLike {
   key: string;
@@ -15,6 +16,34 @@ export interface PromptKeyEventLike {
 
 export function normalizeSendShortcut(value: unknown): SendShortcut {
   return value === "enter" || value === "mod_enter" ? value : DEFAULT_SEND_SHORTCUT;
+}
+
+export function normalizeTerminalFontSizeShortcutsEnabled(value: unknown): boolean {
+  return typeof value === "boolean" ? value : DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED;
+}
+
+const TERMINAL_SHORTCUT_HOST_SELECTOR = ".nezha-xterm-host";
+
+function asElement(value: unknown): Element | null {
+  if (typeof Element !== "undefined" && value instanceof Element) {
+    return value;
+  }
+  if (typeof Node !== "undefined" && value instanceof Node) {
+    return value.parentElement;
+  }
+  return null;
+}
+
+function isInsideTerminalHost(value: unknown): boolean {
+  return asElement(value)?.closest(TERMINAL_SHORTCUT_HOST_SELECTOR) != null;
+}
+
+export function isTerminalFontSizeShortcutContext(
+  target: EventTarget | null,
+  activeElement: Element | null =
+    typeof document === "undefined" ? null : document.activeElement,
+): boolean {
+  return isInsideTerminalHost(target) || isInsideTerminalHost(activeElement);
 }
 
 export function getSendShortcutLabel(shortcut: SendShortcut, platform: AppPlatform): string {
@@ -56,6 +85,45 @@ export function isHideWindowShortcut(
   return platform === "macos"
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
+}
+
+export interface TerminalFontSizeKeyEventLike {
+  key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}
+
+export function getTerminalFontSizeShortcutDelta(
+  event: TerminalFontSizeKeyEventLike,
+  platform: AppPlatform,
+): -1 | 0 | 1 {
+  if (event.altKey) {
+    return 0;
+  }
+
+  const hasPlatformModifier =
+    platform === "macos" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (!hasPlatformModifier) {
+    return 0;
+  }
+
+  if (event.key === "+" || event.key === "=" || event.code === "NumpadAdd") {
+    return 1;
+  }
+  if (event.key === "-" || event.key === "_" || event.code === "NumpadSubtract") {
+    return -1;
+  }
+  return 0;
+}
+
+export function getTerminalFontSizeIncreaseKeys(platform: AppPlatform): string[] {
+  return [platform === "macos" ? "⌘" : "Ctrl", "+"];
+}
+
+export function getTerminalFontSizeDecreaseKeys(platform: AppPlatform): string[] {
+  return [platform === "macos" ? "⌘" : "Ctrl", "-"];
 }
 
 /**

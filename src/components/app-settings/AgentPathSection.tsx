@@ -6,6 +6,7 @@ import { useI18n } from "../../i18n";
 import {
   DEFAULT_SEND_SHORTCUT,
   DEFAULT_SHIFT_ENTER_NEWLINE,
+  DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED,
   normalizeSendShortcut,
 } from "../../shortcuts";
 import { DEFAULT_TERMINAL_SCROLLBACK } from "../../types";
@@ -74,6 +75,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    terminal_font_size_shortcuts_enabled: DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED,
     claude_force_default_tui: true,
     terminal_scrollback: DEFAULT_TERMINAL_SCROLLBACK,
   };

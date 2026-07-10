@@ -34,10 +34,20 @@ import type { FontFamily } from "./types";
 import { quoteFontName } from "./utils/fonts";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
-import { SKILL_HUB_CHANGED_EVENT } from "./components/app-settings/types";
-import { KanbanView, OPEN_KANBAN_VIEW_EVENT } from "./components/KanbanView";
+import {
+  APP_SETTINGS_CHANGED_EVENT,
+  SKILL_HUB_CHANGED_EVENT,
+} from "./components/app-settings/types";
 import { useToast } from "./components/Toast";
-import { isHideWindowShortcut, isToggleKanbanShortcut } from "./shortcuts";
+import {
+  DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED,
+  getTerminalFontSizeShortcutDelta,
+  isHideWindowShortcut,
+  isToggleKanbanShortcut,
+  isTerminalFontSizeShortcutContext,
+  normalizeTerminalFontSizeShortcutsEnabled,
+} from "./shortcuts";
+import { KanbanView, OPEN_KANBAN_VIEW_EVENT } from "./components/KanbanView";
 import { APP_PLATFORM } from "./platform";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
@@ -291,6 +301,9 @@ function App() {
   const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(
     getInitialTerminalFontSize,
   );
+  const [terminalFontSizeShortcutsEnabled, setTerminalFontSizeShortcutsEnabled] = useState<
+    boolean | null
+  >(null);
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(
     getInitialTaskDisplayWindow,
   );
@@ -429,6 +442,43 @@ function App() {
     }
     window.addEventListener("keydown", handleHideWindow, true);
     return () => window.removeEventListener("keydown", handleHideWindow, true);
+  }, []);
+
+  useEffect(() => {
+    function handleTerminalFontSizeShortcut(event: KeyboardEvent) {
+      if (terminalFontSizeShortcutsEnabled !== true) return;
+      if (!isTerminalFontSizeShortcutContext(event.target)) return;
+      const delta = getTerminalFontSizeShortcutDelta(event, APP_PLATFORM);
+      if (delta === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setTerminalFontSize((current) => clampTerminalFontSize(current + delta));
+    }
+
+    window.addEventListener("keydown", handleTerminalFontSizeShortcut, true);
+    return () => window.removeEventListener("keydown", handleTerminalFontSizeShortcut, true);
+  }, [terminalFontSizeShortcutsEnabled]);
+
+  useEffect(() => {
+    function loadTerminalFontSizeShortcutSetting() {
+      invoke<{ terminal_font_size_shortcuts_enabled?: unknown }>("load_app_settings")
+        .then((settings) =>
+          setTerminalFontSizeShortcutsEnabled(
+            normalizeTerminalFontSizeShortcutsEnabled(
+              settings.terminal_font_size_shortcuts_enabled,
+            ),
+          ),
+        )
+        .catch(() =>
+          setTerminalFontSizeShortcutsEnabled(DEFAULT_TERMINAL_FONT_SIZE_SHORTCUTS_ENABLED),
+        );
+    }
+
+    loadTerminalFontSizeShortcutSetting();
+    window.addEventListener(APP_SETTINGS_CHANGED_EVENT, loadTerminalFontSizeShortcutSetting);
+    return () =>
+      window.removeEventListener(APP_SETTINGS_CHANGED_EVENT, loadTerminalFontSizeShortcutSetting);
   }, []);
 
   useEffect(() => {
