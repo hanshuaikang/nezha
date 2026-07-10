@@ -135,6 +135,21 @@ export interface Task {
   deletions?: number;
 }
 
+export interface ProjectConfig {
+  agent: {
+    default: string;
+    default_permission_mode?: string;
+    prompt_prefix?: string;
+  };
+  git: {
+    commit_prompt: string;
+    commit_message_timeout_secs?: number;
+  };
+  quick_run?: {
+    script?: string;
+  };
+}
+
 export const PERM_LABELS: Record<PermissionMode, string> = {
   ask: "Ask Permission",
   auto_edit: "Auto-edit",

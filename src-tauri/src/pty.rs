@@ -960,6 +960,7 @@ pub async fn open_shell(
     project_path: String,
     cols: Option<u16>,
     rows: Option<u16>,
+    initial_input: Option<String>,
 ) -> Result<(), String> {
     // 先终止已存在的同 ID Shell
     {
@@ -996,6 +997,10 @@ pub async fn open_shell(
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     register_pty_handles(&task_manager, &shell_id, pair.master, writer, child)?;
+
+    if let Some(input) = initial_input.filter(|input| !input.is_empty()) {
+        send_input(task_manager, shell_id.clone(), input).await?;
+    }
 
     // Shell 退出后清理 TaskManager 中的残留句柄
     let app_cleanup = app.clone();
