@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import type { AgentType, PermissionMode } from "../../types";
-import { permissionModeLabel } from "../../types";
+import { AGENT_TYPES, agentLabel, permissionModeLabel } from "../../types";
 import { useI18n } from "../../i18n";
 import s from "../../styles";
 
-const AGENTS: AgentType[] = ["claude", "codex"];
 const PERMS: PermissionMode[] = ["ask", "auto_edit", "full_access"];
 
 export function TaskEditDialog({
@@ -32,71 +31,32 @@ export function TaskEditDialog({
         value={editPrompt}
         onChange={(e) => setEditPrompt(e.target.value)}
         autoFocus
-        style={{
-          width: "100%",
-          boxSizing: "border-box",
-          minHeight: 120,
-          maxHeight: 320,
-          padding: "10px 12px",
-          border: "1px solid var(--border-medium)",
-          borderRadius: 6,
-          background: "var(--bg-hover)",
-          color: "var(--text-primary)",
-          fontSize: 14,
-          lineHeight: 1.65,
-          fontFamily: "var(--font-ui)",
-          resize: "vertical",
-          outline: "none",
-        }}
+        style={s.taskEditTextarea}
       />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div style={s.taskEditActionsRow}>
         <button
-          style={{ ...s.toolbarBtn, fontSize: 12 }}
-          onClick={() => setEditAgent(AGENTS[(AGENTS.indexOf(editAgent) + 1) % AGENTS.length])}
+          style={s.taskEditToolbarBtn}
+          onClick={() =>
+            setEditAgent(AGENT_TYPES[(AGENT_TYPES.indexOf(editAgent) + 1) % AGENT_TYPES.length])
+          }
         >
-          {editAgent === "claude" ? "Claude Code" : "Codex"}
+          {agentLabel(editAgent)}
         </button>
         <button
-          style={{ ...s.toolbarBtn, fontSize: 12 }}
+          style={s.taskEditToolbarBtn}
           onClick={() => {
             setEditPermMode(PERMS[(PERMS.indexOf(editPermMode) + 1) % PERMS.length]);
           }}
         >
           {permissionModeLabel(editPermMode, editAgent)}
         </button>
-        <div style={{ flex: 1 }} />
-        <button
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            padding: "5px 12px",
-            background: "transparent",
-            color: "var(--text-muted)",
-            border: "1px solid var(--border-dim)",
-            borderRadius: 6,
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-          onClick={onCancel}
-        >
+        <div style={s.taskEditSpacer} />
+        <button style={s.taskEditCancelBtn} onClick={onCancel}>
           <X size={11} strokeWidth={2} />
           {t("common.cancel")}
         </button>
         <button
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "5px 12px",
-            background: editPrompt.trim() ? "var(--primary-action-bg)" : "var(--bg-hover)",
-            color: editPrompt.trim() ? "var(--primary-action-fg)" : "var(--text-hint)",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: editPrompt.trim() ? "pointer" : "not-allowed",
-          }}
+          style={editPrompt.trim() ? s.taskEditSaveBtn : s.taskEditSaveBtnDisabled}
           disabled={!editPrompt.trim()}
           onClick={() => {
             if (!editPrompt.trim()) return;

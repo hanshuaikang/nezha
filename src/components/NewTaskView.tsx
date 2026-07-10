@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TriangleAlert, Sparkles } from "lucide-react";
 import type { Project, AgentType, PermissionMode } from "../types";
+import { agentLabel } from "../types";
 import type { HookAgentReadiness } from "./app-settings/types";
 import { useToast } from "./Toast";
 import {
@@ -30,6 +31,10 @@ import {
 import claudeGif from "../assets/gif/claude.gif";
 import codexGif from "../assets/gif/codex.gif";
 import s from "../styles";
+
+function instructionsFileForAgent(agent: AgentType): string {
+  return agent === "claude" ? "CLAUDE.md" : "AGENTS.md";
+}
 
 interface PastedImage {
   id: string;
@@ -115,6 +120,7 @@ export function NewTaskView({
       (initialDraft?.pastedTexts?.length ?? 0) === 0,
   );
   const [sendShortcut, setSendShortcut] = useState<SendShortcut>(DEFAULT_SEND_SHORTCUT);
+  const [initMdHover, setInitMdHover] = useState(false);
 
   const { editorRef, isComposingRef, handle: editorHandle } = usePromptEditor();
   const editorContentRef = useRef<PromptEditorContent>({
@@ -191,7 +197,7 @@ export function NewTaskView({
     )
       .then((cfg) => {
         const defaultAgent = cfg.agent.default;
-        if (defaultAgent === "claude" || defaultAgent === "codex") {
+        if (defaultAgent === "claude" || defaultAgent === "codex" || defaultAgent === "pi") {
           setAgent(defaultAgent);
         }
         const defaultPerm = cfg.agent.default_permission_mode;
@@ -207,7 +213,7 @@ export function NewTaskView({
 
   useEffect(() => {
     setHasMdFile(null);
-    const filename = agent === "claude" ? "CLAUDE.md" : "AGENTS.md";
+    const filename = instructionsFileForAgent(agent);
     invoke<string>("read_file_content", {
       path: `${project.path}/${filename}`,
       projectPath: project.path,
@@ -236,7 +242,7 @@ export function NewTaskView({
   const agentReadiness = hookReadiness?.find((r) => r.agent === agent) ?? null;
   const hookBanner = (() => {
     if (!agentReadiness || agentReadiness.usable) return null;
-    const agentName = agent === "claude" ? "Claude Code" : "Codex";
+    const agentName = agentLabel(agent);
     if (agentReadiness.reason === "version_too_low") {
       return t("newTask.hookVersionLow", {
         agent: agentName,
@@ -246,6 +252,9 @@ export function NewTaskView({
     }
     if (agentReadiness.reason === "no_node") {
       return t("newTask.hookNoNode");
+    }
+    if (agentReadiness.reason === "agent_missing") {
+      return t("newTask.hookAgentMissing", { agent: agentName });
     }
     if (agentReadiness.reason === "not_installed") {
       return t("newTask.hookNotInstalled", { agent: agentName });
@@ -358,7 +367,7 @@ export function NewTaskView({
   }
 
   function handleInitializeMd() {
-    const filename = agent === "claude" ? "CLAUDE.md" : "AGENTS.md";
+    const filename = instructionsFileForAgent(agent);
     const prompt = t("newTask.initializePrompt", { file: filename });
     // 初始化 md 文件不涉及代码改动，强制走本地，避免无谓的 worktree 开销
     onSubmit({
@@ -435,43 +444,31 @@ export function NewTaskView({
       {/* Missing context file warning */}
       {hasMdFile === false && (
         <div style={s.agentMissingMdBanner}>
-          <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
+          <TriangleAlert size={15} style={s.agentMissingMdIcon} />
           <div style={s.agentMissingMdBody}>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
-              <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
+            <div style={s.agentMissingMdText}>
+              <span style={s.agentMissingMdStrong}>
                 {t("newTask.instructionsMissing", {
-                  file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-                }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]}
-                <code
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    background: "var(--warning-code-bg)",
-                    padding: "0 4px",
-                    borderRadius: 3,
-                  }}
-                >
-                  {agent === "claude" ? "CLAUDE.md" : "AGENTS.md"}
-                </code>{" "}
+                  file: instructionsFileForAgent(agent),
+                }).split(instructionsFileForAgent(agent))[0]}
+                <code style={s.agentMissingMdCode}>{instructionsFileForAgent(agent)}</code>{" "}
                 {t("newTask.instructionsMissing", {
-                  file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-                }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[1]}
+                  file: instructionsFileForAgent(agent),
+                }).split(instructionsFileForAgent(agent))[1]}
               </span>{" "}
               {t("newTask.addInstructions", {
-                file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-                agent: agent === "claude" ? "Claude Code" : "Codex",
+                file: instructionsFileForAgent(agent),
+                agent: agentLabel(agent),
               })}
             </div>
             <button
               type="button"
-              style={s.agentMissingMdInitBtn}
+              style={initMdHover ? s.agentMissingMdInitBtnHover : s.agentMissingMdInitBtn}
               onClick={handleInitializeMd}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--warning-surface)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
+              onMouseEnter={() => setInitMdHover(true)}
+              onMouseLeave={() => setInitMdHover(false)}
+              onFocus={() => setInitMdHover(true)}
+              onBlur={() => setInitMdHover(false)}
             >
               <Sparkles size={13} strokeWidth={2} />
               {t("newTask.initializeButton")}
@@ -489,7 +486,7 @@ export function NewTaskView({
       )}
 
       {/* Compose card */}
-      <div style={{ ...s.composeCard, position: "relative" }} onPaste={handleEditorPaste}>
+      <div style={s.composeCardRelative} onPaste={handleEditorPaste}>
         {/* Mention dropdown */}
         {mentionSearch !== null && (
           <MentionPopover

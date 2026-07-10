@@ -10,6 +10,7 @@ import {
   Blocks,
   Heart,
   ExternalLink,
+  Bot,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
@@ -61,6 +62,14 @@ const NAV_ITEMS: AppSettingsNavItem[] = [
     logo: chatgptLogo,
     filePath: getAgentSettingsFilePath("codex"),
     lang: "toml",
+  },
+  {
+    key: "pi",
+    labelKey: "Pi",
+    section: "agents",
+    icon: Bot,
+    filePath: getAgentSettingsFilePath("pi"),
+    lang: "json",
   },
   {
     key: "community",

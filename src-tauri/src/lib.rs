@@ -23,7 +23,7 @@ mod storage;
 mod subprocess;
 mod usage;
 
-use session::{ClaudeSessionInfo, CodexSessionInfo};
+use session::{ClaudeSessionInfo, CodexSessionInfo, PiSessionInfo};
 
 pub struct TaskManager {
     pub(crate) pty_masters: Mutex<HashMap<String, Box<dyn portable_pty::MasterPty + Send>>>,
@@ -34,6 +34,7 @@ pub struct TaskManager {
     pub(crate) manually_completed_tasks: Mutex<HashSet<String>>,
     pub(crate) codex_sessions: Mutex<HashMap<String, CodexSessionInfo>>,
     pub(crate) claude_sessions: Mutex<HashMap<String, ClaudeSessionInfo>>,
+    pub(crate) pi_sessions: Mutex<HashMap<String, PiSessionInfo>>,
     pub(crate) claimed_session_paths: Mutex<HashSet<String>>,
     /// Persistent `codex app-server` process reused across `read_usage_snapshot` calls.
     pub(crate) codex_rpc: Arc<Mutex<Option<CodexRpcClient>>>,
@@ -278,6 +279,7 @@ pub fn run() {
             manually_completed_tasks: Mutex::new(HashSet::new()),
             codex_sessions: Mutex::new(HashMap::new()),
             claude_sessions: Mutex::new(HashMap::new()),
+            pi_sessions: Mutex::new(HashMap::new()),
             claimed_session_paths: Mutex::new(HashSet::new()),
             codex_rpc: Arc::new(Mutex::new(None)),
         })

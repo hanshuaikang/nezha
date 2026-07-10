@@ -1,5 +1,69 @@
 import type React from "react";
 
+const taskCardBase: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 9,
+  padding: "7px 12px",
+  margin: "1px 6px",
+  borderRadius: 6,
+  cursor: "pointer",
+  transition: "background 0.1s",
+};
+
+const taskCardInteractiveBase: React.CSSProperties = {
+  ...taskCardBase,
+  position: "relative",
+};
+
+const agentBadgeBase: React.CSSProperties = {
+  flexShrink: 0,
+  width: 14,
+  height: 14,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const taskAgentBadgeBase: React.CSSProperties = {
+  ...agentBadgeBase,
+  position: "absolute",
+  right: 16,
+  top: 11,
+  pointerEvents: "none",
+  transition: "opacity 0.12s ease",
+  zIndex: 1,
+};
+
+const worktreeBadgeBase: React.CSSProperties = {
+  position: "absolute",
+  right: 36,
+  top: 12,
+  flexShrink: 0,
+  width: 12,
+  height: 12,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "var(--text-muted)",
+  pointerEvents: "none",
+  transition: "opacity 0.12s ease",
+  zIndex: 1,
+};
+
+const taskActionBtnBase: React.CSSProperties = {
+  flexShrink: 0,
+  width: 22,
+  height: 22,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "none",
+  borderRadius: 5,
+  background: "transparent",
+  cursor: "pointer",
+};
+
 export const task = {
   taskPanel: {
     width: 260,
@@ -262,14 +326,27 @@ export const task = {
     textTransform: "uppercase" as const,
   },
   taskCard: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 9,
-    padding: "7px 12px",
-    margin: "1px 6px",
-    borderRadius: 6,
-    cursor: "pointer",
-    transition: "background 0.1s",
+    ...taskCardBase,
+  },
+  taskCardDefault: {
+    ...taskCardInteractiveBase,
+    background: "transparent",
+  },
+  taskCardHover: {
+    ...taskCardInteractiveBase,
+    background: "var(--bg-hover)",
+  },
+  taskCardSelected: {
+    ...taskCardInteractiveBase,
+    background: "var(--bg-selected)",
+  },
+  taskStatusWrap: {
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  taskMainContent: {
+    flex: 1,
+    minWidth: 0,
   },
   taskCardTitle: {
     fontSize: 12.5,
@@ -291,68 +368,114 @@ export const task = {
   taskDiffAdditions: { color: "var(--diff-add-fg)", fontWeight: 600 },
   taskDiffDeletions: { color: "var(--diff-delete-fg)", fontWeight: 600 },
   agentBadge: {
-    flexShrink: 0,
-    width: 14,
-    height: 14,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
+    ...agentBadgeBase,
+  },
+  taskAgentBadgeBase: {
+    ...taskAgentBadgeBase,
+  },
+  taskAgentBadgeClaude: {
+    ...taskAgentBadgeBase,
+    opacity: 1,
+  },
+  taskAgentBadgeClaudeHidden: {
+    ...taskAgentBadgeBase,
+    opacity: 0,
+  },
+  taskAgentBadgeCodex: {
+    ...taskAgentBadgeBase,
+    opacity: 1,
+    filter: "var(--agent-badge-filter)",
+  },
+  taskAgentBadgeCodexHidden: {
+    ...taskAgentBadgeBase,
+    opacity: 0,
+    filter: "var(--agent-badge-filter)",
+  },
+  taskAgentBadgePi: {
+    ...taskAgentBadgeBase,
+    opacity: 1,
+    color: "var(--text-muted)",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  taskAgentBadgePiHidden: {
+    ...taskAgentBadgeBase,
+    opacity: 0,
+    color: "var(--text-muted)",
+    fontSize: 12,
+    fontWeight: 700,
   },
   worktreeBadge: {
-    position: "absolute" as const,
-    right: 36,
-    top: 12,
-    flexShrink: 0,
-    width: 12,
-    height: 12,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--text-muted)",
-    pointerEvents: "none" as const,
-    transition: "opacity 0.12s ease",
-    zIndex: 1,
+    ...worktreeBadgeBase,
+  },
+  worktreeBadgeHidden: {
+    ...worktreeBadgeBase,
+    opacity: 0,
+  },
+  worktreeBadgeVisible: {
+    ...worktreeBadgeBase,
+    opacity: 1,
   },
   taskDeleteBtn: {
-    flexShrink: 0,
-    width: 22,
-    height: 22,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "none",
-    borderRadius: 5,
-    background: "transparent",
+    ...taskActionBtnBase,
     color: "var(--text-hint)",
-    cursor: "pointer",
     transition: "opacity 0.12s ease, background 0.12s ease, color 0.12s ease",
   },
+  taskDeleteBtnHidden: {
+    ...taskActionBtnBase,
+    color: "var(--text-hint)",
+    transition: "opacity 0.12s ease, background 0.12s ease, color 0.12s ease",
+    opacity: 0,
+    pointerEvents: "none",
+  },
+  taskDeleteBtnVisible: {
+    ...taskActionBtnBase,
+    color: "var(--text-hint)",
+    transition: "opacity 0.12s ease, background 0.12s ease, color 0.12s ease",
+    opacity: 1,
+    pointerEvents: "auto",
+  },
   taskPlayBtn: {
-    flexShrink: 0,
-    width: 22,
-    height: 22,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "none",
-    borderRadius: 5,
-    background: "transparent",
+    ...taskActionBtnBase,
     color: "var(--accent)",
-    cursor: "pointer",
     transition: "opacity 0.12s ease",
   },
+  taskPlayBtnDim: {
+    ...taskActionBtnBase,
+    color: "var(--accent)",
+    transition: "opacity 0.12s ease",
+    opacity: 0.5,
+  },
+  taskPlayBtnVisible: {
+    ...taskActionBtnBase,
+    color: "var(--accent)",
+    transition: "opacity 0.12s ease",
+    opacity: 1,
+  },
   taskStarBtn: {
-    flexShrink: 0,
-    width: 22,
-    height: 22,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "none",
-    borderRadius: 5,
-    background: "transparent",
-    cursor: "pointer",
+    ...taskActionBtnBase,
     transition: "opacity 0.12s ease, color 0.12s ease",
+  },
+  taskStarBtnHidden: {
+    ...taskActionBtnBase,
+    transition: "opacity 0.12s ease, color 0.12s ease",
+    color: "var(--text-hint)",
+    opacity: 0,
+    pointerEvents: "none",
+  },
+  taskStarBtnHover: {
+    ...taskActionBtnBase,
+    transition: "opacity 0.12s ease, color 0.12s ease",
+    color: "var(--text-hint)",
+    opacity: 0.7,
+    pointerEvents: "auto",
+  },
+  taskStarBtnStarred: {
+    ...taskActionBtnBase,
+    transition: "opacity 0.12s ease, color 0.12s ease",
+    color: "var(--star-fg)",
+    opacity: 1,
+    pointerEvents: "auto",
   },
   taskRenameBtn: {
     flexShrink: 0,

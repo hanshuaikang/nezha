@@ -1,13 +1,16 @@
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::session::{spawn_resume_session_watcher, spawn_status_session_watcher};
+use crate::session::{
+    spawn_resume_session_watcher, spawn_resume_session_watcher_for_agent,
+    spawn_status_session_watcher, AgentSessionKind,
+};
 use crate::TaskManager;
 
 const SESSION_WAIT_POLL: Duration = Duration::from_millis(50);
@@ -26,20 +29,20 @@ fn task_attachments_dir(project_path: &str, task_id: &str) -> std::path::PathBuf
         .join(task_id)
 }
 
-fn has_task_session(app: &AppHandle, task_id: &str, is_codex: bool) -> bool {
+fn has_task_session(app: &AppHandle, task_id: &str, agent_kind: AgentSessionKind) -> bool {
     let tm = app.state::<TaskManager>();
-    if is_codex {
-        tm.codex_sessions.lock().contains_key(task_id)
-    } else {
-        tm.claude_sessions.lock().contains_key(task_id)
+    match agent_kind {
+        AgentSessionKind::Codex => tm.codex_sessions.lock().contains_key(task_id),
+        AgentSessionKind::Pi => tm.pi_sessions.lock().contains_key(task_id),
+        AgentSessionKind::Claude => tm.claude_sessions.lock().contains_key(task_id),
     }
 }
 
 /// 任务结束后，等待会话注册完成，最长等待 500ms。
-fn wait_for_session(app: &AppHandle, task_id: &str, is_codex: bool) {
+fn wait_for_session(app: &AppHandle, task_id: &str, agent_kind: AgentSessionKind) {
     let deadline = Instant::now() + SESSION_WAIT_MAX;
     while Instant::now() < deadline {
-        if has_task_session(app, task_id, is_codex) {
+        if has_task_session(app, task_id, agent_kind) {
             return;
         }
         std::thread::sleep(SESSION_WAIT_POLL);
@@ -50,7 +53,7 @@ fn finalize_task_exit(
     app: &AppHandle,
     task_id: &str,
     project_path: &str,
-    is_codex: bool,
+    agent_kind: AgentSessionKind,
     exit_ok: bool,
     exit_code: Option<u32>,
 ) {
@@ -58,7 +61,10 @@ fn finalize_task_exit(
         let tm = app.state::<TaskManager>();
         let mut cancelled = tm.cancelled_tasks.lock();
         let mut manually_completed = tm.manually_completed_tasks.lock();
-        (cancelled.remove(task_id), manually_completed.remove(task_id))
+        (
+            cancelled.remove(task_id),
+            manually_completed.remove(task_id),
+        )
     };
 
     let had_agent_session;
@@ -69,21 +75,28 @@ fn finalize_task_exit(
         let codex_path = codex_info.map(|info| info.session_path);
         let claude_info = tm.claude_sessions.lock().remove(task_id);
         let claude_path = claude_info.as_ref().map(|info| info.session_path.clone());
-        had_agent_session = if is_codex {
-            codex_path.is_some()
-        } else {
-            // lazy attach 注入的占位条目不算"曾真正建立过会话"，
-            // 否则 Claude 异常退出会被误标为 done。
-            claude_info
-                .as_ref()
-                .map(|info| !info.is_placeholder)
-                .unwrap_or(false)
+        let pi_info = tm.pi_sessions.lock().remove(task_id);
+        let pi_path = pi_info.map(|info| info.session_path);
+        had_agent_session = match agent_kind {
+            AgentSessionKind::Codex => codex_path.is_some(),
+            AgentSessionKind::Pi => pi_path.is_some(),
+            AgentSessionKind::Claude => {
+                // lazy attach 注入的占位条目不算"曾真正建立过会话"，
+                // 否则 Claude 异常退出会被误标为 done。
+                claude_info
+                    .as_ref()
+                    .map(|info| !info.is_placeholder)
+                    .unwrap_or(false)
+            }
         };
         let mut claimed = tm.claimed_session_paths.lock();
         if let Some(path) = codex_path {
             claimed.remove(&path);
         }
         if let Some(path) = claude_path {
+            claimed.remove(&path);
+        }
+        if let Some(path) = pi_path {
             claimed.remove(&path);
         }
     }
@@ -93,7 +106,11 @@ fn finalize_task_exit(
         return;
     }
 
-    let status = if exit_ok || had_agent_session { "done" } else { "failed" };
+    let status = if exit_ok || had_agent_session {
+        "done"
+    } else {
+        "failed"
+    };
     let payload = if status == "failed" {
         let reason = match exit_code {
             Some(code) => format!("Process exited with code {}", code),
@@ -177,11 +194,19 @@ fn release_claimed_session_paths(task_manager: &TaskManager, task_id: &str) {
         .lock()
         .get(task_id)
         .map(|info| info.session_path.clone());
+    let pi_path = task_manager
+        .pi_sessions
+        .lock()
+        .get(task_id)
+        .map(|info| info.session_path.clone());
     let mut claimed = task_manager.claimed_session_paths.lock();
     if let Some(path) = codex_path {
         claimed.remove(&path);
     }
     if let Some(path) = claude_path {
+        claimed.remove(&path);
+    }
+    if let Some(path) = pi_path {
         claimed.remove(&path);
     }
 }
@@ -269,7 +294,10 @@ fn send_pty_chunk(app: &AppHandle, id: &str, sink: &OutputSink, data: String) {
     match sink {
         OutputSink::Event { event_name, id_key } => {
             let mut payload = serde_json::Map::new();
-            payload.insert((*id_key).to_string(), serde_json::Value::String(id.to_string()));
+            payload.insert(
+                (*id_key).to_string(),
+                serde_json::Value::String(id.to_string()),
+            );
             payload.insert("data".to_string(), serde_json::Value::String(data));
             let _ = app.emit(event_name, serde_json::Value::Object(payload));
         }
@@ -322,29 +350,14 @@ fn spawn_pty_reader(
                             Ok(chunk) => {
                                 batch.push_str(&chunk);
                                 if batch.len() >= max_batch_bytes {
-                                    flush_pty_batch(
-                                        &emit_app,
-                                        &emit_id,
-                                        &worker_sink,
-                                        &mut batch,
-                                    );
+                                    flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                                 }
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                flush_pty_batch(
-                                    &emit_app,
-                                    &emit_id,
-                                    &worker_sink,
-                                    &mut batch,
-                                );
+                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                                flush_pty_batch(
-                                    &emit_app,
-                                    &emit_id,
-                                    &worker_sink,
-                                    &mut batch,
-                                );
+                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                                 break;
                             }
                         }
@@ -402,7 +415,12 @@ fn spawn_pty_reader(
 }
 
 /// 在后台线程中轮询子进程退出状态，退出后调用 finalize_task_exit。
-fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_codex: bool) {
+fn spawn_exit_monitor(
+    app: AppHandle,
+    task_id: String,
+    project_path: String,
+    agent_kind: AgentSessionKind,
+) {
     tokio::task::spawn_blocking(move || loop {
         let exit_status = {
             let tm = app.state::<TaskManager>();
@@ -416,10 +434,21 @@ fn spawn_exit_monitor(app: AppHandle, task_id: String, project_path: String, is_
 
         if let Some(status) = exit_status {
             let exit_ok = status.success();
-            let exit_code = if exit_ok { None } else { Some(status.exit_code()) };
+            let exit_code = if exit_ok {
+                None
+            } else {
+                Some(status.exit_code())
+            };
             // 等待会话注册完成
-            wait_for_session(&app, &task_id, is_codex);
-            finalize_task_exit(&app, &task_id, &project_path, is_codex, exit_ok, exit_code);
+            wait_for_session(&app, &task_id, agent_kind);
+            finalize_task_exit(
+                &app,
+                &task_id,
+                &project_path,
+                agent_kind,
+                exit_ok,
+                exit_code,
+            );
             return;
         }
 
@@ -471,6 +500,28 @@ fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
         _ => {}
     }
     c
+}
+
+/// 为 Pi 命令构建 CommandBuilder，并按 Nezha 权限模式映射 Pi 的项目 trust 行为。
+///
+/// 显式传入 session-dir，避免用户 shell 环境中的 PI_CODING_AGENT_SESSION_DIR
+/// 让 Pi 写入位置与 Nezha 的 session 扫描/校验根目录分叉。
+fn build_pi_cmd(
+    agent_bin: &str,
+    permission_mode: &str,
+    project_path: &str,
+) -> Result<CommandBuilder, String> {
+    let mut c = CommandBuilder::new(agent_bin);
+    let session_dir = crate::session::pi_sessions_roots(project_path)
+        .into_iter()
+        .next()
+        .ok_or_else(|| "Cannot find Pi session directory".to_string())?;
+    c.arg("--session-dir");
+    c.arg(session_dir.to_string_lossy().as_ref());
+    if matches!(permission_mode, "auto_edit" | "full_access") {
+        c.arg("--approve");
+    }
+    Ok(c)
 }
 
 // ── Tauri 命令 ───────────────────────────────────────────────────────────────
@@ -531,29 +582,40 @@ pub async fn run_task(
     let prompt_with_images = if image_paths.is_empty() {
         base_prompt
     } else {
-        format!("{}\n\n[Attached images]\n{}", base_prompt, image_paths.join("\n"))
+        format!(
+            "{}\n\n[Attached images]\n{}",
+            base_prompt,
+            image_paths.join("\n")
+        )
     };
 
     // 将文本附件路径追加到提示词
     let final_prompt = if text_paths.is_empty() {
         prompt_with_images
     } else {
-        format!("{}\n\n[Attached text files — read these for full context]\n{}", prompt_with_images, text_paths.join("\n"))
+        format!(
+            "{}\n\n[Attached text files — read these for full context]\n{}",
+            prompt_with_images,
+            text_paths.join("\n")
+        )
     };
 
     let launch = crate::app_settings::get_agent_launch_spec(&agent);
     let agent_bin = launch.program.clone();
-    let is_codex = agent == "codex";
+    let agent_kind = AgentSessionKind::from_agent(&agent);
+    let is_codex = agent_kind.is_codex();
+    let is_pi = agent_kind.is_pi();
 
     // 版本统一走全局探测（带缓存），判断是否支持 --session-id。
     // 缓存未命中时 *_version_gte 会启子进程探测，故放进 spawn_blocking 避免阻塞 async runtime。
     let use_explicit_session = !is_codex
+        && !is_pi
         && tokio::task::spawn_blocking(|| crate::app_settings::claude_version_gte("2.1.87"))
             .await
             .unwrap_or(false);
 
-    // 预生成 session id（仅 Claude >= 2.1.87 使用）
-    let pre_session_id = if use_explicit_session {
+    // 预生成 session id（Claude >= 2.1.87 与 Pi 使用）
+    let pre_session_id = if use_explicit_session || is_pi {
         Some(uuid::Uuid::new_v4().to_string())
     } else {
         None
@@ -594,6 +656,22 @@ pub async fn run_task(
         // 空 prompt 时不传 positional arg，让 CLI 进入交互式 REPL
         if !final_prompt.is_empty() {
             c.arg("--");
+            c.arg(&final_prompt);
+        }
+        c
+    } else if is_pi {
+        let mut c = build_pi_cmd(&agent_bin, &permission_mode, &project_path)?;
+        if use_hooks {
+            if let Ok(p) = crate::hooks::pi_extension_path() {
+                c.arg("--extension");
+                c.arg(p.to_string_lossy().as_ref());
+            }
+        }
+        if let Some(ref sid) = pre_session_id {
+            c.arg("--session-id");
+            c.arg(sid);
+        }
+        if !final_prompt.is_empty() {
             c.arg(&final_prompt);
         }
         c
@@ -645,6 +723,17 @@ pub async fn run_task(
     // hook 可信时不创建 session 转发通道,也不拉起轮询 watcher。
     let session_tx = if use_hooks {
         None
+    } else if is_pi {
+        if let Some(sid) = pre_session_id.clone() {
+            spawn_resume_session_watcher_for_agent(
+                app.clone(),
+                task_id.clone(),
+                project_path.clone(),
+                sid,
+                AgentSessionKind::Pi,
+            );
+        }
+        None
     } else {
         let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
         spawn_status_session_watcher(
@@ -670,7 +759,7 @@ pub async fn run_task(
         session_tx,
         None,
     );
-    spawn_exit_monitor(app, task_id, project_path, is_codex);
+    spawn_exit_monitor(app, task_id, project_path, agent_kind);
 
     Ok(())
 }
@@ -757,12 +846,7 @@ pub async fn complete_task(
 pub async fn get_active_task_ids(
     task_manager: State<'_, TaskManager>,
 ) -> Result<Vec<String>, String> {
-    Ok(task_manager
-        .child_handles
-        .lock()
-        .keys()
-        .cloned()
-        .collect())
+    Ok(task_manager.child_handles.lock().keys().cloned().collect())
 }
 
 #[tauri::command]
@@ -842,6 +926,7 @@ pub async fn resume_task(
             .await
             .unwrap_or(false));
 
+    let agent_kind = AgentSessionKind::from_agent(&agent);
     let mut cmd = if agent == "codex" {
         let mut c = build_codex_cmd(&agent_bin, &permission_mode);
         // Nezha 注入的 hook 默认未信任会被 Codex skip;来源可信,免 trust 直接运行。
@@ -849,6 +934,17 @@ pub async fn resume_task(
             c.arg("--dangerously-bypass-hook-trust");
         }
         c.arg("resume");
+        c.arg(&session_id);
+        c
+    } else if agent == "pi" {
+        let mut c = build_pi_cmd(&agent_bin, &permission_mode, &project_path)?;
+        if use_hooks {
+            if let Ok(p) = crate::hooks::pi_extension_path() {
+                c.arg("--extension");
+                c.arg(p.to_string_lossy().as_ref());
+            }
+        }
+        c.arg("--session");
         c.arg(&session_id);
         c
     } else {
@@ -887,17 +983,27 @@ pub async fn resume_task(
         serde_json::json!({ "task_id": task_id, "status": "running" }),
     );
 
-    let is_codex = agent == "codex";
+    let is_codex = agent_kind.is_codex();
 
     // resume 时 session_id 已知，直接查找文件并开始监视(hook 可信时跳过)
     if !use_hooks {
-        spawn_resume_session_watcher(
-            app.clone(),
-            task_id.clone(),
-            project_path.clone(),
-            session_id,
-            is_codex,
-        );
+        if agent_kind.is_pi() {
+            spawn_resume_session_watcher_for_agent(
+                app.clone(),
+                task_id.clone(),
+                project_path.clone(),
+                session_id,
+                AgentSessionKind::Pi,
+            );
+        } else {
+            spawn_resume_session_watcher(
+                app.clone(),
+                task_id.clone(),
+                project_path.clone(),
+                session_id,
+                is_codex,
+            );
+        }
     }
     spawn_pty_reader(
         app.clone(),
@@ -911,7 +1017,7 @@ pub async fn resume_task(
         None,
         None,
     );
-    spawn_exit_monitor(app, task_id, project_path, is_codex);
+    spawn_exit_monitor(app, task_id, project_path, agent_kind);
 
     Ok(())
 }
@@ -924,7 +1030,9 @@ pub async fn send_input(
 ) -> Result<(), String> {
     let mut writers = task_manager.pty_writers.lock();
     if let Some(writer) = writers.get_mut(&task_id) {
-        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -946,7 +1054,12 @@ pub async fn resize_pty(
     let masters = task_manager.pty_masters.lock();
     if let Some(master) = masters.get(&task_id) {
         master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -963,11 +1076,7 @@ pub async fn open_shell(
 ) -> Result<(), String> {
     // 先终止已存在的同 ID Shell
     {
-        let child_arc = task_manager
-            .child_handles
-            .lock()
-            .get(&shell_id)
-            .cloned();
+        let child_arc = task_manager.child_handles.lock().get(&shell_id).cloned();
         if let Some(arc) = child_arc {
             let _ = arc.lock().unwrap().kill();
         }
@@ -1026,11 +1135,7 @@ pub async fn kill_shell(
     task_manager: State<'_, TaskManager>,
     shell_id: String,
 ) -> Result<(), String> {
-    let child_arc = task_manager
-        .child_handles
-        .lock()
-        .get(&shell_id)
-        .cloned();
+    let child_arc = task_manager.child_handles.lock().get(&shell_id).cloned();
     if let Some(arc) = child_arc {
         let _ = arc.lock().unwrap().kill();
     }

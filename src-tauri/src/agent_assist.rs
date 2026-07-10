@@ -75,28 +75,40 @@ async fn run_naming_agent_with_timeout(
 
     let mut cmd = tokio::process::Command::new(&launch.program);
     crate::subprocess::configure_background_tokio_command(&mut cmd);
-    if agent == "codex" {
-        cmd.args([
-            "exec",
-            "--sandbox",
-            "read-only",
-            "--ephemeral",
-            "-c",
-            "approval_policy=\"never\"",
-            prompt,
-        ]);
-    } else {
-        cmd.args([
-            "-p",
-            prompt,
-            "--output-format",
-            "text",
-            "--permission-mode",
-            "plan",
-            "--tools",
-            "",
-            "--no-session-persistence",
-        ]);
+    match agent {
+        "codex" => {
+            cmd.args([
+                "exec",
+                "--sandbox",
+                "read-only",
+                "--ephemeral",
+                "-c",
+                "approval_policy=\"never\"",
+                prompt,
+            ]);
+        }
+        "pi" => {
+            cmd.args([
+                "--print",
+                "--no-session",
+                "--no-context-files",
+                "--no-tools",
+                prompt,
+            ]);
+        }
+        _ => {
+            cmd.args([
+                "-p",
+                prompt,
+                "--output-format",
+                "text",
+                "--permission-mode",
+                "plan",
+                "--tools",
+                "",
+                "--no-session-persistence",
+            ]);
+        }
     }
     cmd.current_dir(project_path);
     cmd.stdin(Stdio::null());
@@ -282,9 +294,10 @@ pub async fn generate_task_name(
     session_path: Option<String>,
     original_prompt: String,
 ) -> Result<String, String> {
-    if !matches!(agent.as_str(), "claude" | "codex") {
+    if !matches!(agent.as_str(), "claude" | "codex" | "pi") {
         return Err(format!("Unsupported agent: {}", agent));
     }
+    let agent_kind = crate::session::AgentSessionKind::from_agent(&agent);
     let is_codex = agent == "codex";
 
     // 1. 校验 project_path 合法（M-3）
@@ -297,7 +310,11 @@ pub async fn generate_task_name(
     let summary = if let Some(raw_path) = session_path {
         let project_for_summary = project_path.clone();
         tokio::task::spawn_blocking(move || {
-            match crate::session::validate_session_path(&raw_path, &project_for_summary, is_codex) {
+            match crate::session::validate_session_path_for_agent(
+                &raw_path,
+                &project_for_summary,
+                agent_kind,
+            ) {
                 Ok(canonical) => {
                     crate::session::extract_session_summary_text(&canonical.to_string_lossy(), 7000)
                 }

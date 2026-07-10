@@ -8,7 +8,8 @@ export interface Project {
   hiddenFromRail?: boolean;
 }
 
-export type AgentType = "claude" | "codex";
+export type AgentType = "claude" | "codex" | "pi";
+export const AGENT_TYPES: AgentType[] = ["claude", "codex", "pi"];
 export type ThemeMode = "system" | "dark" | "light" | "eyecare" | "midnight";
 export type ThemeVariant = "dark" | "light" | "eyecare" | "midnight";
 export type PermissionMode = "ask" | "auto_edit" | "full_access";
@@ -124,6 +125,8 @@ export interface Task {
   codexSessionPath?: string;
   claudeSessionId?: string;
   claudeSessionPath?: string;
+  piSessionId?: string;
+  piSessionPath?: string;
   worktreePath?: string;
   worktreeBranch?: string;
   baseBranch?: string;
@@ -141,6 +144,39 @@ export const PERM_LABELS: Record<PermissionMode, string> = {
   full_access: "Full Access",
 };
 
+export function agentLabel(agent: AgentType): string {
+  switch (agent) {
+    case "claude":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "pi":
+      return "Pi";
+  }
+}
+
+export function taskSessionId(task: Task): string | undefined {
+  switch (task.agent) {
+    case "claude":
+      return task.claudeSessionId;
+    case "codex":
+      return task.codexSessionId;
+    case "pi":
+      return task.piSessionId;
+  }
+}
+
+export function taskSessionPath(task: Task): string | undefined {
+  switch (task.agent) {
+    case "claude":
+      return task.claudeSessionPath;
+    case "codex":
+      return task.codexSessionPath;
+    case "pi":
+      return task.piSessionPath;
+  }
+}
+
 export function permissionModeLabel(
   mode: PermissionMode,
   agent?: AgentType,
@@ -148,6 +184,9 @@ export function permissionModeLabel(
 ): string {
   if (agent === "codex" && mode === "auto_edit") {
     return "Auto Mode";
+  }
+  if (agent === "pi" && mode === "full_access") {
+    return "Trusted";
   }
   if (mode === "ask") return askLabel;
   return PERM_LABELS[mode];

@@ -36,7 +36,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.fonts": "Fonts",
     "appSettings.hooks": "Hook Integration",
     "appSettings.hooks.description":
-      "Nezha installs lightweight hooks into Claude Code and Codex (via your global config) so the app gets reliable task status and session linkage. Hooks are only active for tasks Nezha launches — invocations from other terminals are unaffected.",
+      "Nezha installs lightweight bridges for Claude Code, Codex, and Pi so the app gets reliable task status and session linkage. Hooks are only active for tasks Nezha launches — invocations from other terminals are unaffected.",
     "appSettings.hooks.nodeFound": "Node detected at {path}",
     "appSettings.hooks.nodeMissing":
       "Node was not found in PATH. Install Node 18+ to enable hook-based task status and notifications.",
@@ -45,6 +45,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.hooks.claudeMissing": "Claude Code hooks not installed",
     "appSettings.hooks.codexInstalled": "Codex hooks installed",
     "appSettings.hooks.codexMissing": "Codex hooks not installed",
+    "appSettings.hooks.piInstalled": "Pi bridge installed",
+    "appSettings.hooks.piMissing": "Pi bridge not installed",
+    "appSettings.hooks.piExtensionPath": "Pi extension: {path}",
+    "appSettings.hooks.agentMissing": "{agent} was not detected. Configure its path in Agent Paths.",
     "appSettings.hooks.effective": "Active — {agent} {detected} ≥ {min}",
     "appSettings.hooks.versionLow": "Fell back to polling — {agent} {detected} < {min}",
     "appSettings.hooks.error": "Install error: {message}",
@@ -80,8 +84,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.refreshing": "Refreshing...",
     "appSettings.claudePath": "Claude Code Path",
     "appSettings.codexPath": "Codex Path",
+    "appSettings.piPath": "Pi Path",
     "appSettings.claudePathHint": "Leave empty to use claude from the system PATH.",
     "appSettings.codexPathHint": "Leave empty to use codex from the system PATH.",
+    "appSettings.piPathHint": "Leave empty to use pi from the system PATH.",
     "appSettings.installedVersions": "Installed Versions",
     "appSettings.versionsHint":
       "Versions are detected from the configured executable path or the system PATH.",
@@ -310,6 +316,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
       "{agent} {detected} is below {min}. Task status detection has fallen back to polling — upgrade {agent} to {min}+ to enable the more reliable hook-based detection.",
     "newTask.hookNoNode":
       "Node.js was not detected, so task status detection has fallen back to polling. Install Node.js to enable hook-based detection.",
+    "newTask.hookAgentMissing":
+      "{agent} was not detected, so task status detection has fallen back to polling. Configure the {agent} path in Settings.",
     "newTask.hookNotInstalled":
       "{agent} hooks are not installed, so task status detection has fallen back to polling. Reinstall from Settings → Hooks.",
     "newTask.initializeButton": "Initialize",
@@ -569,7 +577,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.fonts": "字体",
     "appSettings.hooks": "Hook 集成",
     "appSettings.hooks.description":
-      "Nezha 会向 Claude Code 与 Codex 的全局配置注入轻量 hook，用于获取更可靠的任务状态与会话关联。Hook 仅对 Nezha 启动的任务生效，从其它终端发起的调用不受影响。",
+      "Nezha 会为 Claude Code、Codex 与 Pi 安装轻量事件桥，用于获取更可靠的任务状态与会话关联。Hook 仅对 Nezha 启动的任务生效，从其它终端发起的调用不受影响。",
     "appSettings.hooks.nodeFound": "已检测到 Node:{path}",
     "appSettings.hooks.nodeMissing": "未在 PATH 中找到 Node。安装 Node 18+ 即可启用基于 hook 的任务状态与通知。",
     "appSettings.hooks.scriptPath": "Hook 脚本:{path}",
@@ -577,6 +585,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.hooks.claudeMissing": "Claude Code hook 未安装",
     "appSettings.hooks.codexInstalled": "Codex hook 已安装",
     "appSettings.hooks.codexMissing": "Codex hook 未安装",
+    "appSettings.hooks.piInstalled": "Pi 事件桥已安装",
+    "appSettings.hooks.piMissing": "Pi 事件桥未安装",
+    "appSettings.hooks.piExtensionPath": "Pi 扩展:{path}",
+    "appSettings.hooks.agentMissing": "未检测到 {agent}。请在智能体路径中配置可执行文件路径。",
     "appSettings.hooks.effective": "已生效 — {agent} {detected} ≥ {min}",
     "appSettings.hooks.versionLow": "已回退轮询 — {agent} {detected} < {min}",
     "appSettings.hooks.error": "安装错误:{message}",
@@ -612,8 +624,10 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "appSettings.refreshing": "刷新中...",
     "appSettings.claudePath": "Claude Code 路径",
     "appSettings.codexPath": "Codex 路径",
+    "appSettings.piPath": "Pi 路径",
     "appSettings.claudePathHint": "留空则从系统 PATH 中使用 claude。",
     "appSettings.codexPathHint": "留空则从系统 PATH 中使用 codex。",
+    "appSettings.piPathHint": "留空则从系统 PATH 中使用 pi。",
     "appSettings.installedVersions": "已安装版本",
     "appSettings.versionsHint": "版本会从配置的可执行文件路径或系统 PATH 中检测。",
     "appSettings.claudeForceDefaultTui": "强制 Default TUI 模式",
@@ -833,6 +847,8 @@ const translations: Record<AppLanguage, Record<string, string>> = {
       "当前 {agent} 版本 {detected} 低于 {min}，任务状态检测已回退到轮询。升级 {agent} 到 {min}+ 可启用更可靠的 hook 状态检测。",
     "newTask.hookNoNode":
       "未检测到 Node.js，任务状态检测已回退到轮询。安装 Node.js 后可启用 hook 状态检测。",
+    "newTask.hookAgentMissing":
+      "未检测到 {agent}，任务状态检测已回退到轮询。请在设置中配置 {agent} 路径。",
     "newTask.hookNotInstalled":
       "{agent} 的 hook 未安装，任务状态检测已回退到轮询。可在「设置 → Hooks」中重新安装。",
     "newTask.initializeButton": "一键初始化",

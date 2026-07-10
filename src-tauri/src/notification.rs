@@ -86,7 +86,8 @@ pub struct NotificationResult {
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
 fn nezha_dir() -> Result<PathBuf, String> {
-    let home = crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let home =
+        crate::platform::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
     Ok(home.join(".nezha"))
 }
 
@@ -280,10 +281,9 @@ async fn fetch_remote() -> Result<Vec<RemoteNotification>, String> {
 
 #[tauri::command]
 pub async fn get_notifications() -> Result<NotificationResult, String> {
-    let mut store =
-        tokio::task::spawn_blocking(load_store)
-            .await
-            .map_err(|e| e.to_string())?;
+    let mut store = tokio::task::spawn_blocking(load_store)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let notifications = if should_fetch(&store) {
         match fetch_remote().await {

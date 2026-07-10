@@ -15,6 +15,32 @@ import { getAgentExecutablePlaceholder } from "./shared";
 
 const AUTO_VERSION_DETECT_DELAY_MS = 350;
 
+type AgentPathField = "claude_path" | "codex_path" | "pi_path";
+
+const AGENT_PATH_FIELD: Record<AgentKey, AgentPathField> = {
+  claude: "claude_path",
+  codex: "codex_path",
+  pi: "pi_path",
+};
+
+const AGENT_VERSION_FIELD: Record<AgentKey, keyof AgentVersions> = {
+  claude: "claude_version",
+  codex: "codex_version",
+  pi: "pi_version",
+};
+
+const AGENT_PATH_LABEL_KEY: Record<AgentKey, string> = {
+  claude: "appSettings.claudePath",
+  codex: "appSettings.codexPath",
+  pi: "appSettings.piPath",
+};
+
+const AGENT_PATH_HINT_KEY: Record<AgentKey, string> = {
+  claude: "appSettings.claudePathHint",
+  codex: "appSettings.codexPathHint",
+  pi: "appSettings.piPathHint",
+};
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "7px 10px",
@@ -63,15 +89,15 @@ const actionButtonStyle: React.CSSProperties = {
 
 export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   const { t } = useI18n();
-  const pathField: keyof AppSettings = agentKey === "claude" ? "claude_path" : "codex_path";
-  const versionField: keyof AgentVersions =
-    agentKey === "claude" ? "claude_version" : "codex_version";
-  const pathLabel = t(agentKey === "claude" ? "appSettings.claudePath" : "appSettings.codexPath");
-  const pathHint = t(agentKey === "claude" ? "appSettings.claudePathHint" : "appSettings.codexPathHint");
+  const pathField = AGENT_PATH_FIELD[agentKey];
+  const versionField = AGENT_VERSION_FIELD[agentKey];
+  const pathLabel = t(AGENT_PATH_LABEL_KEY[agentKey]);
+  const pathHint = t(AGENT_PATH_HINT_KEY[agentKey]);
 
   const emptySettings: AppSettings = {
     claude_path: "",
     codex_path: "",
+    pi_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
     claude_force_default_tui: true,
@@ -82,6 +108,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
   const [versions, setVersions] = useState<AgentVersions>({
     claude_version: "",
     codex_version: "",
+    pi_version: "",
   });
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
@@ -189,6 +216,7 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
       const next = await invoke<AppSettings>("save_agent_paths", {
         claudePath: settings.claude_path,
         codexPath: settings.codex_path,
+        piPath: settings.pi_path,
       });
       setSettings(next);
       setOriginalSettings(next);

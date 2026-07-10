@@ -287,7 +287,9 @@ pub async fn open_in_system_file_manager(path: String, project_path: String) -> 
             let folder = if is_dir {
                 target.as_path()
             } else {
-                target.parent().ok_or_else(|| "Cannot resolve parent directory".to_string())?
+                target
+                    .parent()
+                    .ok_or_else(|| "Cannot resolve parent directory".to_string())?
             };
             let status = Command::new("xdg-open")
                 .arg(folder)
@@ -543,7 +545,10 @@ pub async fn read_file_content(path: String, project_path: String) -> Result<Str
 }
 
 #[tauri::command]
-pub async fn read_image_preview(path: String, project_path: String) -> Result<ImagePreviewData, String> {
+pub async fn read_image_preview(
+    path: String,
+    project_path: String,
+) -> Result<ImagePreviewData, String> {
     let validated_path = validate_path_within(&path, &project_path, true)?;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -581,7 +586,11 @@ pub async fn read_image_preview(path: String, project_path: String) -> Result<Im
 }
 
 #[tauri::command]
-pub async fn write_file_content(path: String, content: String, project_path: String) -> Result<(), String> {
+pub async fn write_file_content(
+    path: String,
+    content: String,
+    project_path: String,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         validate_path_within(&path, &project_path, false)?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
