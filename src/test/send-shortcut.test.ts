@@ -7,8 +7,13 @@ import {
   getNewlineShortcutLabel,
   getSendShortcutKeys,
   getSendShortcutLabel,
+  getTerminalFontSizeDecreaseKeys,
+  getTerminalFontSizeIncreaseKeys,
+  getTerminalFontSizeShortcutDelta,
+  isTerminalFontSizeShortcutContext,
   isToggleKanbanShortcut,
   normalizeSendShortcut,
+  normalizeTerminalFontSizeShortcutsEnabled,
   shouldInsertPromptNewlineKey,
   shouldSubmitPromptKey,
 } from "../shortcuts";
@@ -18,6 +23,12 @@ describe("send shortcut helpers", () => {
     expect(DEFAULT_SEND_SHORTCUT).toBe("mod_enter");
     expect(normalizeSendShortcut(undefined)).toBe("mod_enter");
     expect(normalizeSendShortcut("unexpected")).toBe("mod_enter");
+  });
+
+  test("defaults terminal font size shortcuts to enabled", () => {
+    expect(normalizeTerminalFontSizeShortcutsEnabled(undefined)).toBe(true);
+    expect(normalizeTerminalFontSizeShortcutsEnabled("unexpected")).toBe(true);
+    expect(normalizeTerminalFontSizeShortcutsEnabled(false)).toBe(false);
   });
 
   test("submits with Cmd+Enter on macOS modifier mode", () => {
@@ -143,6 +154,92 @@ describe("send shortcut helpers", () => {
     expect(getNewlineShortcutKeys("mod_enter", "macos")).toEqual(["↵"]);
     expect(getNewlineShortcutKeys("enter", "macos")).toEqual(["⌘", "↵"]);
     expect(getNewlineShortcutKeys("enter", "windows")).toEqual(["Ctrl", "↵"]);
+  });
+
+  test("matches terminal font size shortcuts by platform", () => {
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "+", code: "Equal", metaKey: true, ctrlKey: false, altKey: false },
+        "macos",
+      ),
+    ).toBe(1);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "=", code: "Equal", metaKey: true, ctrlKey: false, altKey: false },
+        "macos",
+      ),
+    ).toBe(1);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "-", code: "Minus", metaKey: true, ctrlKey: false, altKey: false },
+        "macos",
+      ),
+    ).toBe(-1);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "+", code: "Equal", metaKey: false, ctrlKey: true, altKey: false },
+        "windows",
+      ),
+    ).toBe(1);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "-", code: "Minus", metaKey: false, ctrlKey: true, altKey: false },
+        "windows",
+      ),
+    ).toBe(-1);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "+", code: "NumpadAdd", metaKey: false, ctrlKey: true, altKey: false },
+        "windows",
+      ),
+    ).toBe(1);
+  });
+
+  test("ignores terminal font size shortcuts with the wrong modifier", () => {
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "+", code: "Equal", metaKey: false, ctrlKey: true, altKey: false },
+        "macos",
+      ),
+    ).toBe(0);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "+", code: "Equal", metaKey: true, ctrlKey: false, altKey: false },
+        "windows",
+      ),
+    ).toBe(0);
+    expect(
+      getTerminalFontSizeShortcutDelta(
+        { key: "+", code: "Equal", metaKey: true, ctrlKey: false, altKey: true },
+        "macos",
+      ),
+    ).toBe(0);
+  });
+
+  test("formats terminal font size shortcut keys by platform", () => {
+    expect(getTerminalFontSizeIncreaseKeys("macos")).toEqual(["⌘", "+"]);
+    expect(getTerminalFontSizeDecreaseKeys("macos")).toEqual(["⌘", "-"]);
+    expect(getTerminalFontSizeIncreaseKeys("windows")).toEqual(["Ctrl", "+"]);
+    expect(getTerminalFontSizeDecreaseKeys("other")).toEqual(["Ctrl", "-"]);
+  });
+
+  test("only enables terminal font size shortcuts in terminal context", () => {
+    document.body.innerHTML = `
+      <div class="nezha-xterm-host"><textarea id="terminal-input"></textarea></div>
+      <input id="regular-input" />
+      <button id="regular-button"></button>
+    `;
+    const terminalInput = document.getElementById("terminal-input") as HTMLTextAreaElement;
+    const regularInput = document.getElementById("regular-input") as HTMLInputElement;
+    const regularButton = document.getElementById("regular-button") as HTMLButtonElement;
+
+    expect(isTerminalFontSizeShortcutContext(terminalInput)).toBe(true);
+
+    terminalInput.focus();
+    expect(isTerminalFontSizeShortcutContext(window, document.activeElement)).toBe(true);
+
+    regularInput.focus();
+    expect(isTerminalFontSizeShortcutContext(regularButton, document.activeElement)).toBe(false);
   });
 });
 

@@ -37,6 +37,7 @@ export interface AppSettings {
   codex_path: string;
   send_shortcut: SendShortcut;
   terminal_shift_enter_newline: boolean;
+  terminal_font_size_shortcuts_enabled: boolean;
   claude_force_default_tui: boolean;
   terminal_scrollback: number;
 }
