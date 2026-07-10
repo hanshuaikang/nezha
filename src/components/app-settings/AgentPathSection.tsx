@@ -10,7 +10,15 @@ import {
 } from "../../shortcuts";
 import { DEFAULT_TERMINAL_SCROLLBACK } from "../../types";
 import s from "../../styles";
-import { APP_SETTINGS_CHANGED_EVENT, type AgentVersions, type AppSettings, type AgentKey } from "./types";
+import {
+  APP_SETTINGS_CHANGED_EVENT,
+  DEFAULT_TERMINAL_ATTACHMENT_MAX_COUNT,
+  DEFAULT_TERMINAL_ATTACHMENT_MAX_SIZE_MB,
+  DEFAULT_TERMINAL_ATTACHMENT_PASTE_ENABLED,
+  type AgentVersions,
+  type AppSettings,
+  type AgentKey,
+} from "./types";
 import { getAgentExecutablePlaceholder } from "./shared";
 
 const AUTO_VERSION_DETECT_DELAY_MS = 350;
@@ -74,6 +82,9 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
     codex_path: "",
     send_shortcut: DEFAULT_SEND_SHORTCUT,
     terminal_shift_enter_newline: DEFAULT_SHIFT_ENTER_NEWLINE,
+    terminal_attachment_paste_enabled: DEFAULT_TERMINAL_ATTACHMENT_PASTE_ENABLED,
+    terminal_attachment_max_size_mb: DEFAULT_TERMINAL_ATTACHMENT_MAX_SIZE_MB,
+    terminal_attachment_max_count: DEFAULT_TERMINAL_ATTACHMENT_MAX_COUNT,
     claude_force_default_tui: true,
     terminal_scrollback: DEFAULT_TERMINAL_SCROLLBACK,
   };

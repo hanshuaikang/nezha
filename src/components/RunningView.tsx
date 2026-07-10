@@ -694,6 +694,9 @@ export function RunningView({
             isActive={visible}
             initialData={restoreState.initialData}
             initialSnapshot={restoreState.initialSnapshot}
+            projectPath={projectPath}
+            taskId={task.id}
+            onPasteFileError={(error) => showToast(String(error), "warning")}
           />
         </div>
       ) : (
