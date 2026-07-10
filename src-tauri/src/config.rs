@@ -21,6 +21,10 @@ prompt_prefix = ""
 commit_prompt = "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting"
 # Timeout in seconds when generating commit messages via the AI agent
 commit_message_timeout_secs = 15
+
+[quick_run]
+# Shell script executed by the Run button on active tasks
+script = ""
 "#;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -47,10 +51,18 @@ fn default_commit_message_timeout_secs() -> u64 {
     DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
+pub struct QuickRunConfig {
+    #[serde(default)]
+    pub script: String,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ProjectConfig {
     pub agent: AgentConfig,
     pub git: GitConfig,
+    #[serde(default)]
+    pub quick_run: QuickRunConfig,
 }
 
 impl Default for ProjectConfig {
@@ -65,6 +77,7 @@ impl Default for ProjectConfig {
                 commit_prompt: "You are a git commit message generator. Based on the provided git diff, write a concise and descriptive commit message. Follow these rules:\n1. Use the imperative mood (e.g., \"Add feature\" not \"Added feature\")\n2. First line: type(scope): short summary (50 chars or less)\n   Types: feat, fix, docs, style, refactor, test, chore\n3. If needed, add a blank line then a brief body explaining what and why\n4. Output ONLY the commit message text, no explanations or markdown formatting".to_string(),
                 commit_message_timeout_secs: default_commit_message_timeout_secs(),
             },
+            quick_run: QuickRunConfig::default(),
         }
     }
 }

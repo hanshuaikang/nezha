@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  Play,
   Terminal as TerminalIcon,
 } from "lucide-react";
 
@@ -96,6 +97,7 @@ export function RunningView({
   onOpenWorktreeTerminal,
   onReconnect,
   onMarkDone,
+  onQuickRun,
   onInput,
   onResize,
   onRegisterTerminal,
@@ -121,6 +123,7 @@ export function RunningView({
   onOpenWorktreeTerminal?: () => void;
   onReconnect: () => void;
   onMarkDone: () => void;
+  onQuickRun?: () => void;
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
   onRegisterTerminal: (writeFn: ((data: string, callback?: () => void) => void) | null) => number;
@@ -429,6 +432,12 @@ export function RunningView({
         </div>
         {isActive && (
           <>
+            {onQuickRun && (
+              <button style={s.quickRunBtn} onClick={onQuickRun}>
+                <Play size={12} strokeWidth={2.5} />
+                <span>{t("running.quickRun")}</span>
+              </button>
+            )}
             {task.worktreePath && !task.worktreeDiscarded && onOpenWorktreeTerminal && (
               <button style={s.cancelBtn} onClick={onOpenWorktreeTerminal}>
                 <TerminalIcon size={12} strokeWidth={2.5} />

@@ -2,21 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as RadixSelect from "@radix-ui/react-select";
 import { X, FolderOpen, ChevronDown, Check } from "lucide-react";
-import { permissionModeLabel, type PermissionMode, type AgentType } from "../types";
+import { permissionModeLabel, type PermissionMode, type AgentType, type ProjectConfig } from "../types";
 import { useI18n } from "../i18n";
 import s from "../styles";
-
-interface ProjectConfig {
-  agent: {
-    default: string;
-    default_permission_mode: string;
-    prompt_prefix: string;
-  };
-  git: {
-    commit_prompt: string;
-    commit_message_timeout_secs?: number;
-  };
-}
 
 const PERMISSION_MODES: PermissionMode[] = ["ask", "auto_edit", "full_access"];
 const MIN_COMMIT_MESSAGE_TIMEOUT_SECS = 1;
@@ -76,12 +64,21 @@ function Select({
   );
 }
 
-function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClose: () => void }) {
+function ProjectSettings({
+  projectPath,
+  onClose,
+  onSaved,
+}: {
+  projectPath: string;
+  onClose: () => void;
+  onSaved?: () => void;
+}) {
   const { t } = useI18n();
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [agentDefault, setAgentDefault] = useState("claude");
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode>("ask");
   const [promptPrefix, setPromptPrefix] = useState("");
+  const [quickRunScript, setQuickRunScript] = useState("");
   const [commitPrompt, setCommitPrompt] = useState("");
   const [commitMessageTimeoutSecs, setCommitMessageTimeoutSecs] = useState(
     String(DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS),
@@ -99,6 +96,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
           setDefaultPermissionMode(mode);
         }
         setPromptPrefix(c.agent.prompt_prefix ?? "");
+        setQuickRunScript(c.quick_run?.script ?? "");
         setCommitPrompt(c.git.commit_prompt);
         const timeoutSecs = c.git.commit_message_timeout_secs ?? DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS;
         setCommitMessageTimeoutSecs(
@@ -166,8 +164,12 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             commit_prompt: commitPrompt,
             commit_message_timeout_secs: timeoutSecs,
           },
+          quick_run: {
+            script: quickRunScript,
+          },
         },
       });
+      onSaved?.();
       onClose();
     } catch (e) {
       setError(String(e));
@@ -236,6 +238,24 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
             </div>
 
             <div style={s.modalSection}>
+              <div style={s.modalSectionTitle}>{t("settings.quickRun")}</div>
+              <div style={s.modalField}>
+                <label style={s.modalLabel}>
+                  {t("settings.quickRunScript")}
+                  <span style={s.modalLabelHint}>{t("settings.quickRunScriptHint")}</span>
+                </label>
+                <textarea
+                  style={s.modalTextarea}
+                  value={quickRunScript}
+                  onChange={(e) => setQuickRunScript(e.target.value)}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder={t("settings.quickRunScriptPlaceholder")}
+                />
+              </div>
+            </div>
+
+            <div style={s.modalSection}>
               <div style={s.modalSectionTitle}>{t("settings.git")}</div>
               <div style={s.modalField}>
                 <label style={s.modalLabel}>
@@ -295,9 +315,11 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
 export function SettingsDialog({
   projectPath,
   onClose,
+  onSaved,
 }: {
   projectPath: string;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const { t } = useI18n();
   const [activeNav, setActiveNav] = useState<NavKey>("project");
@@ -341,7 +363,7 @@ export function SettingsDialog({
           </div>
 
           {activeNav === "project" && (
-            <ProjectSettings projectPath={projectPath} onClose={onClose} />
+            <ProjectSettings projectPath={projectPath} onClose={onClose} onSaved={onSaved} />
           )}
         </div>
       </div>
