@@ -29,7 +29,7 @@ import { ShellTerminalPanel, type ShellTerminalPanelHandle } from "./ShellTermin
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useToast } from "./Toast";
 import { useProjectPanels } from "../hooks/useProjectPanels";
-import { useGitRoots } from "../hooks/useGitRoots";
+import { resolveProjectGitContext, useGitRoots } from "../hooks/useGitRoots";
 import { useI18n } from "../i18n";
 import s from "../styles";
 
@@ -137,11 +137,7 @@ export function ProjectPage({
   onSnapshot: (taskId: string, snapshot: string) => void;
   onBack: () => void;
   onSwitchProject: (project: Project) => void;
-  onCommitProjectOrder: (
-    draggedId: string,
-    beforeId: string | null,
-    visibleIds: string[],
-  ) => void;
+  onCommitProjectOrder: (draggedId: string, beforeId: string | null, visibleIds: string[]) => void;
   onOpen: () => void;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
@@ -214,12 +210,21 @@ export function ProjectPage({
   const { roots: gitRoots, selectedRoot, setSelectedRoot } = useGitRoots(project.id, project.path);
   const subRepoPath = selectedRoot?.path ?? project.path;
 
-  // GitChanges/GitHistory 的 cwd：worktree 任务用 worktree 路径，否则用 sub-repo（或单仓库的 project.path）。
-  // 主仓 git status 看不到 worktree 内未提交修改，必须切到 worktree cwd 才能查看 / 暂存 / 提交。
-  const gitContextPath =
-    selectedTask?.worktreePath && !selectedTask.worktreeDiscarded
-      ? selectedTask.worktreePath
-      : subRepoPath;
+  // Worktree 任务固定归属于创建它的 git 根。选中这类任务时，仓库选择器、BranchBar
+  // 和 Git 面板必须保持同一上下文，不能让全局 sub-repo 选择把界面拆成两个仓库。
+  const {
+    displayedRepoPath,
+    commandRepoPath: gitContextPath,
+    selectionLocked: repoSelectionLocked,
+  } = resolveProjectGitContext(project.path, subRepoPath, selectedTask);
+
+  const previousGitContextRef = useRef(gitContextPath);
+  useEffect(() => {
+    if (previousGitContextRef.current === gitContextPath) return;
+    previousGitContextRef.current = gitContextPath;
+    // diff 的 path/hash 都属于旧仓库；切换上下文后继续复用会展示另一个仓库的内容。
+    setOpenDiff(null);
+  }, [gitContextPath, setOpenDiff]);
 
   const handleSearchFileSelect = useCallback(
     (path: string, name: string) => {
@@ -355,22 +360,7 @@ export function ProjectPage({
   const currentTaskCreatedAt = selectedTask?.createdAt ?? null;
 
   return (
-    <div
-      style={{
-        ...s.projectBody,
-        position: "absolute",
-        inset: 0,
-        // 非激活项目用 display:none 而非 visibility:hidden——visibility:hidden
-        // 仍把元素留在 layout tree 中，macOS WKWebView 的 NSTextInputClient
-        // 在中文 IME 拖选时会扫描全部 RenderText（含非激活项目子树里的 emoji/img），
-        // 触发 hit-test 风暴。display:none 把整棵子树从 layout tree 移除，
-        // 风暴范围只剩当前可见项目。xterm buffer 在 display:none 下仍同步更新，
-        // 切回时 ResizeObserver 触发 fit 不丢数据。
-        display: visible ? "flex" : "none",
-        pointerEvents: visible ? "auto" : "none",
-        zIndex: visible ? 1 : 0,
-      }}
-    >
+    <div style={visible ? s.projectBodyVisible : s.projectBodyHidden}>
       <ProjectRail
         projects={allProjects}
         allTasks={tasks}
@@ -383,7 +373,9 @@ export function ProjectPage({
       />
       <TaskPanel
         project={project}
-        repoPath={subRepoPath}
+        repoPath={displayedRepoPath}
+        branchRepoPath={gitContextPath}
+        repoSelectionLocked={repoSelectionLocked}
         gitRoots={gitRoots}
         onSelectRoot={setSelectedRoot}
         tasks={projectTasks}
@@ -418,17 +410,8 @@ export function ProjectPage({
         collapsed={taskPanelCollapsed}
         onToggleCollapsed={() => setTaskPanelCollapsed((v) => !v)}
       />
-      <div style={{ ...s.mainContent, flexDirection: "column" }}>
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            minHeight: 0,
-            position: "relative",
-          }}
-        >
+      <div style={s.mainContent}>
+        <div style={s.projectMainStage}>
           {/* Foreground: file viewer, diff, or new-task composer */}
           <ErrorBoundary
             label="主内容区"
@@ -583,19 +566,8 @@ export function ProjectPage({
       </div>
 
       {rightPanel && (
-        <div style={{ position: "relative", display: "flex", flexShrink: 0 }}>
-          <div
-            onMouseDown={handleRightResizeStart}
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 5,
-              cursor: "col-resize",
-              zIndex: 10,
-            }}
-          />
+        <div style={s.rightPanelWrap}>
+          <div onMouseDown={handleRightResizeStart} style={s.rightPanelResizeHandle} />
           {rightPanel === "files" && (
             <ErrorBoundary label="文件浏览器">
               <FileExplorer

@@ -31,6 +31,8 @@ import s from "../styles";
 export function TaskPanel({
   project,
   repoPath,
+  branchRepoPath,
+  repoSelectionLocked,
   gitRoots,
   onSelectRoot,
   tasks,
@@ -68,6 +70,10 @@ export function TaskPanel({
   project: Project;
   /** 当前活动 git 根（用于 BranchBar / 多仓库工作区切换） */
   repoPath: string;
+  /** BranchBar 的实际 git cwd；worktree 任务中为 worktreePath。 */
+  branchRepoPath: string;
+  /** worktree 任务选中时锁定仓库，避免界面同时操作另一个 sub-repo。 */
+  repoSelectionLocked: boolean;
   /** 项目下所有 git 根。仅当 length > 1 时渲染 RepoSelector。 */
   gitRoots: GitRoot[];
   onSelectRoot: (path: string) => void;
@@ -116,7 +122,7 @@ export function TaskPanel({
 
   if (collapsed) {
     return (
-      <div style={{ ...s.taskPanel, ...s.taskPanelCollapsed }}>
+      <div style={s.taskPanelCollapsedRoot}>
         <button
           type="button"
           style={s.taskPanelExpandBtn}
@@ -131,10 +137,9 @@ export function TaskPanel({
           <ProjectAvatar name={project.name} size={24} />
           <button
             type="button"
-            style={{
-              ...s.taskPanelCollapsedNewBtn,
-              color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
-            }}
+            style={
+              isNewTask ? s.taskPanelCollapsedNewBtnActive : s.taskPanelCollapsedNewBtnInactive
+            }
             onClick={onNewTask}
             title={t("task.newTask")}
             aria-label={t("task.newTask")}
@@ -178,7 +183,7 @@ export function TaskPanel({
 
       {/* Search */}
       <div style={s.panelSearchWrap}>
-        <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+        <Search size={13} strokeWidth={2} color="var(--text-muted)" style={s.flexShrinkIcon} />
         <input
           style={s.panelSearchInput}
           placeholder={t("task.searchTasks")}
@@ -189,34 +194,30 @@ export function TaskPanel({
 
       {/* Repo selector (only multi-repo workspaces) */}
       {gitRoots.length > 1 && (
-        <RepoSelector roots={gitRoots} selectedPath={repoPath} onSelect={onSelectRoot} />
+        <RepoSelector
+          roots={gitRoots}
+          selectedPath={repoPath}
+          onSelect={onSelectRoot}
+          disabled={repoSelectionLocked}
+        />
       )}
 
       {/* Branch bar */}
-      <BranchBar projectRoot={project.path} repoPath={repoPath} active={active} />
+      <BranchBar projectRoot={project.path} repoPath={branchRepoPath} active={active} />
 
       {/* New Task row */}
-      <button
-        style={{
-          ...s.newTaskRow,
-          background: isNewTask ? "var(--control-active-bg)" : "var(--bg-card)",
-          color: isNewTask ? "var(--control-active-fg)" : "var(--text-secondary)",
-        }}
-        onClick={onNewTask}
-      >
-        <Plus size={14} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{t("task.newTask")}</span>
+      <button style={isNewTask ? s.newTaskRowActive : s.newTaskRowInactive} onClick={onNewTask}>
+        <Plus size={14} strokeWidth={2.5} style={s.flexShrinkIcon} />
+        <span style={s.newTaskRowLabel}>{t("task.newTask")}</span>
       </button>
 
       <div style={s.taskActionsRow}>
-        <div style={s.taskActionsMeta}>{tasks.length} {t("task.tasks")}</div>
+        <div style={s.taskActionsMeta}>
+          {tasks.length} {t("task.tasks")}
+        </div>
         <button
           type="button"
-          style={{
-            ...s.taskActionBtn,
-            opacity: tasks.length > 0 ? 1 : 0.45,
-            cursor: tasks.length > 0 ? "pointer" : "default",
-          }}
+          style={tasks.length > 0 ? s.taskActionBtn : s.taskActionBtnDisabled}
           disabled={tasks.length === 0}
           onClick={onDeleteAllTasks}
         >

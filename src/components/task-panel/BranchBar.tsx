@@ -92,8 +92,8 @@ function BranchDialog({
       }}
     >
       <div style={s.branchDialogBox} onKeyDown={handleKeyDown}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={s.branchDialogHeader}>
+          <div style={s.branchDialogHeaderTitle}>
             <GitBranch size={16} strokeWidth={2} color="var(--text-hint)" />
             <span style={s.branchDialogTitle}>{t("branch.createBranch")}</span>
           </div>
@@ -103,7 +103,7 @@ function BranchDialog({
         </div>
 
         <div>
-          <label style={{ ...s.modalLabel, display: "flex", alignItems: "center", gap: 5 }}>
+          <label style={s.branchDialogLabel}>
             <Tag size={12} strokeWidth={2} color="var(--text-hint)" />
             {t("branch.branchName")}
           </label>
@@ -117,29 +117,21 @@ function BranchDialog({
         </div>
 
         <div>
-          <label style={{ ...s.modalLabel, display: "flex", alignItems: "center", gap: 5 }}>
+          <label style={s.branchDialogLabel}>
             <GitFork size={12} strokeWidth={2} color="var(--text-hint)" />
             {t("branch.basedOn")}
           </label>
           <Popover.Root open={popoverOpen} onOpenChange={setPopoverOpen}>
             <Popover.Trigger asChild>
-              <button className="radix-select-trigger" style={{ width: "100%" }}>
-                <span
-                  style={{
-                    flex: 1,
-                    textAlign: "left",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
+              <button className="radix-select-trigger">
+                <span style={s.branchDialogSelectValue}>
                   {fromBranch || t("branch.selectBranch")}
                 </span>
                 <ChevronDown
                   size={13}
                   strokeWidth={2}
                   color="var(--text-hint)"
-                  style={{ flexShrink: 0 }}
+                  style={s.flexShrinkIcon}
                 />
               </button>
             </Popover.Trigger>
@@ -156,7 +148,7 @@ function BranchDialog({
                     size={13}
                     strokeWidth={2}
                     color="var(--text-hint)"
-                    style={{ flexShrink: 0 }}
+                    style={s.flexShrinkIcon}
                   />
                   <input
                     className="branch-popover-search-input"
@@ -186,7 +178,7 @@ function BranchDialog({
                             size={12}
                             strokeWidth={2}
                             color="var(--text-hint)"
-                            style={{ flexShrink: 0 }}
+                            style={s.flexShrinkIcon}
                           />
                           <span className="branch-popover-item-name">
                             {b.name}
@@ -197,7 +189,7 @@ function BranchDialog({
                               size={12}
                               strokeWidth={2.5}
                               color="var(--accent)"
-                              style={{ flexShrink: 0, marginLeft: "auto" }}
+                              style={s.repoSelectorCheck}
                             />
                           )}
                         </button>
@@ -218,7 +210,7 @@ function BranchDialog({
                             size={12}
                             strokeWidth={2}
                             color="var(--text-hint)"
-                            style={{ flexShrink: 0 }}
+                            style={s.flexShrinkIcon}
                           />
                           <span className="branch-popover-item-name">{b.name}</span>
                           {fromBranch === b.name && (
@@ -226,7 +218,7 @@ function BranchDialog({
                               size={12}
                               strokeWidth={2.5}
                               color="var(--accent)"
-                              style={{ flexShrink: 0, marginLeft: "auto" }}
+                              style={s.repoSelectorCheck}
                             />
                           )}
                         </button>
@@ -234,16 +226,7 @@ function BranchDialog({
                     </div>
                   ))}
                   {localBranches.length === 0 && Object.keys(remoteGroups).length === 0 && (
-                    <div
-                      style={{
-                        padding: "12px 10px",
-                        fontSize: 12,
-                        color: "var(--text-hint)",
-                        textAlign: "center",
-                      }}
-                    >
-                      {t("branch.noBranchesFound")}
-                    </div>
+                    <div className="branch-popover-empty">{t("branch.noBranchesFound")}</div>
                   )}
                 </div>
               </Popover.Content>
@@ -253,22 +236,22 @@ function BranchDialog({
 
         {error && <div style={s.branchDialogError}>{error}</div>}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div style={s.branchDialogActions}>
           <button style={s.modalCancelBtn} onClick={onClose}>
             {t("common.cancel")}
           </button>
           <Popover.Root open={splitMenuOpen} onOpenChange={setSplitMenuOpen}>
             <Popover.Trigger asChild>
               <button
-                style={{
-                  ...s.modalSaveSelectTrigger,
-                  opacity: !branchName.trim() || loading ? 0.5 : 1,
-                  cursor: !branchName.trim() || loading ? "default" : "pointer",
-                }}
+                style={
+                  !branchName.trim() || loading
+                    ? s.modalSaveSelectTriggerDisabled
+                    : s.modalSaveSelectTrigger
+                }
                 disabled={!branchName.trim() || loading}
               >
                 <span>{loading ? t("branch.creating") : t("branch.createAndSwitch")}</span>
-                <ChevronDown size={12} strokeWidth={2.5} style={{ opacity: 0.7 }} />
+                <ChevronDown size={12} strokeWidth={2.5} style={s.dimChevronIconStrong} />
               </button>
             </Popover.Trigger>
             <Popover.Portal>
@@ -280,27 +263,13 @@ function BranchDialog({
                 style={s.toolbarMenuContent}
               >
                 <Popover.Close asChild>
-                  <button
-                    style={s.modalSaveMenuItem}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "var(--accent-subtle)")
-                    }
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onClick={() => handleCreate(true)}
-                  >
+                  <button className="branch-popover-item" onClick={() => handleCreate(true)}>
                     <GitFork size={13} strokeWidth={2} color="var(--text-muted)" />
                     {t("branch.createAndSwitch")}
                   </button>
                 </Popover.Close>
                 <Popover.Close asChild>
-                  <button
-                    style={s.modalSaveMenuItem}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "var(--accent-subtle)")
-                    }
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onClick={() => handleCreate(false)}
-                  >
+                  <button className="branch-popover-item" onClick={() => handleCreate(false)}>
                     <Plus size={13} strokeWidth={2} color="var(--text-muted)" />
                     {t("branch.createOnly")}
                   </button>
@@ -324,34 +293,60 @@ export function BranchBar({
   active?: boolean;
 }) {
   const { t } = useI18n();
-  const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [showDialog, setShowDialog] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState("");
+  const repoKey = `${projectRoot}\0${repoPath}`;
+  const activeRepoKeyRef = useRef(repoKey);
+  activeRepoKeyRef.current = repoKey;
+  const [branchState, setBranchState] = useState<{
+    repoKey: string;
+    branches: GitBranchInfo[];
+  }>({ repoKey: "", branches: [] });
+  const branches = useMemo(
+    () => (branchState.repoKey === repoKey ? branchState.branches : []),
+    [branchState, repoKey],
+  );
 
   // 防止 focus / 轮询 / 切换分支 等多源触发同时打出多次 IPC 请求。
-  // 已有未完成的请求时直接复用，避免后端 git 命令并发堵塞 Tokio worker。
-  const inflightRef = useRef<Promise<void> | null>(null);
+  // 只复用同一 repoKey 的请求；切仓后旧响应必须丢弃，不能覆盖新仓库的分支列表。
+  const inflightRef = useRef<{
+    repoKey: string;
+    requestId: symbol;
+    promise: Promise<void>;
+  } | null>(null);
   const fetchBranches = useCallback(async () => {
-    if (inflightRef.current) return inflightRef.current;
+    if (inflightRef.current?.repoKey === repoKey) return inflightRef.current.promise;
+    const requestId = Symbol(repoKey);
     const p = (async () => {
       try {
         const result = await invoke<GitBranchInfo[]>("git_list_branches", {
           projectPath: projectRoot,
           repoPath,
         });
-        setBranches(result);
+        if (activeRepoKeyRef.current === repoKey) {
+          setBranchState({ repoKey, branches: result });
+        }
       } catch {
         // not a git repo or git not available
       } finally {
-        inflightRef.current = null;
+        if (inflightRef.current?.requestId === requestId) {
+          inflightRef.current = null;
+        }
       }
     })();
-    inflightRef.current = p;
+    inflightRef.current = { repoKey, requestId, promise: p };
     return p;
-  }, [projectRoot, repoPath]);
+  }, [projectRoot, repoPath, repoKey]);
+
+  useEffect(() => {
+    setPickerOpen(false);
+    setSearch("");
+    setSwitchError("");
+    setSwitching(null);
+  }, [repoKey]);
 
   useEffect(() => {
     if (!active) return;
@@ -403,7 +398,7 @@ export function BranchBar({
       });
       const staleFetch = inflightRef.current;
       if (staleFetch) {
-        await staleFetch;
+        await staleFetch.promise;
       }
       await fetchBranches();
       setPickerOpen(false);
@@ -428,28 +423,26 @@ export function BranchBar({
         }}
       >
         <Popover.Trigger asChild>
-          <div
-            style={{
-              ...s.branchBar,
-              background: pickerOpen ? "var(--bg-hover)" : "var(--bg-card)",
-              cursor: "pointer",
-            }}
+          <button
+            type="button"
+            style={pickerOpen ? s.branchBarOpen : s.branchBar}
             title={t("branch.switchBranch")}
+            aria-label={t("branch.switchBranch")}
           >
             <GitBranch
               size={12}
               strokeWidth={2}
               color="var(--text-muted)"
-              style={{ flexShrink: 0 }}
+              style={s.flexShrinkIcon}
             />
             <span style={s.branchBarName}>{currentBranch?.name ?? t("branch.detachedHead")}</span>
             <ChevronDown
               size={11}
               strokeWidth={2}
               color="var(--text-hint)"
-              style={{ flexShrink: 0 }}
+              style={s.flexShrinkIcon}
             />
-          </div>
+          </button>
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
@@ -460,12 +453,7 @@ export function BranchBar({
           >
             {/* Search */}
             <div className="branch-popover-search">
-              <Search
-                size={13}
-                strokeWidth={2}
-                color="var(--text-hint)"
-                style={{ flexShrink: 0 }}
-              />
+              <Search size={13} strokeWidth={2} color="var(--text-hint)" style={s.flexShrinkIcon} />
               <input
                 className="branch-popover-search-input"
                 placeholder={t("branch.switchToBranch")}
@@ -492,13 +480,17 @@ export function BranchBar({
                       className="branch-popover-item"
                       onClick={() => handleSwitch(b)}
                       disabled={!!switching}
-                      style={{ opacity: switching && switching !== b.name ? 0.5 : 1 }}
+                      style={
+                        switching && switching !== b.name
+                          ? s.branchPopoverItemDim
+                          : s.branchPopoverItemNormal
+                      }
                     >
                       <GitBranch
                         size={12}
                         strokeWidth={2}
                         color="var(--text-hint)"
-                        style={{ flexShrink: 0 }}
+                        style={s.flexShrinkIcon}
                       />
                       <span className="branch-popover-item-name">{b.name}</span>
                       {b.current && (
@@ -506,16 +498,10 @@ export function BranchBar({
                           size={12}
                           strokeWidth={2.5}
                           color="var(--accent)"
-                          style={{ flexShrink: 0, marginLeft: "auto" }}
+                          style={s.repoSelectorCheck}
                         />
                       )}
-                      {switching === b.name && (
-                        <span
-                          style={{ fontSize: 10, color: "var(--text-hint)", marginLeft: "auto" }}
-                        >
-                          …
-                        </span>
-                      )}
+                      {switching === b.name && <span style={s.branchSwitchIndicator}>…</span>}
                     </button>
                   ))}
                 </>
@@ -530,66 +516,44 @@ export function BranchBar({
                       className="branch-popover-item"
                       onClick={() => handleSwitch(b)}
                       disabled={!!switching}
-                      style={{ opacity: switching && switching !== b.name ? 0.5 : 1 }}
+                      style={
+                        switching && switching !== b.name
+                          ? s.branchPopoverItemDim
+                          : s.branchPopoverItemNormal
+                      }
                     >
                       <GitBranch
                         size={12}
                         strokeWidth={2}
                         color="var(--text-hint)"
-                        style={{ flexShrink: 0 }}
+                        style={s.flexShrinkIcon}
                       />
                       <span className="branch-popover-item-name">{b.name}</span>
-                      {switching === b.name && (
-                        <span
-                          style={{ fontSize: 10, color: "var(--text-hint)", marginLeft: "auto" }}
-                        >
-                          …
-                        </span>
-                      )}
+                      {switching === b.name && <span style={s.branchSwitchIndicator}>…</span>}
                     </button>
                   ))}
                 </div>
               ))}
               {localBranches.length === 0 && Object.keys(remoteGroups).length === 0 && (
-                <div
-                  style={{
-                    padding: "12px 10px",
-                    fontSize: 12,
-                    color: "var(--text-hint)",
-                    textAlign: "center",
-                  }}
-                >
-                  {t("branch.noBranchesFound")}
-                </div>
+                <div className="branch-popover-empty">{t("branch.noBranchesFound")}</div>
               )}
             </div>
 
-            {switchError && (
-              <div
-                style={{
-                  padding: "6px 10px",
-                  fontSize: 11,
-                  color: "var(--danger)",
-                  borderTop: "1px solid var(--border)",
-                }}
-              >
-                {switchError}
-              </div>
-            )}
+            {switchError && <div style={s.branchSwitchError}>{switchError}</div>}
 
             {/* Footer: new branch */}
             <div className="branch-popover-separator" />
             <button
               className="branch-popover-item"
-              style={{ gap: 6 }}
+              style={s.branchNewItem}
               onClick={() => {
                 setPickerOpen(false);
                 setSearch("");
                 setShowDialog(true);
               }}
             >
-              <Plus size={12} strokeWidth={2.5} color="var(--accent)" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: "var(--accent)" }}>{t("branch.newBranch")}</span>
+              <Plus size={12} strokeWidth={2.5} color="var(--accent)" style={s.flexShrinkIcon} />
+              <span style={s.branchNewItemLabel}>{t("branch.newBranch")}</span>
             </button>
           </Popover.Content>
         </Popover.Portal>

@@ -11,35 +11,42 @@ export function RepoSelector({
   roots,
   selectedPath,
   onSelect,
+  disabled = false,
 }: {
   roots: GitRoot[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const selected = roots.find((r) => r.path === selectedPath) ?? null;
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={disabled ? undefined : setOpen}>
       <Popover.Trigger asChild>
-        <div
-          style={{
-            ...s.repoSelectorBar,
-            background: open ? "var(--bg-hover)" : "var(--bg-card)",
-          }}
-          title={t("repo.switchRepo")}
+        <button
+          type="button"
+          style={disabled ? s.repoSelectorBarDisabled : s.repoSelectorBar}
+          title={t(disabled ? "repo.lockedToWorktree" : "repo.switchRepo")}
+          aria-label={t(disabled ? "repo.lockedToWorktree" : "repo.switchRepo")}
+          disabled={disabled}
         >
-          <FolderGit2 size={12} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <FolderGit2
+            size={12}
+            strokeWidth={2}
+            color="var(--text-muted)"
+            style={s.flexShrinkIcon}
+          />
           <span style={s.repoSelectorName}>{selected?.name ?? "—"}</span>
           <span style={s.repoSelectorBadge}>{roots.length}</span>
           <ChevronDown
             size={11}
             strokeWidth={2}
             color="var(--text-hint)"
-            style={{ flexShrink: 0 }}
+            style={s.flexShrinkIcon}
           />
-        </div>
+        </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
@@ -54,6 +61,7 @@ export function RepoSelector({
               const active = selectedPath === r.path;
               return (
                 <button
+                  type="button"
                   key={r.path}
                   className="branch-popover-item"
                   onClick={() => {
@@ -65,7 +73,7 @@ export function RepoSelector({
                     size={12}
                     strokeWidth={2}
                     color={active ? "var(--accent)" : "var(--text-hint)"}
-                    style={{ flexShrink: 0 }}
+                    style={s.flexShrinkIcon}
                   />
                   <span className="branch-popover-item-name">{r.name}</span>
                   {active && (
@@ -73,7 +81,7 @@ export function RepoSelector({
                       size={12}
                       strokeWidth={2.5}
                       color="var(--accent)"
-                      style={{ flexShrink: 0, marginLeft: "auto" }}
+                      style={s.repoSelectorCheck}
                     />
                   )}
                 </button>

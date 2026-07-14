@@ -3,6 +3,66 @@ import type React from "react";
 export const GIT_FILE_BROWSER_ROW_HEIGHT = 24;
 export const GIT_FILE_BROWSER_MAX_HEIGHT = 420;
 
+export function gitChangesPanelStyle(width: number): React.CSSProperties {
+  return {
+    ...gitDiff.gitChangesPanel,
+    width,
+  };
+}
+
+export function gitHistoryRootStyle(width: number): React.CSSProperties {
+  return { "--git-history-width": `${width}px` } as React.CSSProperties;
+}
+
+export function gitChangesHeaderIconStyle(disabled = false): React.CSSProperties {
+  return disabled
+    ? { ...gitDiff.gitChangesHeaderIconBtn, ...gitDiff.gitChangesHeaderIconBtnDisabled }
+    : gitDiff.gitChangesHeaderIconBtn;
+}
+
+export function gitChangesCommitInputStyle(
+  hasError: boolean,
+  focused: boolean,
+): React.CSSProperties {
+  if (hasError) {
+    return { ...gitDiff.gitChangesCommitInput, ...gitDiff.gitChangesCommitInputError };
+  }
+  if (focused) {
+    return { ...gitDiff.gitChangesCommitInput, ...gitDiff.gitChangesCommitInputFocused };
+  }
+  return gitDiff.gitChangesCommitInput;
+}
+
+export function gitChangesGenerateButtonStyle(busy: boolean): React.CSSProperties {
+  return busy
+    ? { ...gitDiff.gitChangesGenerateBtn, ...gitDiff.gitChangesGenerateBtnBusy }
+    : gitDiff.gitChangesGenerateBtn;
+}
+
+export function gitChangesCommitButtonStyle(disabled: boolean): React.CSSProperties {
+  return disabled
+    ? { ...gitDiff.gitChangesCommitBtn, ...gitDiff.gitChangesCommitBtnDisabled }
+    : gitDiff.gitChangesCommitBtn;
+}
+
+export function gitChangesTopSectionStyle(hovered: boolean): React.CSSProperties {
+  return hovered
+    ? { ...gitDiff.gitChangesTopSectionHeader, ...gitDiff.gitChangesTopSectionHeaderHovered }
+    : gitDiff.gitChangesTopSectionHeader;
+}
+
+export function gitChangesSectionCountStyle(hasAction: boolean): React.CSSProperties {
+  return hasAction
+    ? { ...gitDiff.gitChangesSectionCount, ...gitDiff.gitChangesSectionCountWithAction }
+    : gitDiff.gitChangesSectionCount;
+}
+
+export function gitChangesSectionActionStyle(visible: boolean): React.CSSProperties {
+  return visible
+    ? { ...gitDiff.gitChangesSectionAction, ...gitDiff.gitChangesSectionActionVisible }
+    : gitDiff.gitChangesSectionAction;
+}
+
 const gitFileViewToggleBtnBase = {
   width: 24,
   height: 22,
@@ -13,6 +73,18 @@ const gitFileViewToggleBtnBase = {
   alignItems: "center",
   justifyContent: "center",
   transition: "background 0.1s, color 0.1s",
+} satisfies React.CSSProperties;
+
+const gitDiffToggleBtnBase = {
+  width: 28,
+  height: 28,
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  outline: "none",
 } satisfies React.CSSProperties;
 
 export const gitDiff = {
@@ -61,16 +133,16 @@ export const gitDiff = {
     borderRadius: 8,
     background: "var(--bg-card)",
   },
-  diffToggleBtn: {
-    width: 28,
-    height: 28,
-    border: "none",
-    borderRadius: 6,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    outline: "none",
+  diffToggleBtn: gitDiffToggleBtnBase,
+  diffToggleBtnActive: {
+    ...gitDiffToggleBtnBase,
+    background: "var(--control-active-bg)",
+    color: "var(--control-active-fg)",
+  },
+  diffToggleBtnInactive: {
+    ...gitDiffToggleBtnBase,
+    background: "transparent",
+    color: "var(--text-hint)",
   },
   diffCloseBtn: {
     width: 28,
@@ -187,6 +259,29 @@ export const gitDiff = {
   },
 
   // ── GitChanges discard controls ───────────────────────────────────────────
+  gitChangesPanel: {
+    flexShrink: 0,
+    background: "var(--bg-sidebar)",
+    borderLeft: "1px solid var(--border-dim)",
+    display: "flex",
+    flexDirection: "column" as const,
+    overflow: "hidden",
+  },
+  gitChangesHeader: {
+    height: 48,
+    display: "flex",
+    alignItems: "center",
+    padding: "0 12px",
+    borderBottom: "1px solid var(--border-dim)",
+    flexShrink: 0,
+    gap: 6,
+  },
+  gitChangesTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: 650,
+    color: "var(--text-primary)",
+  },
   gitChangesHeaderIconBtn: {
     background: "none",
     border: "none",
@@ -201,6 +296,179 @@ export const gitDiff = {
     cursor: "default",
     opacity: 0.4,
   },
+  gitChangesTabs: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 12px 4px",
+    flexShrink: 0,
+  },
+  gitChangesTabActive: {
+    padding: "3px 10px",
+    borderRadius: 5,
+    fontSize: 12,
+    fontWeight: 600,
+    border: "none",
+    cursor: "pointer",
+    background: "var(--control-selected-bg)",
+    color: "var(--control-selected-fg)",
+  },
+  gitChangesTabInactive: {
+    padding: "3px 10px",
+    borderRadius: 5,
+    fontSize: 12,
+    fontWeight: 500,
+    border: "none",
+    cursor: "pointer",
+    background: "none",
+    color: "var(--text-muted)",
+  },
+  gitChangesViewToggleWrap: { marginLeft: "auto" },
+  gitChangesError: {
+    margin: "0 12px 4px",
+    padding: "6px 10px",
+    background: "var(--danger-surface)",
+    border: "1px solid var(--danger-border)",
+    borderRadius: 6,
+    fontSize: 11.5,
+    color: "var(--danger-fg)",
+  },
+  gitChangesFileList: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto" as const,
+    overflowX: "hidden" as const,
+  },
+  gitChangesEmpty: {
+    padding: "24px 16px",
+    fontSize: 12,
+    color: "var(--text-hint)",
+    textAlign: "center" as const,
+  },
+  gitChangesCommitArea: {
+    padding: "8px 10px",
+    borderTop: "1px solid var(--border-dim)",
+    flexShrink: 0,
+  },
+  gitChangesCommitInputWrap: { position: "relative" as const },
+  gitChangesCommitInput: {
+    width: "100%",
+    padding: "8px 36px 8px 10px",
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 6,
+    color: "var(--text-primary)",
+    fontSize: 12.5,
+    resize: "none" as const,
+    outline: "none",
+    fontFamily: "var(--font-ui)",
+    boxSizing: "border-box" as const,
+    transition: "border-color 0.15s",
+  },
+  gitChangesCommitInputFocused: { borderColor: "var(--control-active-fg)" },
+  gitChangesCommitInputError: { borderColor: "var(--danger-fg)" },
+  gitChangesGenerateBtn: {
+    position: "absolute" as const,
+    top: 6,
+    right: 6,
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: 3,
+    borderRadius: 4,
+    color: "var(--text-hint)",
+    display: "flex",
+    alignItems: "center",
+    transition: "color 0.15s",
+  },
+  gitChangesGenerateBtnBusy: {
+    cursor: "default",
+    color: "var(--accent)",
+  },
+  gitChangesCommitError: {
+    fontSize: 11.5,
+    color: "var(--danger-fg)",
+    marginTop: 3,
+    paddingLeft: 2,
+  },
+  gitChangesCommitActions: { marginTop: 3, display: "flex" },
+  gitChangesCommitBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    padding: "5px 12px",
+    background: "var(--primary-action-bg)",
+    color: "var(--primary-action-fg)",
+    border: "none",
+    borderRadius: 6,
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  gitChangesCommitBtnDisabled: { cursor: "default", opacity: 0.7 },
+  gitChangesTopSectionHeader: {
+    display: "flex",
+    alignItems: "center",
+    padding: "8px 10px 6px 8px",
+    cursor: "pointer",
+    background: "transparent",
+    transition: "background 0.1s",
+    userSelect: "none" as const,
+  },
+  gitChangesTopSectionHeaderHovered: { background: "var(--bg-hover)" },
+  gitChangesTopSectionIcon: {
+    color: "var(--text-hint)",
+    display: "flex",
+    alignItems: "center",
+    marginRight: 4,
+  },
+  gitChangesTopSectionLabel: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: 650,
+    color: "var(--text-primary)",
+  },
+  gitChangesTopSectionCount: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: "var(--text-hint)",
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-dim)",
+    borderRadius: 10,
+    padding: "0 6px",
+    minWidth: 18,
+    textAlign: "center" as const,
+  },
+  gitChangesSectionHeader: {
+    display: "flex",
+    alignItems: "center",
+    padding: "6px 8px 2px 12px",
+    fontSize: 11,
+    fontWeight: 700,
+    color: "var(--text-hint)",
+    letterSpacing: 0.4,
+    textTransform: "uppercase" as const,
+  },
+  gitChangesSectionLabel: { flex: 1 },
+  gitChangesSectionCount: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: "var(--text-hint)",
+  },
+  gitChangesSectionCountWithAction: { marginRight: 4 },
+  gitChangesSectionAction: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "2px 5px",
+    borderRadius: 4,
+    fontSize: 14,
+    lineHeight: 1,
+    color: "transparent",
+    transition: "color 0.1s",
+    fontWeight: 600,
+  },
+  gitChangesSectionActionVisible: { color: "var(--text-primary)" },
   gitChangesRowDiscardBtn: {
     flexShrink: 0,
     background: "var(--bg-card)",

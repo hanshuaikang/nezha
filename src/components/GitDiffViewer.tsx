@@ -41,11 +41,7 @@ function ViewToggleButton({
       title={title}
       aria-label={title}
       aria-pressed={active}
-      style={{
-        ...s.diffToggleBtn,
-        background: active ? "var(--control-active-bg)" : "transparent",
-        color: active ? "var(--control-active-fg)" : "var(--text-hint)",
-      }}
+      style={active ? s.diffToggleBtnActive : s.diffToggleBtnInactive}
     >
       {children}
     </button>
@@ -75,6 +71,7 @@ export function GitDiffViewer({
   }, [viewMode]);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
@@ -104,15 +101,18 @@ export function GitDiffViewer({
         } else {
           result = "";
         }
-        setDiff(result);
+        if (!cancelled) setDiff(result);
       } catch (e) {
-        setError(String(e));
+        if (!cancelled) setError(String(e));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadDiff();
+    return () => {
+      cancelled = true;
+    };
   }, [projectRoot, repoPath, mode, commitHash, filePath, staged]);
 
   const { parsedFiles, totalAdditions, totalDeletions } = useMemo(() => {
@@ -181,11 +181,7 @@ export function GitDiffViewer({
         ) : (
           <div style={s.diffFileList}>
             {parsedFiles.map((file, index) => (
-              <DiffFileBlock
-                key={`${file.displayPath}-${index}`}
-                file={file}
-                viewMode={viewMode}
-              />
+              <DiffFileBlock key={`${file.displayPath}-${index}`} file={file} viewMode={viewMode} />
             ))}
           </div>
         )}

@@ -10,11 +10,7 @@ import {
   type CrossProjectRef,
   type MentionItem,
 } from "./new-task/MentionPopover";
-import {
-  PromptEditor,
-  usePromptEditor,
-  type PromptEditorContent,
-} from "./new-task/PromptEditor";
+import { PromptEditor, usePromptEditor, type PromptEditorContent } from "./new-task/PromptEditor";
 import { ImageAttachments } from "./new-task/ImageAttachments";
 import { TextAttachments, type PastedText } from "./new-task/TextAttachments";
 import { AgentPermSelector } from "./new-task/AgentPermSelector";
@@ -111,12 +107,9 @@ export function NewTaskView({
 
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
-  const [pastedImages, setPastedImages] = useState<PastedImage[]>(
-    initialDraft?.pastedImages ?? [],
-  );
-  const [pastedTexts, setPastedTexts] = useState<PastedText[]>(
-    initialDraft?.pastedTexts ?? [],
-  );
+  const [pastedImages, setPastedImages] = useState<PastedImage[]>(initialDraft?.pastedImages ?? []);
+  const [initButtonHovered, setInitButtonHovered] = useState(false);
+  const [pastedTexts, setPastedTexts] = useState<PastedText[]>(initialDraft?.pastedTexts ?? []);
   const [isEmpty, setIsEmpty] = useState(
     () =>
       !(initialDraft?.promptHtml ?? "").replace(/<[^>]+>/g, "").trim() &&
@@ -148,9 +141,25 @@ export function NewTaskView({
   // Cache draft on unmount so reopening the new-task view restores work in progress.
   // Cleared after submit to avoid re-restoring the just-sent prompt.
   const submittedRef = useRef(false);
-  const draftDataRef = useRef({ agent, permMode, planMode, pastedImages, pastedTexts, launchMode, baseBranch });
+  const draftDataRef = useRef({
+    agent,
+    permMode,
+    planMode,
+    pastedImages,
+    pastedTexts,
+    launchMode,
+    baseBranch,
+  });
   useEffect(() => {
-    draftDataRef.current = { agent, permMode, planMode, pastedImages, pastedTexts, launchMode, baseBranch };
+    draftDataRef.current = {
+      agent,
+      permMode,
+      planMode,
+      pastedImages,
+      pastedTexts,
+      launchMode,
+      baseBranch,
+    };
   }, [agent, permMode, planMode, pastedImages, pastedTexts, launchMode, baseBranch]);
   useEffect(() => {
     return () => {
@@ -161,7 +170,12 @@ export function NewTaskView({
       }
       const data = draftDataRef.current;
       const editorContent = editorContentRef.current;
-      if (!editorContent.text.trim() && !editorContent.hasChips && data.pastedImages.length === 0 && data.pastedTexts.length === 0) {
+      if (
+        !editorContent.text.trim() &&
+        !editorContent.hasChips &&
+        data.pastedImages.length === 0 &&
+        data.pastedTexts.length === 0
+      ) {
         onCacheDraft(null);
         return;
       }
@@ -272,10 +286,7 @@ export function NewTaskView({
         setAllFiles(files.map(parseFileEntry));
       })
       .catch((e: unknown) => {
-        showToast(
-          t("toast.loadProjectFilesFailed", { error: String(e) }),
-          "warning",
-        );
+        showToast(t("toast.loadProjectFilesFailed", { error: String(e) }), "warning");
       })
       .finally(() => setFilesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -395,9 +406,7 @@ export function NewTaskView({
       const hasValidRepo = roots.length > 0 && roots.some((r) => r.path === repoPath);
       if (!hasValidRepo) {
         showToast(
-          roots.length === 0
-            ? t("newTask.noGitRepoForWorktree")
-            : t("newTask.subRepoRequired"),
+          roots.length === 0 ? t("newTask.noGitRepoForWorktree") : t("newTask.subRepoRequired"),
           "warning",
         );
         return;
@@ -447,38 +456,30 @@ export function NewTaskView({
     <div style={s.newTaskOuter}>
       {/* Header */}
       <div style={s.newTaskHeader}>
-        <img
-          src={agent === "claude" ? claudeGif : codexGif}
-          alt=""
-          style={s.newTaskClaudeGif}
-        />
+        <img src={agent === "claude" ? claudeGif : codexGif} alt="" style={s.newTaskClaudeGif} />
         <span style={s.newTaskTitle}>{t("newTask.title")}</span>
       </div>
 
       {/* Missing context file warning */}
       {hasMdFile === false && (
         <div style={s.agentMissingMdBanner}>
-          <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
+          <TriangleAlert size={15} style={s.agentMissingMdIcon} />
           <div style={s.agentMissingMdBody}>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
-              <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
-                {t("newTask.instructionsMissing", {
-                  file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-                }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]}
-                <code
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    background: "var(--warning-code-bg)",
-                    padding: "0 4px",
-                    borderRadius: 3,
-                  }}
-                >
+            <div style={s.agentMissingMdText}>
+              <span style={s.agentMissingMdTitle}>
+                {
+                  t("newTask.instructionsMissing", {
+                    file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+                  }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]
+                }
+                <code style={s.agentMissingMdCode}>
                   {agent === "claude" ? "CLAUDE.md" : "AGENTS.md"}
                 </code>{" "}
-                {t("newTask.instructionsMissing", {
-                  file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
-                }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[1]}
+                {
+                  t("newTask.instructionsMissing", {
+                    file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
+                  }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[1]
+                }
               </span>{" "}
               {t("newTask.addInstructions", {
                 file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
@@ -487,14 +488,10 @@ export function NewTaskView({
             </div>
             <button
               type="button"
-              style={s.agentMissingMdInitBtn}
+              style={initButtonHovered ? s.agentMissingMdInitBtnHovered : s.agentMissingMdInitBtn}
               onClick={handleInitializeMd}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--warning-surface)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
+              onMouseEnter={() => setInitButtonHovered(true)}
+              onMouseLeave={() => setInitButtonHovered(false)}
             >
               <Sparkles size={13} strokeWidth={2} />
               {t("newTask.initializeButton")}
@@ -512,7 +509,7 @@ export function NewTaskView({
       )}
 
       {/* Compose card */}
-      <div style={{ ...s.composeCard, position: "relative" }} onPaste={handleEditorPaste}>
+      <div style={s.composeCardRelative} onPaste={handleEditorPaste}>
         {/* Mention dropdown */}
         {mentionSearch !== null && (
           <MentionPopover

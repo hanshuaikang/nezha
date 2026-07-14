@@ -25,11 +25,7 @@ import {
   DEFAULT_TASK_DISPLAY_WINDOW,
   normalizeTaskDisplayWindow,
 } from "./types";
-import {
-  DEFAULT_UI_FONT,
-  getDefaultMonoFont,
-  isAutoDefaultMonoFont,
-} from "./types";
+import { DEFAULT_UI_FONT, getDefaultMonoFont, isAutoDefaultMonoFont } from "./types";
 import type { FontFamily } from "./types";
 import { quoteFontName } from "./utils/fonts";
 import { WelcomePage } from "./components/WelcomePage";
@@ -411,9 +407,7 @@ function App() {
         : themeMode === "dark" || themeMode === "midnight"
           ? "dark"
           : "light";
-    getCurrentWindow()
-      .setTheme(nativeTheme)
-      .catch(console.error);
+    getCurrentWindow().setTheme(nativeTheme).catch(console.error);
   }, [themeMode]);
 
   useEffect(() => {
@@ -549,9 +543,7 @@ function App() {
         const project = loadedProjects[i];
         taskPersistBlockedProjectIds.add(project.id);
         console.error(result.reason);
-        showToast(
-          t("toast.loadTasksFailed", { name: project.name, error: String(result.reason) }),
-        );
+        showToast(t("toast.loadTasksFailed", { name: project.name, error: String(result.reason) }));
       });
       const activeTaskIds = new Set(await invoke<string[]>("get_active_task_ids"));
       const { tasks: loadedTasks, changedProjectIds } = normalizeInterruptedTasksOnStartup(
@@ -662,9 +654,7 @@ function App() {
       ? { ...existing, lastOpenedAt: Date.now() }
       : { id: `${Date.now()}`, name: deriveProjectName(path), path, lastOpenedAt: Date.now() };
     setProjects((prev) => {
-      const next = existing
-        ? prev.map((p) => (p.path === path ? project : p))
-        : [project, ...prev];
+      const next = existing ? prev.map((p) => (p.path === path ? project : p)) : [project, ...prev];
       persistProjects(next, showToast, formatSaveProjectsError);
       return next;
     });
@@ -870,9 +860,7 @@ function App() {
     setTasks((prev) => {
       const task = prev.find((x) => x.id === taskId);
       if (!task) return prev;
-      const next = prev.map((x) =>
-        x.id === taskId ? { ...x, worktreeDiscarded: true } : x,
-      );
+      const next = prev.map((x) => (x.id === taskId ? { ...x, worktreeDiscarded: true } : x));
       persistProjectTasks(task.projectId, next, showToast, formatSaveTasksError);
       return next;
     });
@@ -1119,10 +1107,13 @@ function App() {
       .filter((task) => task.projectId === project.id)
       .map((task) => task.id);
     if (projectTaskIds.length === 0) return;
-    const ok = await confirm(t("task.clearPrompt", { count: projectTaskIds.length, project: project.name }), {
-      title: t("task.clearTitle"),
-      kind: "warning",
-    });
+    const ok = await confirm(
+      t("task.clearPrompt", { count: projectTaskIds.length, project: project.name }),
+      {
+        title: t("task.clearTitle"),
+        kind: "warning",
+      },
+    );
     if (!ok) return;
     deleteTasks(projectTaskIds);
   }
@@ -1154,9 +1145,7 @@ function App() {
     if (!project) return;
     // 按 agent 选择对应字段，避免历史数据两个字段都有时取错
     const sessionPath =
-      task.agent === "codex"
-        ? (task.codexSessionPath ?? null)
-        : (task.claudeSessionPath ?? null);
+      task.agent === "codex" ? (task.codexSessionPath ?? null) : (task.claudeSessionPath ?? null);
     // 点击瞬间的快照，用于 await 完成后的并发校验（防止用户期间 rerun/resume/手改名）
     const expectedPriorName = task.name ?? "";
     const expectedPrompt = task.prompt;
@@ -1400,14 +1389,8 @@ function App() {
   }
 
   return (
-    <div style={{ ...s.root, position: "relative" }}>
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          overflow: "hidden",
-        }}
-      >
+    <div style={s.rootRelative}>
+      <div style={s.appProjectLayer}>
         {mountedProjects.map((project) => {
           const view = getProjectView(project.id);
           const isHubActive = hubMode && project.id === hubProjectId;
@@ -1496,13 +1479,7 @@ function App() {
         </div>
       )}
       {!activeProject && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 5,
-          }}
-        >
+        <div style={s.appWelcomeLayer}>
           <WelcomePage
             projects={visibleProjectsForWelcome}
             allProjects={sortedProjects}

@@ -900,4 +900,22 @@ mod tests {
 
         std::fs::remove_dir_all(&root).ok();
     }
+
+    #[test]
+    fn ignore_matcher_uses_the_nearest_sub_repository_root() {
+        let workspace = temp_project();
+        let repo = workspace.join("api");
+        let nested = repo.join("src");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(workspace.join(".gitignore"), "*.log\n").unwrap();
+        std::fs::write(repo.join(".gitignore"), "generated\n").unwrap();
+
+        let mut matcher = IgnoreMatcher::new(nested.to_str().unwrap());
+
+        assert!(!matcher.is_ignored(&nested.join("app.log"), false));
+        assert!(matcher.is_ignored(&nested.join("generated"), true));
+
+        std::fs::remove_dir_all(&workspace).ok();
+    }
 }

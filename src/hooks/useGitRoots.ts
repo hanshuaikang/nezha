@@ -12,6 +12,43 @@ interface UseGitRoots {
   refresh: () => Promise<void>;
 }
 
+interface GitContextTask {
+  worktreePath?: string;
+  worktreeRepo?: string;
+  worktreeDiscarded?: boolean;
+}
+
+export interface ProjectGitContext {
+  /** RepoSelector 展示的主仓路径。 */
+  displayedRepoPath: string;
+  /** Git 命令的实际 cwd；活动 worktree 任务中为 worktreePath。 */
+  commandRepoPath: string;
+  /** worktree 任务选中时不允许切换到无关 sub-repo。 */
+  selectionLocked: boolean;
+}
+
+export function resolveProjectGitContext(
+  projectPath: string,
+  selectedRootPath: string | null,
+  task: GitContextTask | null,
+): ProjectGitContext {
+  const fallbackRepoPath = selectedRootPath ?? projectPath;
+  if (!task?.worktreePath) {
+    return {
+      displayedRepoPath: fallbackRepoPath,
+      commandRepoPath: fallbackRepoPath,
+      selectionLocked: false,
+    };
+  }
+
+  const displayedRepoPath = task.worktreeRepo ?? projectPath;
+  return {
+    displayedRepoPath,
+    commandRepoPath: task.worktreeDiscarded ? displayedRepoPath : task.worktreePath,
+    selectionLocked: true,
+  };
+}
+
 /** 发现 project 下的所有 git 根（单仓库 / 多仓库工作区 / 非 git）。
  *
  *  当前选中的 root 持久化到 localStorage（per projectId）。后端命令的 repoPath 应取
