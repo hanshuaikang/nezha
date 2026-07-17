@@ -207,7 +207,11 @@ export function ProjectPage({
   const selectedTask = projectTasks.find((t) => t.id === selectedTaskId) ?? null;
 
   // 工作区项目可能包含多个 sub-repo，selectedRoot.path 为当前活动的 git 根（缺省回落 project.path）。
-  const { roots: gitRoots, selectedRoot, setSelectedRoot } = useGitRoots(project.id, project.path);
+  const {
+    roots: gitRoots,
+    selectedRoot,
+    setSelectedRoot,
+  } = useGitRoots(project.id, project.path, visible);
   const subRepoPath = selectedRoot?.path ?? project.path;
 
   // Worktree 任务固定归属于创建它的 git 根。选中这类任务时，仓库选择器、BranchBar

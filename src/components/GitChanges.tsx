@@ -61,6 +61,8 @@ export function GitChanges({
   const activeRepoKeyRef = useRef(repoKey);
   activeRepoKeyRef.current = repoKey;
   const refreshSequenceRef = useRef(0);
+  const generateSequenceRef = useRef(0);
+  const commitSequenceRef = useRef(0);
   const [changeState, setChangeState] = useState<{
     repoKey: string;
     changes: GitFileChange[];
@@ -148,8 +150,13 @@ export function GitChanges({
   }, [refresh]);
 
   useEffect(() => {
+    // 切仓后允许新仓库立即发起操作，并让旧仓库尚未完成的响应失效。
+    generateSequenceRef.current += 1;
+    commitSequenceRef.current += 1;
     setCommitMsg("");
     setCommitMsgError(false);
+    setGeneratingMsg(false);
+    setCommitting(false);
     setError(null);
   }, [repoKey]);
 
@@ -340,6 +347,8 @@ export function GitChanges({
   };
 
   const handleGenerateMsg = async () => {
+    const requestRepoKey = repoKey;
+    const sequence = ++generateSequenceRef.current;
     setGeneratingMsg(true);
     setError(null);
     try {
@@ -347,13 +356,31 @@ export function GitChanges({
         projectPath: projectRoot,
         repoPath,
       });
-      if (msg === null) return; // Component unmounted
+      if (
+        msg === null ||
+        activeRepoKeyRef.current !== requestRepoKey ||
+        generateSequenceRef.current !== sequence
+      ) {
+        return;
+      }
       setCommitMsg(msg);
       if (commitMsgError) setCommitMsgError(false);
     } catch (err) {
-      if (!isCancelled()) setError(String(err));
+      if (
+        !isCancelled() &&
+        activeRepoKeyRef.current === requestRepoKey &&
+        generateSequenceRef.current === sequence
+      ) {
+        setError(String(err));
+      }
     } finally {
-      if (!isCancelled()) setGeneratingMsg(false);
+      if (
+        !isCancelled() &&
+        activeRepoKeyRef.current === requestRepoKey &&
+        generateSequenceRef.current === sequence
+      ) {
+        setGeneratingMsg(false);
+      }
     }
   };
 
@@ -362,6 +389,8 @@ export function GitChanges({
       setCommitMsgError(true);
       return;
     }
+    const requestRepoKey = repoKey;
+    const sequence = ++commitSequenceRef.current;
     setCommitMsgError(false);
     setCommitting(true);
     setError(null);
@@ -371,12 +400,19 @@ export function GitChanges({
         repoPath,
         message: commitMsg.trim(),
       });
+      if (activeRepoKeyRef.current !== requestRepoKey || commitSequenceRef.current !== sequence) {
+        return;
+      }
       setCommitMsg("");
       refresh();
     } catch (err) {
-      setError(String(err));
+      if (activeRepoKeyRef.current === requestRepoKey && commitSequenceRef.current === sequence) {
+        setError(String(err));
+      }
     } finally {
-      setCommitting(false);
+      if (activeRepoKeyRef.current === requestRepoKey && commitSequenceRef.current === sequence) {
+        setCommitting(false);
+      }
     }
   };
 
