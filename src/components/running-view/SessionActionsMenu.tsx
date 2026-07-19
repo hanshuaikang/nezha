@@ -12,7 +12,7 @@ export function buildDefaultForkTaskName(
   prompt: string,
   fallbackName: string,
 ): string {
-  const source = (taskName ?? prompt).trim() || fallbackName;
+  const source = ((taskName ?? prompt).trim() || fallbackName).replace(/\s+/g, " ");
   const shortened =
     source.length > MAX_FORK_SOURCE_NAME_LENGTH
       ? `${source.slice(0, MAX_FORK_SOURCE_NAME_LENGTH)}…`

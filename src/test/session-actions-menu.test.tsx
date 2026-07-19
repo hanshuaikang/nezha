@@ -15,7 +15,13 @@ describe("session fork actions", () => {
     expect(buildDefaultForkTaskName(undefined, "Prompt title", "Untitled task")).toBe(
       "Fork-Prompt title",
     );
+    expect(
+      buildDefaultForkTaskName(undefined, "  Multi-line\nprompt\t title  ", "Untitled task"),
+    ).toBe("Fork-Multi-line prompt title");
     expect(buildDefaultForkTaskName(undefined, "   ", "Untitled task")).toBe("Fork-Untitled task");
+    expect(buildDefaultForkTaskName(undefined, "a".repeat(71), "Untitled task")).toBe(
+      `Fork-${"a".repeat(70)}…`,
+    );
   });
 
   it("trims and submits the fork task name", () => {
