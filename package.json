@@ -43,6 +43,7 @@
     "@codemirror/language": "^6.12.3",
     "@codemirror/legacy-modes": "^6.5.2",
     "@codemirror/state": "^6.6.0",
+    "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
     "@tauri-apps/api": "^2.10.1",

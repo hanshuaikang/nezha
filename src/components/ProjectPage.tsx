@@ -55,6 +55,7 @@ export function ProjectPage({
   onUpdateTodo,
   onCancelTask,
   onResumeTask,
+  onForkTask,
   onMergeWorktree,
   onDiscardWorktree,
   onReconnectTask,
@@ -123,6 +124,7 @@ export function ProjectPage({
   ) => void;
   onCancelTask: (id: string) => void;
   onResumeTask: (id: string) => void;
+  onForkTask: (id: string, name: string) => void;
   onMergeWorktree: (id: string) => Promise<void>;
   onDiscardWorktree: (id: string) => Promise<void>;
   onReconnectTask: (id: string) => void;
@@ -529,6 +531,7 @@ export function ProjectPage({
                   projectActive={visible}
                   onCancel={() => onCancelTask(task.id)}
                   onResume={() => onResumeTask(task.id)}
+                  onFork={(name) => onForkTask(task.id, name)}
                   onMergeWorktree={() => onMergeWorktree(task.id)}
                   onDiscardWorktree={() => onDiscardWorktree(task.id)}
                   onOpenWorktreeTerminal={

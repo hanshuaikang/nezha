@@ -325,6 +325,7 @@ pub fn run() {
             update_tray_menu,
             pty::run_task,
             pty::resume_task,
+            pty::fork_task,
             pty::cancel_task,
             pty::complete_task,
             pty::get_active_task_ids,

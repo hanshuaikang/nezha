@@ -1,18 +1,5 @@
 import type React from "react";
 
-const exportBtnBase = {
-  display: "flex",
-  alignItems: "center",
-  gap: 5,
-  padding: "4px 10px",
-  background: "none",
-  border: "1px solid var(--control-active-fg)",
-  borderRadius: 5,
-  fontSize: 12,
-  color: "var(--control-active-fg)",
-  flexShrink: 0,
-} as const;
-
 export const terminal = {
   runHeader: {
     padding: "16px 20px 8px",
@@ -120,8 +107,6 @@ export const terminal = {
     cursor: "pointer",
     flexShrink: 0,
   },
-  exportBtn: { ...exportBtnBase, cursor: "pointer" as const },
-  exportBtnBusy: { ...exportBtnBase, cursor: "not-allowed" as const, opacity: 0.6 },
   resumeBtn: {
     display: "flex",
     alignItems: "center",
@@ -134,6 +119,40 @@ export const terminal = {
     color: "var(--control-active-fg)",
     cursor: "pointer",
     flexShrink: 0,
+  },
+  sessionMoreBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    padding: "4px 9px",
+    background: "none",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 5,
+    fontSize: 12,
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  sessionActionsMenu: {
+    minWidth: 232,
+  },
+  sessionActionsMenuItem: {
+    gap: 8,
+    minHeight: 32,
+  },
+  sessionActionsMenuItemBody: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 1,
+  },
+  sessionActionsMenuItemHint: {
+    maxWidth: 190,
+    color: "var(--text-hint)",
+    fontSize: 10.5,
+    lineHeight: 1.35,
+    whiteSpace: "normal",
   },
   doneBtn: {
     display: "flex",

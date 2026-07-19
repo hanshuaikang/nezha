@@ -20,6 +20,14 @@ const settingsSelectTriggerBase: React.CSSProperties = {
   outline: "none",
 };
 
+const forkDialogButtonBase: React.CSSProperties = {
+  minWidth: 72,
+  padding: "6px 13px",
+  borderRadius: 7,
+  fontSize: 12.5,
+  fontFamily: "var(--font-ui)",
+};
+
 export const dialogs = {
   modalOverlay: {
     position: "fixed" as const,
@@ -29,6 +37,101 @@ export const dialogs = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+  },
+  forkDialogOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 2100,
+    background: "var(--overlay-bg)",
+  },
+  forkDialogBox: {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    zIndex: 2101,
+    width: "min(420px, calc(100vw - 40px))",
+    transform: "translate(-50%, -50%)",
+    padding: 18,
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 12,
+    boxShadow: "var(--shadow-popover)",
+    outline: "none",
+  },
+  forkDialogHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  forkDialogHeading: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  forkDialogIcon: {
+    display: "inline-flex",
+    color: "var(--control-active-fg)",
+  },
+  forkDialogTitle: {
+    color: "var(--text-primary)",
+    fontSize: 15,
+    fontWeight: 700,
+  },
+  forkDialogDescription: {
+    marginTop: 9,
+    color: "var(--text-muted)",
+    fontSize: 12.5,
+    lineHeight: 1.55,
+  },
+  forkDialogLabel: {
+    display: "block",
+    marginTop: 16,
+    marginBottom: 6,
+    color: "var(--text-secondary)",
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  forkDialogInput: {
+    width: "100%",
+    padding: "8px 10px",
+    background: "var(--bg-input)",
+    border: "1px solid var(--border-medium)",
+    borderRadius: 8,
+    color: "var(--text-primary)",
+    fontSize: 13.5,
+    fontFamily: "var(--font-ui)",
+    outline: "none",
+    userSelect: "text",
+  },
+  forkDialogActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 18,
+  },
+  forkDialogCancelBtn: {
+    ...forkDialogButtonBase,
+    background: "transparent",
+    border: "1px solid var(--border-medium)",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+  },
+  forkDialogPrimaryBtn: {
+    ...forkDialogButtonBase,
+    background: "var(--primary-action-bg)",
+    border: "1px solid transparent",
+    color: "var(--primary-action-fg)",
+    fontWeight: 650,
+    cursor: "pointer",
+  },
+  forkDialogPrimaryBtnDisabled: {
+    ...forkDialogButtonBase,
+    background: "var(--bg-hover)",
+    border: "1px solid transparent",
+    color: "var(--text-hint)",
+    fontWeight: 650,
+    cursor: "not-allowed",
   },
   modalBox: {
     width: "min(920px, calc(100vw - 48px), calc((100vh - 96px) * 4 / 3))",

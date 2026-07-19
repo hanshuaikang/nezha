@@ -35,6 +35,20 @@ fn task_attachments_dir(project_path: &str, task_id: &str) -> std::path::PathBuf
         .join(task_id)
 }
 
+fn validate_task_project_path(project_path: &str) -> Result<(), String> {
+    let path = Path::new(project_path);
+    if !path.is_absolute() {
+        return Err("Project path must be absolute".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project path: {}", e))?;
+    if !canonical.is_dir() {
+        return Err("Project path is not a directory".to_string());
+    }
+    Ok(())
+}
+
 fn has_task_session(app: &AppHandle, task_id: &str, is_codex: bool) -> bool {
     let tm = app.state::<TaskManager>();
     if is_codex {
@@ -482,6 +496,54 @@ fn build_codex_cmd(agent_bin: &str, permission_mode: &str) -> CommandBuilder {
     c
 }
 
+fn append_fork_session_args(command: &mut CommandBuilder, is_codex: bool, source_session_id: &str) {
+    if is_codex {
+        command.arg("fork");
+        command.arg(source_session_id);
+    } else {
+        command.arg("--resume");
+        command.arg(source_session_id);
+        command.arg("--fork-session");
+    }
+}
+
+#[cfg(test)]
+mod fork_command_tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn builds_codex_fork_arguments() {
+        let mut command = CommandBuilder::new("codex");
+        append_fork_session_args(&mut command, true, "session-id");
+
+        assert_eq!(
+            command.get_argv(),
+            &vec![
+                OsStr::new("codex").to_owned(),
+                OsStr::new("fork").to_owned(),
+                OsStr::new("session-id").to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_claude_fork_arguments() {
+        let mut command = CommandBuilder::new("claude");
+        append_fork_session_args(&mut command, false, "session-id");
+
+        assert_eq!(
+            command.get_argv(),
+            &vec![
+                OsStr::new("claude").to_owned(),
+                OsStr::new("--resume").to_owned(),
+                OsStr::new("session-id").to_owned(),
+                OsStr::new("--fork-session").to_owned(),
+            ]
+        );
+    }
+}
+
 // ── Tauri 命令 ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -918,6 +980,132 @@ pub async fn resume_task(
         },
         reader,
         None,
+        None,
+    );
+    spawn_exit_monitor(app, task_id, project_path, is_codex);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fork_task(
+    app: AppHandle,
+    task_manager: State<'_, TaskManager>,
+    task_id: String,
+    project_path: String,
+    agent: String,
+    source_session_id: String,
+    permission_mode: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+    on_output: Channel<String>,
+) -> Result<(), String> {
+    let path_for_validation = project_path.clone();
+    tokio::task::spawn_blocking(move || validate_task_project_path(&path_for_validation))
+        .await
+        .map_err(|e| format!("Project path validation failed: {}", e))??;
+
+    task_manager.cancelled_tasks.lock().remove(&task_id);
+    task_manager
+        .manually_completed_tasks
+        .lock()
+        .remove(&task_id);
+
+    let pair = pty_system()
+        .openpty(PtySize {
+            rows: rows.unwrap_or(50),
+            cols: cols.unwrap_or(220),
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let launch = crate::app_settings::get_agent_launch_spec(&agent);
+    let agent_bin = launch.program.clone();
+    let is_codex = agent == "codex";
+    let use_hooks = {
+        let agent = agent.clone();
+        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
+            .await
+            .unwrap_or(false)
+    };
+    let claude_pass_settings = !is_codex
+        && (use_hooks
+            || tokio::task::spawn_blocking(|| {
+                let settings = crate::app_settings::load_settings_internal();
+                settings.claude_force_default_tui
+                    && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
+            })
+            .await
+            .unwrap_or(false));
+
+    let mut cmd = if is_codex {
+        let mut command = build_codex_cmd(&agent_bin, &permission_mode);
+        if use_hooks {
+            command.arg("--dangerously-bypass-hook-trust");
+        }
+        append_fork_session_args(&mut command, true, &source_session_id);
+        command
+    } else {
+        let mut command = build_claude_cmd(&agent_bin, &permission_mode);
+        append_fork_session_args(&mut command, false, &source_session_id);
+        if claude_pass_settings {
+            if let Ok(path) = crate::hooks::nezha_claude_settings_path() {
+                if path.exists() {
+                    command.arg("--settings");
+                    command.arg(path.to_string_lossy().as_ref());
+                }
+            }
+        }
+        command
+    };
+    cmd.cwd(&project_path);
+    setup_env(&mut cmd);
+    if use_hooks {
+        setup_nezha_env(&mut cmd, &task_id, &agent);
+    }
+    for (key, value) in &launch.extra_env {
+        cmd.env(key, value);
+    }
+
+    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    drop(pair.slave);
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    register_pty_handles(&task_manager, &task_id, pair.master, writer, child)?;
+
+    let _ = app.emit(
+        "task-status",
+        serde_json::json!({ "task_id": task_id, "status": "running" }),
+    );
+
+    // Fork 会生成全新的 session id，不能复用 resume watcher 去绑定父会话。
+    // hook 不可用时把 PTY 输出转发给 /status watcher，由它发现并注册新 id。
+    let session_tx = if use_hooks {
+        None
+    } else {
+        let (session_tx, session_rx) = std::sync::mpsc::channel::<String>();
+        spawn_status_session_watcher(
+            app.clone(),
+            task_id.clone(),
+            project_path.clone(),
+            is_codex,
+            session_rx,
+            None,
+            false,
+        );
+        Some(session_tx)
+    };
+    spawn_pty_reader(
+        app.clone(),
+        task_id.clone(),
+        OutputSink::Channel(on_output),
+        PtyEmitMode::Batched {
+            flush_interval: PTY_EMIT_FLUSH_INTERVAL,
+            max_batch_bytes: PTY_EMIT_MAX_BATCH_BYTES,
+        },
+        reader,
+        session_tx,
         None,
     );
     spawn_exit_monitor(app, task_id, project_path, is_codex);

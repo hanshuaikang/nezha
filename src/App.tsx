@@ -977,6 +977,67 @@ function App() {
     };
   }
 
+  function invokeForkTask(task: Task, project: Project, sourceSessionId: string) {
+    invoke("fork_task", {
+      taskId: task.id,
+      projectPath: project.path,
+      agent: task.agent,
+      sourceSessionId,
+      permissionMode: task.permissionMode,
+      cols: tm.terminalSizeRef.current.cols,
+      rows: tm.terminalSizeRef.current.rows,
+      onOutput: tm.createOutputChannel(task.id),
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      tm.writeErrorToTerminal(task.id, `\r\nError: ${msg}\r\n`);
+      updateTaskStatus(task.id, "failed", undefined, msg);
+    });
+  }
+
+  function handleForkTask(sourceTaskId: string, requestedName: string) {
+    const sourceTask = tasks.find((task) => task.id === sourceTaskId);
+    if (!sourceTask) return;
+    if (sourceTask.worktreePath) {
+      showToast(t("running.forkWorktreeUnsupported"), "warning");
+      return;
+    }
+
+    const sourceSessionId =
+      sourceTask.agent === "codex" ? sourceTask.codexSessionId : sourceTask.claudeSessionId;
+    if (!sourceSessionId) {
+      showToast(t("running.forkUnavailable"), "warning");
+      return;
+    }
+    const name = requestedName.trim();
+    if (!name) return;
+    const project = projects.find((candidate) => candidate.id === sourceTask.projectId);
+    if (!project) return;
+
+    const now = Date.now();
+    const forkedTask: Task = {
+      id: `${now}`,
+      projectId: sourceTask.projectId,
+      name,
+      prompt: "",
+      agent: sourceTask.agent,
+      permissionMode: sourceTask.permissionMode,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setTasks((prev) => {
+      const next = [forkedTask, ...prev];
+      persistProjectTasks(forkedTask.projectId, next, showToast, formatSaveTasksError);
+      return next;
+    });
+    setActiveProject(project);
+    mountProject(project.id);
+    updateProjectView(project.id, { selectedTaskId: forkedTask.id, isNewTask: false });
+    tm.resetTaskTerminal(forkedTask.id);
+    invokeForkTask(forkedTask, project, sourceSessionId);
+  }
+
   async function handleReconnectTask(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
@@ -1430,6 +1491,7 @@ function App() {
               onUpdateTodo={handleUpdateTodo}
               onCancelTask={handleCancelTask}
               onResumeTask={handleResumeTask}
+              onForkTask={handleForkTask}
               onMergeWorktree={handleMergeWorktree}
               onDiscardWorktree={handleDiscardWorktree}
               onReconnectTask={handleReconnectTask}

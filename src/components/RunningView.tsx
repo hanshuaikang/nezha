@@ -13,6 +13,7 @@ import { permissionModeLabel } from "../types";
 import { StatusIcon } from "./StatusIcon";
 import { TerminalView } from "./TerminalView";
 import { SessionView } from "./SessionView";
+import { buildDefaultForkTaskName, SessionActionsMenu } from "./running-view/SessionActionsMenu";
 import { useToast } from "./Toast";
 import { writeClipboardText } from "./file-explorer/clipboard";
 import { getUsageColor } from "../utils";
@@ -30,7 +31,6 @@ import {
   Trash2,
   AlertTriangle,
   CheckCircle2,
-  Download,
   Terminal as TerminalIcon,
 } from "lucide-react";
 
@@ -91,6 +91,7 @@ export function RunningView({
   projectActive = true,
   onCancel,
   onResume,
+  onFork,
   onMergeWorktree,
   onDiscardWorktree,
   onOpenWorktreeTerminal,
@@ -116,6 +117,7 @@ export function RunningView({
   projectActive?: boolean;
   onCancel: () => void;
   onResume?: () => void;
+  onFork?: (name: string) => void;
   onMergeWorktree?: () => Promise<void>;
   onDiscardWorktree?: () => Promise<void>;
   onOpenWorktreeTerminal?: () => void;
@@ -171,6 +173,16 @@ export function RunningView({
     : sessionPath
       ? t("task.generateName")
       : t("task.generateNameNoSession");
+  const defaultForkName = buildDefaultForkTaskName(
+    task.name,
+    task.prompt,
+    t("running.untitledTask"),
+  );
+  const forkDisabledReason = task.worktreePath
+    ? t("running.forkWorktreeUnsupported")
+    : !resumeSessionId || !onFork
+      ? t("running.forkUnavailable")
+      : undefined;
 
   const handleGenerateClick = async () => {
     if (generatingName || isActive) return;
@@ -445,17 +457,6 @@ export function RunningView({
             </button>
           </>
         )}
-        {!isActive && sessionPath && (
-          <button
-            style={exporting ? s.exportBtnBusy : s.exportBtn}
-            disabled={exporting}
-            title={t("running.exportMarkdown")}
-            onClick={handleExport}
-          >
-            <Download size={12} strokeWidth={2.5} />
-            <span>{t("running.exportMarkdown")}</span>
-          </button>
-        )}
         {!isActive &&
           !isDetached &&
           !isInterrupted &&
@@ -523,6 +524,16 @@ export function RunningView({
               {worktreeBusy === "discard" ? t("running.discarding") : t("running.discardWorktree")}
             </span>
           </button>
+        )}
+        {!isActive && (sessionPath || resumeSessionId) && (
+          <SessionActionsMenu
+            defaultForkName={defaultForkName}
+            forkDisabledReason={forkDisabledReason}
+            canExport={Boolean(sessionPath)}
+            exporting={exporting}
+            onFork={(name) => onFork?.(name)}
+            onExport={handleExport}
+          />
         )}
       </div>
       <div
