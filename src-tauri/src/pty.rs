@@ -507,6 +507,107 @@ fn append_fork_session_args(command: &mut CommandBuilder, is_codex: bool, source
     }
 }
 
+struct SpawnedForkTask {
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    reader: Box<dyn Read + Send>,
+    writer: Box<dyn Write + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    is_codex: bool,
+    use_hooks: bool,
+}
+
+/// Fork 启动涉及路径解析、设置读取、版本探测、PTY 创建与子进程启动，
+/// 必须整体运行在 blocking 线程，避免占用 Tauri 的 Tokio worker。
+fn spawn_fork_task_process(
+    project_path: &str,
+    task_id: &str,
+    agent: &str,
+    source_session_id: &str,
+    permission_mode: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<SpawnedForkTask, String> {
+    validate_task_project_path(project_path)?;
+
+    let launch = crate::app_settings::get_agent_launch_spec(agent);
+    let agent_bin = launch.program.clone();
+    let is_codex = agent == "codex";
+    let use_hooks = crate::hooks::usable_for(agent);
+    let claude_pass_settings = !is_codex
+        && (use_hooks || {
+            let settings = crate::app_settings::load_settings_internal();
+            settings.claude_force_default_tui
+                && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
+        });
+
+    let mut command = if is_codex {
+        let mut command = build_codex_cmd(&agent_bin, permission_mode);
+        if use_hooks {
+            command.arg("--dangerously-bypass-hook-trust");
+        }
+        append_fork_session_args(&mut command, true, source_session_id);
+        command
+    } else {
+        let mut command = build_claude_cmd(&agent_bin, permission_mode);
+        append_fork_session_args(&mut command, false, source_session_id);
+        if claude_pass_settings {
+            if let Ok(path) = crate::hooks::nezha_claude_settings_path() {
+                if path.exists() {
+                    command.arg("--settings");
+                    command.arg(path.to_string_lossy().as_ref());
+                }
+            }
+        }
+        command
+    };
+    command.cwd(project_path);
+    setup_env(&mut command);
+    if use_hooks {
+        setup_nezha_env(&mut command, task_id, agent);
+    }
+    for (key, value) in &launch.extra_env {
+        command.env(key, value);
+    }
+
+    let pair = pty_system()
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
+    let mut child = pair
+        .slave
+        .spawn_command(command)
+        .map_err(|e| e.to_string())?;
+    drop(pair.slave);
+
+    let reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(error) => {
+            let _ = child.kill();
+            return Err(error.to_string());
+        }
+    };
+    let writer = match pair.master.take_writer() {
+        Ok(writer) => writer,
+        Err(error) => {
+            let _ = child.kill();
+            return Err(error.to_string());
+        }
+    };
+
+    Ok(SpawnedForkTask {
+        master: pair.master,
+        reader,
+        writer,
+        child,
+        is_codex,
+        use_hooks,
+    })
+}
+
 #[cfg(test)]
 mod fork_command_tests {
     use super::*;
@@ -1000,10 +1101,22 @@ pub async fn fork_task(
     rows: Option<u16>,
     on_output: Channel<String>,
 ) -> Result<(), String> {
-    let path_for_validation = project_path.clone();
-    tokio::task::spawn_blocking(move || validate_task_project_path(&path_for_validation))
-        .await
-        .map_err(|e| format!("Project path validation failed: {}", e))??;
+    let launch_project_path = project_path.clone();
+    let launch_task_id = task_id.clone();
+    let launch_agent = agent.clone();
+    let spawned = tokio::task::spawn_blocking(move || {
+        spawn_fork_task_process(
+            &launch_project_path,
+            &launch_task_id,
+            &launch_agent,
+            &source_session_id,
+            &permission_mode,
+            cols.unwrap_or(220),
+            rows.unwrap_or(50),
+        )
+    })
+    .await
+    .map_err(|e| format!("Fork task launch failed: {}", e))??;
 
     task_manager.cancelled_tasks.lock().remove(&task_id);
     task_manager
@@ -1011,68 +1124,15 @@ pub async fn fork_task(
         .lock()
         .remove(&task_id);
 
-    let pair = pty_system()
-        .openpty(PtySize {
-            rows: rows.unwrap_or(50),
-            cols: cols.unwrap_or(220),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())?;
-
-    let launch = crate::app_settings::get_agent_launch_spec(&agent);
-    let agent_bin = launch.program.clone();
-    let is_codex = agent == "codex";
-    let use_hooks = {
-        let agent = agent.clone();
-        tokio::task::spawn_blocking(move || crate::hooks::usable_for(&agent))
-            .await
-            .unwrap_or(false)
-    };
-    let claude_pass_settings = !is_codex
-        && (use_hooks
-            || tokio::task::spawn_blocking(|| {
-                let settings = crate::app_settings::load_settings_internal();
-                settings.claude_force_default_tui
-                    && crate::app_settings::claude_version_gte(crate::hooks::CLAUDE_TUI_MIN_VERSION)
-            })
-            .await
-            .unwrap_or(false));
-
-    let mut cmd = if is_codex {
-        let mut command = build_codex_cmd(&agent_bin, &permission_mode);
-        if use_hooks {
-            command.arg("--dangerously-bypass-hook-trust");
-        }
-        append_fork_session_args(&mut command, true, &source_session_id);
-        command
-    } else {
-        let mut command = build_claude_cmd(&agent_bin, &permission_mode);
-        append_fork_session_args(&mut command, false, &source_session_id);
-        if claude_pass_settings {
-            if let Ok(path) = crate::hooks::nezha_claude_settings_path() {
-                if path.exists() {
-                    command.arg("--settings");
-                    command.arg(path.to_string_lossy().as_ref());
-                }
-            }
-        }
-        command
-    };
-    cmd.cwd(&project_path);
-    setup_env(&mut cmd);
-    if use_hooks {
-        setup_nezha_env(&mut cmd, &task_id, &agent);
-    }
-    for (key, value) in &launch.extra_env {
-        cmd.env(key, value);
-    }
-
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-    drop(pair.slave);
-    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    register_pty_handles(&task_manager, &task_id, pair.master, writer, child)?;
+    let SpawnedForkTask {
+        master,
+        reader,
+        writer,
+        child,
+        is_codex,
+        use_hooks,
+    } = spawned;
+    register_pty_handles(&task_manager, &task_id, master, writer, child)?;
 
     let _ = app.emit(
         "task-status",
