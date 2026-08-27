@@ -216,6 +216,7 @@ export interface UsageWindow {
   usedPercent: number;
   remainingPercent: number;
   resetAt?: number | null;
+  windowMinutes?: number | null;
 }
 
 export interface ClaudeUsageData {

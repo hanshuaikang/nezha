@@ -240,6 +240,10 @@ pub struct UsageWindow {
     pub remaining_percent: u8,
     #[serde(rename = "resetAt")]
     pub reset_at: Option<i64>,
+    /// 窗口时长（分钟）。Codex 由 RPC 的 `windowDurationMins` 透传；
+    /// Claude 的 API 按窗口名区分（five_hour/seven_day），由调用处填入。
+    #[serde(rename = "windowMinutes")]
+    pub window_minutes: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -450,8 +454,12 @@ async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
     };
 
     let data = ClaudeUsageData {
-        five_hour: payload.get("five_hour").and_then(parse_claude_window),
-        seven_day: payload.get("seven_day").and_then(parse_claude_window),
+        five_hour: payload
+            .get("five_hour")
+            .and_then(|window| parse_claude_window(window, 5 * 60)),
+        seven_day: payload
+            .get("seven_day")
+            .and_then(|window| parse_claude_window(window, 7 * 24 * 60)),
     };
 
     if data.five_hour.is_none() && data.seven_day.is_none() {
@@ -570,15 +578,20 @@ fn parse_codex_window(value: &Value) -> Option<UsageWindow> {
         used_percent,
         remaining_percent: 100_u8.saturating_sub(used_percent),
         reset_at: value.get("resetsAt").and_then(parse_reset_value),
+        window_minutes: value
+            .get("windowDurationMins")
+            .and_then(Value::as_u64)
+            .and_then(|minutes| u32::try_from(minutes).ok()),
     })
 }
 
-fn parse_claude_window(value: &Value) -> Option<UsageWindow> {
+fn parse_claude_window(value: &Value, window_minutes: u32) -> Option<UsageWindow> {
     let used_percent = value.get("utilization").and_then(parse_percent_value)?;
     Some(UsageWindow {
         used_percent,
         remaining_percent: 100_u8.saturating_sub(used_percent),
         reset_at: value.get("resets_at").and_then(parse_reset_value),
+        window_minutes: Some(window_minutes),
     })
 }
 

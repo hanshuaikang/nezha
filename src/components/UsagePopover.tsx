@@ -19,6 +19,25 @@ function formatResetTime(resetAt?: number | null): string | null {
   }).format(date);
 }
 
+const MINUTES_PER_DAY = 24 * 60;
+
+type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
+
+function formatWindowLabel(minutes: number, t: TranslateFn): string {
+  if (minutes >= MINUTES_PER_DAY && minutes % MINUTES_PER_DAY === 0) {
+    return t("usage.windowDays", { days: minutes / MINUTES_PER_DAY });
+  }
+  if (minutes >= 60 && minutes % 60 === 0) {
+    return t("usage.windowHours", { hours: minutes / 60 });
+  }
+  return t("usage.windowMinutes", { minutes });
+}
+
+interface UsageMetric {
+  fallbackLabel: string;
+  window?: UsageWindow | null;
+}
+
 function UsageMetricRow({ label, window }: { label: string; window: UsageWindow }) {
   const { t } = useI18n();
   const color = getUsageColor(window.remainingPercent);
@@ -44,9 +63,13 @@ function SourceCard<T>({
   title: string;
   subtitle?: string | null;
   source: UsageSource<T>;
-  metrics: Array<{ label: string; window?: UsageWindow | null }>;
+  metrics: UsageMetric[];
 }) {
   const { t } = useI18n();
+  const metricLabel = (metric: UsageMetric) =>
+    metric.window?.windowMinutes != null
+      ? formatWindowLabel(metric.window.windowMinutes, t)
+      : metric.fallbackLabel;
   return (
     <section style={s.usageSourceSection}>
       <div style={s.usageSourceHead}>
@@ -61,8 +84,17 @@ function SourceCard<T>({
           {metrics.some((metric) => metric.window) ? (
             metrics.map((metric) =>
               metric.window ? (
-                <UsageMetricRow key={metric.label} label={metric.label} window={metric.window} />
-              ) : null,
+                <UsageMetricRow
+                  key={metric.fallbackLabel}
+                  label={metricLabel(metric)}
+                  window={metric.window}
+                />
+              ) : (
+                <div key={metric.fallbackLabel} style={s.usageMetricRow}>
+                  <span style={s.usageMetricLabel}>{metric.fallbackLabel}</span>
+                  <span style={s.usageMetricMeta}>{t("usage.windowInactive")}</span>
+                </div>
+              ),
             )
           ) : (
             <div style={s.usageUnavailableText}>{t("usage.noWindows")}</div>
@@ -84,33 +116,21 @@ export function UsagePopover() {
   const [open, setOpen] = useState(false);
   const { snapshot, loading, error } = useUsageSnapshot(open);
 
-  const claudeMetrics = useMemo(
-    () => [
-      {
-        label: t("usage.fiveHour"),
-        window: snapshot?.claude.status === "available" ? snapshot.claude.data.fiveHour : null,
-      },
-      {
-        label: t("usage.sevenDay"),
-        window: snapshot?.claude.status === "available" ? snapshot.claude.data.sevenDay : null,
-      },
-    ],
-    [snapshot, t],
-  );
+  const claudeMetrics = useMemo<UsageMetric[]>(() => {
+    const data = snapshot?.claude.status === "available" ? snapshot.claude.data : null;
+    return [
+      { fallbackLabel: t("usage.fiveHour"), window: data?.fiveHour ?? null },
+      { fallbackLabel: t("usage.sevenDay"), window: data?.sevenDay ?? null },
+    ];
+  }, [snapshot, t]);
 
-  const codexMetrics = useMemo(
-    () => [
-      {
-        label: t("usage.fiveHour"),
-        window: snapshot?.codex.status === "available" ? snapshot.codex.data.primary : null,
-      },
-      {
-        label: t("usage.sevenDay"),
-        window: snapshot?.codex.status === "available" ? snapshot.codex.data.secondary : null,
-      },
-    ],
-    [snapshot, t],
-  );
+  const codexMetrics = useMemo<UsageMetric[]>(() => {
+    const data = snapshot?.codex.status === "available" ? snapshot.codex.data : null;
+    return [
+      { fallbackLabel: t("usage.fiveHour"), window: data?.primary ?? null },
+      { fallbackLabel: t("usage.sevenDay"), window: data?.secondary ?? null },
+    ];
+  }, [snapshot, t]);
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
