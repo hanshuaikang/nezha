@@ -9,6 +9,7 @@ import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { solarizedLight } from "@uiw/codemirror-theme-solarized";
 import { ImagePreviewPane } from "./file-viewer/ImagePreviewPane";
+import { MarkdownPreviewContent } from "./file-viewer/MarkdownPreviewContent";
 import { useLanguageExtension } from "./file-viewer/languageExtensions";
 import type { OpenFileTab } from "../hooks/useProjectPanels";
 import type { ThemeVariant } from "../types";
@@ -376,10 +377,7 @@ function FilePreviewPane({
             isMarkdown && previewMode ? (
               <div className="md-preview-pane">
                 <div ref={scrollRef} className="md-preview-scroll">
-                  <div
-                    className="md-preview"
-                    dangerouslySetInnerHTML={{ __html: markdownHtml }}
-                  />
+                  <MarkdownPreviewContent html={markdownHtml} onJump={jumpToHeading} />
                 </div>
                 {toc.length > 0 && (
                   <MarkdownToc toc={toc} activeId={activeHeadingId} onJump={jumpToHeading} />

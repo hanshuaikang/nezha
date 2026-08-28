@@ -4,6 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { IS_MAC_WEBKIT } from "../platform";
 import type { ThemeVariant } from "../types";
+import { terminalLinkHandler } from "./terminalLinkHandler";
 // xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
 import type { XTermWithPrivates } from "./xterm-private";
 
@@ -535,6 +536,7 @@ export function initTerminal(
     theme: themeFor(variant),
     minimumContrastRatio: minimumContrastRatioFor(variant),
     allowProposedApi: true,
+    linkHandler: terminalLinkHandler,
     overviewRuler: { width: XTERM_SCROLLBAR_WIDTH },
     // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
     // 鼠标事件转发给程序并取消本地选区,导致 macOS 用户"运行时无法框选"。开启此项后
