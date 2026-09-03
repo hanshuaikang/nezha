@@ -1135,18 +1135,6 @@ export const panels = {
     position: "absolute" as const,
     width: "100%",
   },
-  fileIconFolder: {
-    display: "inline-flex",
-    alignItems: "center",
-    flexShrink: 0,
-  },
-  fileIconFile: {
-    width: 5,
-    height: 14,
-    borderRadius: 2,
-    flexShrink: 0,
-    display: "inline-block",
-  },
   fileTreeRow: {
     display: "flex",
     alignItems: "center",

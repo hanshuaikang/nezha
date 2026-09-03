@@ -1,0 +1,15 @@
+/* File explorer icons: Material Icon Theme SVGs rendered as <img>. */
+
+.file-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.file-icon[data-ignored="true"] {
+  opacity: 0.55;
+  filter: grayscale(1);
+}

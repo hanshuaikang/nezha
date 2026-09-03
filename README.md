@@ -121,6 +121,7 @@ Nezha 的诞生离不开以下优秀的开源项目，向它们致敬：
 - [Tauri](https://github.com/tauri-apps/tauri) - 构建更小、更快、更安全的桌面应用
 - [React](https://github.com/facebook/react) - 构建用户界面的 JavaScript 库
 - [xterm.js](https://github.com/xtermjs/xterm.js) - 强大的 Web 终端组件
+- [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) - 文件浏览器使用的文件与文件夹图标
 
 感谢以下自媒体对本项目的关注和转发(以下排名不分先后), 大家感兴趣的话可以关注下他们 ～
 
