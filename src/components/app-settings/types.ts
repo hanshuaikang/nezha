@@ -124,3 +124,21 @@ export const OPEN_APP_SETTINGS_EVENT = "nezha:open-app-settings";
 export interface SkillHubChangedDetail {
   projects?: unknown;
 }
+
+/**
+ * `OPEN_APP_SETTINGS_EVENT` 的作用域。App 设置对话框由每个 `SidebarFooterActions` 实例各自托管，
+ * 而多个 ProjectPage 会同时保持挂载：不带作用域的事件会让所有隐藏页面各开一个对话框，
+ * 用户切回那些项目时对话框会凭空出现。带上 `projectId` 后只有该项目的宿主响应；
+ * 不带 `projectId`（欢迎页派发）时只有欢迎页宿主响应。
+ */
+export interface OpenAppSettingsDetail {
+  projectId?: string;
+}
+
+export function dispatchOpenAppSettings(projectId?: string) {
+  window.dispatchEvent(
+    new CustomEvent<OpenAppSettingsDetail>(OPEN_APP_SETTINGS_EVENT, {
+      detail: projectId ? { projectId } : {},
+    }),
+  );
+}
