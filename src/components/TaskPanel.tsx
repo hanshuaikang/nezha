@@ -242,6 +242,7 @@ export function TaskPanel({
       />
       <div style={s.taskPanelFooter}>
         <SidebarFooterActions
+          projectId={project.id}
           themeVariant={themeVariant}
           themeMode={themeMode}
           systemPrefersDark={systemPrefersDark}
