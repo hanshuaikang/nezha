@@ -1,5 +1,13 @@
 import type React from "react";
 
+/**
+ * SkillStorePanel（右侧面板）的静态样式全部走 `skill-hub.css` 的 className，
+ * 这里只负责把可拖拽的面板宽度以 CSS 变量形式注入根节点。
+ */
+export function skillStoreRootStyle(width: number): React.CSSProperties {
+  return { "--skill-store-width": `${width}px` } as React.CSSProperties;
+}
+
 const skillRowManageBase: React.CSSProperties = {
   padding: "6px 12px",
   background: "transparent",
