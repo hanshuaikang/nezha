@@ -1,0 +1,372 @@
+/* ── Skill Store（右侧面板）──────────────────────────────────────────────────
+ * 与 git-history.css 同一套路：静态布局 + hover / data-* 状态全部放在这里，
+ * 组件里不写 style={{}}；面板宽度通过 --skill-store-width 变量注入。
+ */
+
+.skill-store-root {
+  width: var(--skill-store-width, 280px);
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.skill-store-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-dim);
+  flex-shrink: 0;
+}
+
+.skill-store-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--text-hint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skill-store-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-hint);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.skill-store-icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.skill-store-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 搜索框 ── */
+.skill-store-search {
+  margin: 8px 10px 4px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-dim);
+  border-radius: 7px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+
+.skill-store-search:focus-within {
+  border-color: var(--accent);
+}
+
+.skill-store-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+
+.skill-store-search-input::placeholder {
+  color: var(--text-hint);
+}
+
+.skill-store-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-hint);
+  cursor: pointer;
+}
+
+.skill-store-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.skill-store-summary {
+  padding: 4px 12px 6px;
+  font-size: 11.5px;
+  color: var(--text-hint);
+  flex-shrink: 0;
+}
+
+.skill-store-error {
+  margin: 0 10px 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--danger);
+  word-break: break-word;
+  flex-shrink: 0;
+}
+
+.skill-store-error svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── 列表 ── */
+.skill-store-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skill-store-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  transition: border-color 0.12s;
+}
+
+.skill-store-row:hover {
+  border-color: var(--border-medium);
+}
+
+.skill-store-row[data-installed="true"] {
+  border-color: var(--accent-soft);
+}
+
+.skill-store-row-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.skill-store-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-store-row-dir {
+  min-width: 0;
+  flex-shrink: 1;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--text-hint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-store-row-desc {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.skill-store-row-desc[data-empty="true"] {
+  color: var(--text-hint);
+  font-style: italic;
+}
+
+.skill-store-row-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.skill-store-row-error svg {
+  flex-shrink: 0;
+}
+
+.skill-store-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 1px;
+}
+
+/* ── Agent 安装开关（chip）──
+ * 未安装：描边 + "+"；已安装：accent 底色 + ✓，hover 时变红并显示 ×（提示点击即卸载）；
+ * 记录损坏 / 被外部改动：warning 色 + ⚠。
+ */
+.skill-store-agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.skill-store-agent-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.skill-store-agent-chip[data-installed="true"] {
+  background: var(--accent-subtle);
+  border-color: var(--accent-soft);
+  color: var(--accent);
+}
+
+.skill-store-agent-chip[data-health="broken"],
+.skill-store-agent-chip[data-health="diverged"] {
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+  color: var(--warning);
+}
+
+.skill-store-agent-chip[data-installed="true"]:hover:not(:disabled) {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.skill-store-agent-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 某个 chip 正在安装 / 卸载时其余 chip 一并禁用，但忙碌中的这一个保持原色，让 spinner 可读 */
+.skill-store-agent-chip[data-busy="true"]:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+
+.skill-store-agent-logo {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.skill-store-agent-state {
+  display: inline-flex;
+  align-items: center;
+}
+
+.skill-store-agent-state--hover {
+  display: none;
+}
+
+.skill-store-agent-chip[data-installed="true"]:hover:not(:disabled) .skill-store-agent-state--idle {
+  display: none;
+}
+
+.skill-store-agent-chip[data-installed="true"]:hover:not(:disabled) .skill-store-agent-state--hover {
+  display: inline-flex;
+}
+
+/* ── 空态 ── */
+.skill-store-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.skill-store-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.skill-store-empty-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.skill-store-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 12px;
+  background: var(--primary-action-bg);
+  border: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-action-fg);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.skill-store-empty-btn:hover {
+  background: var(--primary-action-hover);
+}
+
+.skill-store-hint {
+  padding: 24px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-hint);
+  text-align: center;
+  word-break: break-word;
+}

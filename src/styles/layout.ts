@@ -241,4 +241,20 @@ export const layout = {
     zIndex: 10,
   },
   placeholderView: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center" },
+  // ── RightToolbar ───────────────────────────────────────────────────────────
+  rightToolbar: {
+    width: 44,
+    flexShrink: 0,
+    background: "var(--bg-sidebar)",
+    borderLeft: "1px solid var(--border-dim)",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    paddingTop: 6,
+    paddingBottom: 8,
+    gap: 2,
+    overflow: "hidden",
+  },
+  rightToolbarDivider: { width: 20, height: 1, background: "var(--border-dim)", margin: "4px 0" },
+  rightToolbarSpacer: { flex: 1 },
 } satisfies Record<string, React.CSSProperties>;

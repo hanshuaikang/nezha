@@ -9,7 +9,7 @@ import type {
   FontFamily,
 } from "../types";
 import { AppSettingsDialog } from "./AppSettingsDialog";
-import { OPEN_APP_SETTINGS_EVENT } from "./app-settings/types";
+import { OPEN_APP_SETTINGS_EVENT, type OpenAppSettingsDetail } from "./app-settings/types";
 import { NotificationBell } from "./NotificationBell";
 import { ENABLE_USAGE_INSIGHTS } from "../platform";
 import { UsagePopover } from "./UsagePopover";
@@ -17,6 +17,7 @@ import { useI18n } from "../i18n";
 import s from "../styles";
 
 export function SidebarFooterActions({
+  projectId,
   themeVariant,
   themeMode,
   systemPrefersDark,
@@ -35,6 +36,11 @@ export function SidebarFooterActions({
   monoFontFamily,
   onMonoFontFamilyChange,
 }: {
+  /**
+   * 所属项目；欢迎页宿主不传。`OPEN_APP_SETTINGS_EVENT` 只在作用域匹配时响应，
+   * 避免多个同时挂载的 ProjectPage 各开一个设置对话框（见 OpenAppSettingsDetail）。
+   */
+  projectId?: string;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
@@ -58,10 +64,14 @@ export function SidebarFooterActions({
   const isDark = themeVariant === "dark" || themeVariant === "midnight";
 
   useEffect(() => {
-    const open = () => setShowAppSettings(true);
+    const open = (event: Event) => {
+      const target = (event as CustomEvent<OpenAppSettingsDetail | undefined>).detail?.projectId;
+      if (target !== projectId) return;
+      setShowAppSettings(true);
+    };
     window.addEventListener(OPEN_APP_SETTINGS_EVENT, open);
     return () => window.removeEventListener(OPEN_APP_SETTINGS_EVENT, open);
-  }, []);
+  }, [projectId]);
 
   return (
     <>

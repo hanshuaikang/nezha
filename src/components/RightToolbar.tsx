@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { IconButton } from "./IconButton";
-import { Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
+import { Blocks, Folder, Search, GitBranch, History, Settings, Terminal } from "lucide-react";
 import { useI18n } from "../i18n";
 import type { RightPanel } from "../hooks/useProjectPanels";
+import s from "../styles";
 
 export function RightToolbar({
   activePanel,
@@ -11,6 +12,7 @@ export function RightToolbar({
   onToggleTerminal,
   onOpenSearch,
   onOpenSettings,
+  showSkillStore = true,
 }: {
   activePanel: RightPanel;
   onToggle: (panel: Exclude<RightPanel, null>) => void;
@@ -18,6 +20,8 @@ export function RightToolbar({
   onToggleTerminal: () => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
+  /** 技能库项目自身不需要「安装到本项目」入口，隐藏该按钮 */
+  showSkillStore?: boolean;
 }) {
   const { t } = useI18n();
   const buttons: Array<{
@@ -29,27 +33,16 @@ export function RightToolbar({
     { key: "git-changes", icon: <GitBranch size={17} />, title: t("toolbar.gitChanges") },
     { key: "git-history", icon: <History size={17} />, title: t("toolbar.gitHistory") },
   ];
+  if (showSkillStore) {
+    buttons.push({ key: "skills", icon: <Blocks size={17} />, title: t("toolbar.skillStore") });
+  }
 
   const footerItems = [
     { icon: <Settings size={17} />, title: t("settings.title"), disabled: false, onClick: onOpenSettings },
   ];
 
   return (
-    <div
-      style={{
-        width: 44,
-        flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderLeft: "1px solid var(--border-dim)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        paddingTop: 6,
-        paddingBottom: 8,
-        gap: 2,
-        overflow: "hidden",
-      }}
-    >
+    <div style={s.rightToolbar}>
       {buttons.map((btn) => (
         <IconButton
           key={btn.key}
@@ -67,11 +60,11 @@ export function RightToolbar({
         onClick={onToggleTerminal}
       />
 
-      <div style={{ width: 20, height: 1, background: "var(--border-dim)", margin: "4px 0" }} />
+      <div style={s.rightToolbarDivider} />
 
       <IconButton icon={<Search size={17} />} title={t("toolbar.search")} onClick={onOpenSearch} />
 
-      <div style={{ flex: 1 }} />
+      <div style={s.rightToolbarSpacer} />
 
       {footerItems.map((item, i) => (
         <IconButton
