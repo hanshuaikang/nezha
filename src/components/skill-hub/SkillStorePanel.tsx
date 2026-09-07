@@ -91,10 +91,11 @@ export function SkillStorePanel({ projectId, active, width, onOpenAppSettings }:
   }, [active, load]);
 
   useEffect(() => {
+    if (!active) return;
     const refresh = () => void load();
     window.addEventListener(SKILL_HUB_CHANGED_EVENT, refresh);
     return () => window.removeEventListener(SKILL_HUB_CHANGED_EVENT, refresh);
-  }, [load]);
+  }, [active, load]);
 
   const installedMap = useMemo(() => {
     const map = new Map<string, SkillInstallation>();
