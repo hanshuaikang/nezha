@@ -4,10 +4,12 @@ import { getAvatarGradient } from "../utils";
 export function ProjectAvatar({
   name,
   size = 28,
+  className,
   style: extraStyle,
 }: {
   name: string;
   size?: number;
+  className?: string;
   style?: React.CSSProperties;
 }) {
   const [from, to] = getAvatarGradient(name);
@@ -17,6 +19,7 @@ export function ProjectAvatar({
       : name.slice(0, 2).toUpperCase();
   return (
     <div
+      className={className}
       style={{
         width: size,
         height: size,

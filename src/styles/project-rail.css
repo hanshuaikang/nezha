@@ -1,0 +1,306 @@
+/* ── Project Rail（左侧项目竖条）────────────────────────────────────────────────
+ * 与 skill-hub.css 同一套路：静态布局 + hover / data-* 状态全部放在这里，
+ * 组件里不写 style={{}}。尺寸常量（item 36 / gap 5 / padding-top 10）由
+ * ProjectRail 通过 --rail-item-size / --rail-item-gap / --rail-padding-top 注入，
+ * 单一来源在 styles/rail-drag.ts 与 project-rail/drag.ts，拖拽落点计算依赖它们。
+ */
+
+.rail-root {
+  position: relative;
+  width: 52px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--rail-padding-top, 10px);
+  padding-bottom: 10px;
+  gap: var(--rail-item-gap, 5px);
+  overflow: visible;
+}
+
+.rail-root[data-drawer-open="true"] {
+  z-index: 50;
+}
+
+.rail-spacer {
+  flex: 1;
+}
+
+/* ── Rail item ─────────────────────────────────────────────────────────────── */
+
+.rail-item {
+  position: relative;
+  width: var(--rail-item-size, 36px);
+  height: var(--rail-item-size, 36px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  /* outline 颜色保持瞬变（与旧版本一致 — 加 transition 后切 active 会看到 ~120ms 的
+     颜色过渡，视觉上"框慢半拍稳定"）。transform / opacity 仍需平滑过渡。 */
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 100ms;
+  transform: translate3d(0, var(--rail-item-dy, 0px), 0);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.rail-item:hover {
+  outline-color: var(--border-medium);
+}
+
+.rail-item[data-active="true"] {
+  outline-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--control-active-bg);
+  cursor: grab;
+}
+
+.rail-item[data-dragging="true"] {
+  cursor: grabbing;
+  opacity: 0.18;
+}
+
+.rail-item[data-dragging="true"],
+.rail-item[data-moving="true"] {
+  will-change: transform;
+}
+
+/* 头像抬到招手小人之上，使探头 / 缩回有被遮挡的层次 */
+.rail-item-avatar {
+  position: relative;
+  z-index: 1;
+}
+
+/* 招手小人：绝对定位在头像右下，z-index 低于头像，缩回时被头像遮住 */
+.rail-item-mascot {
+  position: absolute;
+  left: 14px;
+  bottom: -3px;
+  height: 40px;
+  width: auto;
+  z-index: 0;
+  pointer-events: none;
+  animation: rail-mascot-wave 3.6s ease-in-out both;
+  will-change: transform, opacity;
+}
+
+/* 只做 translate3d + opacity（都走合成层，不触发重排/重绘）；中段保持静止，
+   纯由 gif 自己播挥手，避免 CSS 位移与 gif 逐帧重绘互相打架导致的顿挫。 */
+@keyframes rail-mascot-wave {
+  0% {
+    transform: translate3d(-18px, 0, 0);
+    opacity: 0;
+  }
+  18% {
+    transform: translate3d(20px, 0, 0);
+    opacity: 1;
+  }
+  85% {
+    transform: translate3d(20px, 0, 0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-18px, 0, 0);
+    opacity: 0;
+  }
+}
+
+/* ── 状态指示：小圆点（默认）与待确认数量角标 ─────────────────────────────────
+ * 描边颜色要与所在容器背景融合，rail / 拖拽预览用 sidebar 底色，抽屉用 panel 底色。
+ */
+
+.rail-indicator-host[data-surface="panel"] {
+  --rail-indicator-border: var(--bg-panel);
+}
+
+.rail-status-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--rail-indicator-border, var(--bg-sidebar));
+  box-sizing: border-box;
+  background: var(--color-success);
+  /* 必须高于 .rail-item-avatar（z-index:1），否则被抬层的头像盖住 */
+  z-index: 2;
+}
+
+.rail-status-dot[data-status="attention"] {
+  background: var(--color-warning);
+}
+
+.rail-attention-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border: 2px solid var(--rail-indicator-border, var(--bg-sidebar));
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── 拖拽预览浮层：跟手指走，fixed 定位、不响应事件、置顶 ───────────────────── */
+
+.rail-drag-preview {
+  position: fixed;
+  left: var(--rail-preview-x, 0px);
+  top: var(--rail-preview-y, 0px);
+  width: var(--rail-item-size, 36px);
+  height: var(--rail-item-size, 36px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-sidebar) 84%, white 16%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  transform: scale(1.08);
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* 浮层内部为 ProjectAvatar + AttentionIndicator 提供 stacking context */
+.rail-drag-preview-avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+}
+
+/* ── 「展开全部」抽屉 ─────────────────────────────────────────────────────────── */
+
+.rail-drawer {
+  position: absolute;
+  left: 52px;
+  top: 0;
+  bottom: 0;
+  width: 220px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  box-shadow: var(--shadow-drawer);
+}
+
+.rail-drawer-header {
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.rail-drawer-title {
+  margin: 0 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-hint);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.rail-drawer-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+}
+
+.rail-drawer-search-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.rail-drawer-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.rail-drawer-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+}
+
+.rail-drawer-empty {
+  padding: 24px 10px;
+  text-align: center;
+  color: var(--text-hint);
+  font-size: 12px;
+}
+
+.rail-drawer-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.rail-drawer-item:hover {
+  background: var(--bg-hover);
+}
+
+.rail-drawer-item[data-active="true"] {
+  background: var(--accent-subtle);
+  cursor: default;
+}
+
+.rail-drawer-item-avatar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.rail-drawer-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-drawer-item[data-active="true"] .rail-drawer-item-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.rail-drawer-item-hidden {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-hint);
+}

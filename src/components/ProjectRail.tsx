@@ -1,11 +1,8 @@
 import { useCallback, useState, useEffect, useMemo, useRef } from "react";
+import type React from "react";
 import type { Project, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
-import {
-  RAIL_ITEM_SIZE,
-  railDragPreviewAvatarWrap,
-  railDragPreviewStyle,
-} from "../styles/rail-drag";
+import { RAIL_ITEM_GAP, RAIL_ITEM_SIZE } from "../styles/rail-drag";
 import {
   EMPTY_PROJECT_ACTIVITY,
   buildProjectActivityMap,
@@ -289,24 +286,25 @@ export function ProjectRail({
     });
   }, [projectActivityById, railProjects]);
 
+  // 尺寸常量注入 CSS 变量:拖拽落点计算(drag.ts)与布局共用同一来源,避免两边漂移。
+  const railVars = {
+    "--rail-item-size": `${RAIL_ITEM_SIZE}px`,
+    "--rail-item-gap": `${RAIL_ITEM_GAP}px`,
+    "--rail-padding-top": `${RAIL_PADDING_TOP}px`,
+  } as React.CSSProperties;
+  const previewVars =
+    dragViz &&
+    ({
+      "--rail-preview-x": `${dragViz.previewX}px`,
+      "--rail-preview-y": `${dragViz.previewY}px`,
+    } as React.CSSProperties);
+
   return (
     <div
       ref={railContainerRef}
-      style={{
-        position: "relative",
-        width: 52,
-        flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderRight: "1px solid var(--border-dim)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        paddingTop: RAIL_PADDING_TOP,
-        paddingBottom: 10,
-        gap: 5,
-        overflow: "visible",
-        zIndex: drawerOpen ? 50 : "auto",
-      }}
+      className="rail-root"
+      data-drawer-open={drawerOpen}
+      style={railVars}
     >
       {railProjects.map((project, index) => {
         const isDragging = dragOrigin?.draggedId === project.id;
@@ -332,7 +330,7 @@ export function ProjectRail({
         );
       })}
 
-      <div style={{ flex: 1 }} />
+      <div className="rail-spacer" />
 
       {!singleProjectMode && (
         <ProjectRailActions
@@ -353,21 +351,14 @@ export function ProjectRail({
         />
       )}
 
-      {draggedProject && dragViz && (
-        <div
-          style={railDragPreviewStyle({
-            x: dragViz.previewX,
-            y: dragViz.previewY,
-            size: RAIL_ITEM_SIZE,
-          })}
-        >
-          <div style={railDragPreviewAvatarWrap}>
+      {draggedProject && previewVars && (
+        <div className="rail-drag-preview" style={previewVars}>
+          <div className="rail-drag-preview-avatar">
             <ProjectAvatar name={draggedProject.name} size={28} />
             <AttentionIndicator
               status={draggedProjectActivity.status}
               count={draggedProjectActivity.attentionCount}
               showBadge={attentionBadge}
-              borderColor="var(--bg-sidebar)"
             />
           </div>
         </div>
