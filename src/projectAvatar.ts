@@ -1,25 +1,28 @@
-import type { ProjectAvatarColor } from "./types";
+import type { ProjectAvatarColor, ProjectAvatarStyle } from "./types";
 
 /** 头像外观解析所需的最小项目字段；Project 满足该结构。 */
 export interface ProjectAppearanceSource {
   id: string;
   name: string;
   path: string;
+  avatar?: ProjectAvatarStyle;
 }
 
 /** 解析后的头像外观，所有头像消费者（rail / 抽屉 / 首页 / 看板 / 时间线）统一读这里。 */
 export interface ResolvedProjectAppearance {
-  /** 实际使用的色板 key */
+  /** 实际使用的色板 key（用户自定义优先） */
   color: ProjectAvatarColor;
-  /** 自动分配的色板 key（与 color 相同，除非用户自定义） */
+  /** 自动分配的色板 key：用户恢复默认后会得到的颜色，供编辑器「自动」色块预览 */
   autoColor: ProjectAvatarColor;
-  /** 实际显示的缩写（1–3 个字符） */
+  /** 实际显示的缩写（用户自定义优先，1–3 个字符） */
   label: string;
   /** 自动生成的缩写（同屏去重后） */
   autoLabel: string;
+  /** 用户自定义的 emoji / 符号，有则替代缩写显示 */
+  emoji?: string;
 }
 
-// 色板顺序即色环顺序（红 → 橙 → … → 粉），也是编辑器里色块的展示顺序。
+// 色板顺序即色环顺序（红 → 橙 → … → 粉 → 中性色），也是编辑器里色块的展示顺序。
 // 颜色值见 styles/project-rail.css 的 --avatar-<key>-from / -to。
 const PALETTE_ORDER = {
   red: 0,
@@ -47,6 +50,53 @@ const PALETTE_SIZE = PROJECT_AVATAR_COLORS.length;
 // 彼此差异最大(线性 +1 探测会落到色环上最相近的邻色,等于没去重)。
 const PROBE_STRIDE = 7;
 
+/** 自定义缩写的最大字符数（grapheme 计） */
+export const PROJECT_AVATAR_LABEL_MAX = 3;
+
+/** 编辑器里的常用 emoji 候选;用户也可通过系统 emoji 键盘输入任意字符。 */
+export const PROJECT_AVATAR_EMOJI_PRESETS: readonly string[] = [
+  "🚀",
+  "⚡",
+  "🔥",
+  "✨",
+  "🎯",
+  "🧪",
+  "🧰",
+  "🛠️",
+  "⚙️",
+  "🔧",
+  "📦",
+  "🗂️",
+  "📚",
+  "📝",
+  "🧭",
+  "🌐",
+  "☁️",
+  "🛰️",
+  "🔒",
+  "🔑",
+  "🐙",
+  "🐳",
+  "🐧",
+  "🦀",
+  "🐍",
+  "🦫",
+  "🤖",
+  "👾",
+  "🎮",
+  "🎨",
+  "🖥️",
+  "📱",
+  "🧠",
+  "💎",
+  "🌱",
+  "🌈",
+  "🏠",
+  "🛒",
+  "💳",
+  "📊",
+];
+
 export function isProjectAvatarColor(value: unknown): value is ProjectAvatarColor {
   return typeof value === "string" && value in PALETTE_ORDER;
 }
@@ -60,6 +110,59 @@ export function hashString(input: string): number {
   }
   return hash >>> 0;
 }
+
+// ── grapheme 工具 ─────────────────────────────────────────────────────────────
+// tsconfig lib 是 ES2020,没有 Intl.Segmenter 的类型;运行时 WebKit / Chromium / Node 18+
+// 都有,缺失时退回 code point 切分(会把 ZWJ 序列切散,仅作兜底)。
+
+type GraphemeSegmenter = { segment(input: string): Iterable<{ segment: string }> };
+type SegmenterCtor = new (
+  locales?: string | string[],
+  options?: { granularity: "grapheme" },
+) => GraphemeSegmenter;
+
+function graphemes(input: string): string[] {
+  const Segmenter = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
+  if (!Segmenter) return Array.from(input);
+  const out: string[] = [];
+  for (const { segment } of new Segmenter(undefined, { granularity: "grapheme" }).segment(input)) {
+    out.push(segment);
+  }
+  return out;
+}
+
+/** 取字符串的第一个 grapheme(一个 emoji / 一个字),没有可见字符时返回空串。 */
+export function firstGrapheme(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  return graphemes(trimmed)[0] ?? "";
+}
+
+/** 截取前 max 个 grapheme,并去掉首尾空白。 */
+export function takeGraphemes(input: string, max: number): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  return graphemes(trimmed).slice(0, max).join("");
+}
+
+/**
+ * 归一化用户输入的外观:非法色板 key 丢弃、emoji 只保留一个 grapheme、
+ * 缩写截到上限;三项都为空时返回 undefined,方便调用方直接删掉 avatar 字段。
+ */
+export function normalizeProjectAvatar(
+  avatar: ProjectAvatarStyle | undefined,
+): ProjectAvatarStyle | undefined {
+  if (!avatar) return undefined;
+  const out: ProjectAvatarStyle = {};
+  if (isProjectAvatarColor(avatar.color)) out.color = avatar.color;
+  const emoji = avatar.emoji ? firstGrapheme(avatar.emoji) : "";
+  if (emoji) out.emoji = emoji;
+  const label = avatar.label ? takeGraphemes(avatar.label, PROJECT_AVATAR_LABEL_MAX) : "";
+  if (label) out.label = label;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// ── 自动缩写 ─────────────────────────────────────────────────────────────────
 
 // 按分隔符(非字母数字)与 camelCase 边界切词,每个词以 code point 数组返回,
 // 避免 surrogate pair / CJK 被 `str[i]` 切坏。
@@ -103,18 +206,42 @@ export function initialsCandidates(name: string): string[] {
   return out;
 }
 
+// ── 解析 ─────────────────────────────────────────────────────────────────────
+
 // 稳定基准:按 id 排序而不是按 rail 顺序,这样拖拽排序不会让缩写 / 颜色跳变;
 // id 是创建时间戳,新项目排在最后,不会扰动已有项目的分配结果。
 function stableOrder<T extends ProjectAppearanceSource>(projects: readonly T[]): T[] {
   return [...projects].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-function resolveLabels(ordered: readonly ProjectAppearanceSource[]): Map<string, string> {
+function customLabel(project: ProjectAppearanceSource): string | undefined {
+  return project.avatar?.label || undefined;
+}
+
+function customEmoji(project: ProjectAppearanceSource): string | undefined {
+  return project.avatar?.emoji || undefined;
+}
+
+function customColor(project: ProjectAppearanceSource): ProjectAvatarColor | undefined {
+  const color = project.avatar?.color;
+  return isProjectAvatarColor(color) ? color : undefined;
+}
+
+// 返回每个项目的自动缩写(同屏去重后)。用户自定义缩写先占位,自动项避开它们;
+// 显示 emoji 的项目不参与撞名判断(它们不显示缩写)。
+function resolveAutoLabels(ordered: readonly ProjectAppearanceSource[]): Map<string, string> {
   const candidatesById = new Map<string, string[]>();
   const groups = new Map<string, ProjectAppearanceSource[]>();
+  const claimed = new Set<string>();
   for (const project of ordered) {
     const candidates = initialsCandidates(project.name);
     candidatesById.set(project.id, candidates);
+    const custom = customLabel(project);
+    if (custom) {
+      claimed.add(custom.toUpperCase());
+      continue;
+    }
+    if (customEmoji(project)) continue;
     const natural = candidates[0];
     const group = groups.get(natural);
     if (group) group.push(project);
@@ -122,48 +249,70 @@ function resolveLabels(ordered: readonly ProjectAppearanceSource[]): Map<string,
   }
 
   const labels = new Map<string, string>();
-  const claimed = new Set<string>();
   // 第一轮:没撞名的项目保留自然缩写并占位。
   for (const [natural, group] of groups) {
-    if (group.length !== 1) continue;
+    if (group.length !== 1 || claimed.has(natural)) continue;
     labels.set(group[0].id, natural);
     claimed.add(natural);
   }
-  // 第二轮:撞名组内所有成员都改用更长的备选,彼此(以及与第一轮)不重复;
-  // 备选耗尽时退回自然缩写,接受撞名。
+  // 第二轮:撞名组(以及自然缩写被自定义缩写占掉的项目)改用更长的备选,
+  // 彼此不重复;备选耗尽时退回自然缩写,接受撞名。
   for (const [natural, group] of groups) {
-    if (group.length === 1) continue;
     for (const project of group) {
+      if (labels.has(project.id)) continue;
       const candidates = candidatesById.get(project.id) ?? [natural];
       const pick = candidates.slice(1).find((candidate) => !claimed.has(candidate)) ?? natural;
       labels.set(project.id, pick);
       claimed.add(pick);
     }
   }
+  // 自定义缩写 / emoji 的项目:autoLabel 仍给出自然缩写,供编辑器占位符使用。
+  for (const project of ordered) {
+    if (!labels.has(project.id)) {
+      labels.set(project.id, candidatesById.get(project.id)?.[0] ?? "?");
+    }
+  }
   return labels;
 }
 
+function pickSlot(preferred: number, usage: readonly number[]): number {
+  // 从 hash 落点出发按步长探测,取第一个使用次数最少的槽位:
+  // 项目数 ≤ 色板数时全部不重色,超出后均匀复用。
+  const minUsage = Math.min(...usage);
+  for (let i = 0; i < PALETTE_SIZE; i++) {
+    const slot = (preferred + i * PROBE_STRIDE) % PALETTE_SIZE;
+    if (usage[slot] === minUsage) return slot;
+  }
+  return preferred;
+}
+
+// 返回每个项目的 { color, autoColor }。用户手动指定的颜色先全部占位,自动分配的项目
+// 会避开它们;对自定义了颜色的项目,autoColor 是"此刻恢复默认会拿到的颜色"——
+// 用扣掉自身占位后的当前使用状态算,与真正恢复默认后的结果一致。
 function resolveColors(
   ordered: readonly ProjectAppearanceSource[],
-  reserved: readonly ProjectAvatarColor[],
-): Map<string, ProjectAvatarColor> {
-  // 用户手动指定的颜色先占位,自动分配的项目会避开它们。
+): Map<string, { color: ProjectAvatarColor; autoColor: ProjectAvatarColor }> {
   const usage = new Array<number>(PALETTE_SIZE).fill(0);
-  for (const color of reserved) usage[PALETTE_ORDER[color]] += 1;
+  for (const project of ordered) {
+    const custom = customColor(project);
+    if (custom) usage[PALETTE_ORDER[custom]] += 1;
+  }
 
-  const colors = new Map<string, ProjectAvatarColor>();
+  const colors = new Map<string, { color: ProjectAvatarColor; autoColor: ProjectAvatarColor }>();
   for (const project of ordered) {
     const preferred = hashString(project.path || project.name || project.id) % PALETTE_SIZE;
-    // 从 hash 落点出发按步长探测,取第一个使用次数最少的槽位:
-    // 项目数 ≤ 色板数时全部不重色,超出后均匀复用。
-    const minUsage = Math.min(...usage);
-    let slot = preferred;
-    for (let i = 0; i < PALETTE_SIZE; i++) {
-      slot = (preferred + i * PROBE_STRIDE) % PALETTE_SIZE;
-      if (usage[slot] === minUsage) break;
+    const custom = customColor(project);
+    if (custom) {
+      const hypothetical = [...usage];
+      hypothetical[PALETTE_ORDER[custom]] -= 1;
+      const autoColor = PROJECT_AVATAR_COLORS[pickSlot(preferred, hypothetical)];
+      colors.set(project.id, { color: custom, autoColor });
+      continue;
     }
+    const slot = pickSlot(preferred, usage);
     usage[slot] += 1;
-    colors.set(project.id, PROJECT_AVATAR_COLORS[slot]);
+    const color = PROJECT_AVATAR_COLORS[slot];
+    colors.set(project.id, { color, autoColor: color });
   }
   return colors;
 }
@@ -176,14 +325,25 @@ export function resolveProjectAppearances(
   projects: readonly ProjectAppearanceSource[],
 ): Map<string, ResolvedProjectAppearance> {
   const ordered = stableOrder(projects);
-  const labels = resolveLabels(ordered);
-  const colors = resolveColors(ordered, []);
+  const autoLabels = resolveAutoLabels(ordered);
+  const colors = resolveColors(ordered);
 
   const result = new Map<string, ResolvedProjectAppearance>();
   for (const project of ordered) {
-    const autoLabel = labels.get(project.id) ?? initialsCandidates(project.name)[0];
-    const autoColor = colors.get(project.id) ?? PROJECT_AVATAR_COLORS[0];
-    result.set(project.id, { color: autoColor, autoColor, label: autoLabel, autoLabel });
+    const autoLabel = autoLabels.get(project.id) ?? initialsCandidates(project.name)[0];
+    const colorPair = colors.get(project.id) ?? {
+      color: PROJECT_AVATAR_COLORS[0],
+      autoColor: PROJECT_AVATAR_COLORS[0],
+    };
+    const resolved: ResolvedProjectAppearance = {
+      color: colorPair.color,
+      autoColor: colorPair.autoColor,
+      label: customLabel(project) ?? autoLabel,
+      autoLabel,
+    };
+    const emoji = customEmoji(project);
+    if (emoji) resolved.emoji = emoji;
+    result.set(project.id, resolved);
   }
   return result;
 }
@@ -195,5 +355,10 @@ export function resolveSingleProjectAppearance(
   const resolved = resolveProjectAppearances([project]).get(project.id);
   if (resolved) return resolved;
   const label = initialsCandidates(project.name)[0];
-  return { color: PROJECT_AVATAR_COLORS[0], autoColor: PROJECT_AVATAR_COLORS[0], label, autoLabel: label };
+  return {
+    color: PROJECT_AVATAR_COLORS[0],
+    autoColor: PROJECT_AVATAR_COLORS[0],
+    label,
+    autoLabel: label,
+  };
 }

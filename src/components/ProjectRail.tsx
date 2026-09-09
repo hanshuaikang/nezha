@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import type React from "react";
-import type { Project, Task } from "../types";
+import type { Project, ProjectAvatarStyle, Task } from "../types";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { RAIL_ITEM_GAP, RAIL_ITEM_SIZE } from "../styles/rail-drag";
 import {
@@ -10,7 +10,7 @@ import {
 } from "./project-rail/activity";
 import { ProjectDrawer } from "./project-rail/ProjectDrawer";
 import { ProjectRailActions } from "./project-rail/ProjectRailActions";
-import { AttentionIndicator, RailItem } from "./project-rail/RailItem";
+import { AttentionIndicator, RailItem, type RailItemPanel } from "./project-rail/RailItem";
 import {
   RAIL_DRAG_THRESHOLD_PX,
   RAIL_PADDING_TOP,
@@ -31,6 +31,8 @@ export function ProjectRail({
   onSwitch,
   onCommitProjectOrder,
   onOpen,
+  onToggleProjectHidden,
+  onUpdateProjectAvatar,
   singleProjectMode = false,
 }: {
   projects: Project[];
@@ -44,9 +46,28 @@ export function ProjectRail({
     visibleIds: string[],
   ) => void;
   onOpen: () => void;
+  onToggleProjectHidden: (projectId: string) => void;
+  onUpdateProjectAvatar: (projectId: string, avatar: ProjectAvatarStyle | undefined) => void;
   singleProjectMode?: boolean;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // 右键菜单 / 外观编辑器:同一时刻只允许一个 rail 项打开,由这里统一持有。
+  const [openPanel, setOpenPanel] = useState<{ projectId: string; panel: RailItemPanel } | null>(
+    null,
+  );
+  const handlePanelChange = useCallback((projectId: string, panel: RailItemPanel | null) => {
+    setOpenPanel((prev) => {
+      if (panel) return { projectId, panel };
+      return prev?.projectId === projectId ? null : prev;
+    });
+  }, []);
+  const handleToggleHidden = useCallback(
+    (projectId: string) => {
+      setOpenPanel(null);
+      onToggleProjectHidden(projectId);
+    },
+    [onToggleProjectHidden],
+  );
 
   // 竖条只显示常驻项目；当前激活项目即使被设为非常驻也始终保留，避免失去当前上下文。
   const railProjects = useMemo(
@@ -218,6 +239,7 @@ export function ProjectRail({
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
     if (event.button !== 0) return;
+    setOpenPanel(null);
     const node = event.currentTarget;
     const rect = node.getBoundingClientRect();
     node.setPointerCapture(event.pointerId);
@@ -252,6 +274,7 @@ export function ProjectRail({
     }
     onSwitch(project);
     setDrawerOpen(false);
+    setOpenPanel(null);
   }, [onSwitch]);
 
   const draggedVisibleIndex = dragOrigin
@@ -324,8 +347,13 @@ export function ProjectRail({
             waveNonce={waveNonces.get(project.id) ?? 0}
             isDragging={isDragging}
             translateY={translateY}
+            panel={openPanel?.projectId === project.id ? openPanel.panel : null}
+            menuEnabled={!singleProjectMode}
             onPointerDown={handleRailItemPointerDown}
             onClick={handleRailItemClick}
+            onPanelChange={handlePanelChange}
+            onToggleHidden={handleToggleHidden}
+            onUpdateAvatar={onUpdateProjectAvatar}
           />
         );
       })}

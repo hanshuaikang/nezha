@@ -22,6 +22,22 @@ pub struct Project {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub hidden_from_rail: bool,
+    // 用户自定义头像外观；与前端 types.ts 的 ProjectAvatarStyle 同步。
+    // 缺省 None，序列化时省略，旧数据无需迁移。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<ProjectAvatar>,
+}
+
+/// 项目头像自定义项（颜色 key / emoji / 缩写），三项全部可选。
+/// color 存色板 key（如 "red"）而非 hex，具体颜色值由前端主题决定。
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ProjectAvatar {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

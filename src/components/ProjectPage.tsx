@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import type {
   Project,
+  ProjectAvatarStyle,
   Task,
   AgentType,
   PermissionMode,
@@ -71,6 +72,8 @@ export function ProjectPage({
   onSwitchProject,
   onCommitProjectOrder,
   onOpen,
+  onToggleProjectHidden,
+  onUpdateProjectAvatar,
   themeVariant,
   themeMode,
   systemPrefersDark,
@@ -145,6 +148,8 @@ export function ProjectPage({
   onSwitchProject: (project: Project) => void;
   onCommitProjectOrder: (draggedId: string, beforeId: string | null, visibleIds: string[]) => void;
   onOpen: () => void;
+  onToggleProjectHidden: (projectId: string) => void;
+  onUpdateProjectAvatar: (projectId: string, avatar: ProjectAvatarStyle | undefined) => void;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
@@ -390,6 +395,8 @@ export function ProjectPage({
         onSwitch={onSwitchProject}
         onCommitProjectOrder={onCommitProjectOrder}
         onOpen={onOpen}
+        onToggleProjectHidden={onToggleProjectHidden}
+        onUpdateProjectAvatar={onUpdateProjectAvatar}
         singleProjectMode={hubMode}
       />
       <TaskPanel

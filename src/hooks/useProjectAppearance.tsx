@@ -6,9 +6,7 @@ import {
   type ResolvedProjectAppearance,
 } from "../projectAvatar";
 
-const ProjectAppearanceContext = createContext<Map<string, ResolvedProjectAppearance> | null>(
-  null,
-);
+const ProjectAppearanceContext = createContext<Map<string, ResolvedProjectAppearance> | null>(null);
 
 /**
  * 在 App 根部用全量 projects 解析一次头像外观(同屏缩写 / 颜色去重),

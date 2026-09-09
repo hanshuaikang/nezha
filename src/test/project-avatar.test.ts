@@ -3,6 +3,7 @@ import {
   PROJECT_AVATAR_COLORS,
   hashString,
   initialsCandidates,
+  normalizeProjectAvatar,
   resolveProjectAppearances,
   resolveSingleProjectAppearance,
 } from "../projectAvatar";
@@ -107,5 +108,49 @@ describe("resolveSingleProjectAppearance", () => {
     const result = resolveSingleProjectAppearance(project("1", "nezha"));
     expect(result.label).toBe("NE");
     expect(PROJECT_AVATAR_COLORS).toContain(result.color);
+  });
+});
+
+describe("自定义外观", () => {
+  it("自定义颜色优先，且自动项会避开它", () => {
+    const custom = { ...project("1", "nezha", "/a"), avatar: { color: "red" as const } };
+    const other = project("2", "alpha", "/b");
+    const result = resolveProjectAppearances([custom, other]);
+    expect(result.get("1")?.color).toBe("red");
+    expect(result.get("2")?.color).not.toBe("red");
+  });
+
+  it("自定义缩写 / emoji 直接生效，autoLabel 仍给出自然缩写", () => {
+    const withLabel = { ...project("1", "nezha"), avatar: { label: "NZ" } };
+    const withEmoji = { ...project("2", "alpha-beta"), avatar: { emoji: "🚀" } };
+    const result = resolveProjectAppearances([withLabel, withEmoji]);
+    expect(result.get("1")?.label).toBe("NZ");
+    expect(result.get("1")?.autoLabel).toBe("NE");
+    expect(result.get("2")?.emoji).toBe("🚀");
+    expect(result.get("2")?.autoLabel).toBe("AB");
+  });
+
+  it("自动缩写会避开别的项目的自定义缩写", () => {
+    const pinned = { ...project("1", "zeta", "/z"), avatar: { label: "NE" } };
+    const auto = project("2", "nezha", "/n");
+    const result = resolveProjectAppearances([pinned, auto]);
+    expect(result.get("2")?.label).toBe("NEZ");
+  });
+});
+
+describe("normalizeProjectAvatar", () => {
+  it("非法颜色丢弃、emoji 只留一个 grapheme、缩写截断到 3 个字符", () => {
+    expect(
+      normalizeProjectAvatar({
+        color: "not-a-color" as never,
+        emoji: " 👨‍👩‍👧 rocket ",
+        label: "  nezha ",
+      }),
+    ).toEqual({ emoji: "👨‍👩‍👧", label: "nez" });
+  });
+
+  it("全部为空时返回 undefined", () => {
+    expect(normalizeProjectAvatar({ emoji: "", label: "   " })).toBeUndefined();
+    expect(normalizeProjectAvatar(undefined)).toBeUndefined();
   });
 });

@@ -247,7 +247,8 @@
 }
 
 .welcome-project-item:hover .welcome-project-hover-action,
-.welcome-project-item:focus-within .welcome-project-hover-action {
+.welcome-project-item:focus-within .welcome-project-hover-action,
+.welcome-project-item[data-appearance-open="true"] .welcome-project-hover-action {
   opacity: 1;
 }
 
