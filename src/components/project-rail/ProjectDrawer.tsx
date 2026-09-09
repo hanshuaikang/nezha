@@ -86,7 +86,7 @@ export function ProjectDrawer({
               }}
             >
               <div className="rail-drawer-item-avatar rail-indicator-host" data-surface="panel">
-                <ProjectAvatar name={project.name} size={28} />
+                <ProjectAvatar project={project} size={28} />
                 <AttentionIndicator
                   status={activity.status}
                   count={activity.attentionCount}

@@ -35,6 +35,7 @@ import { KanbanView, OPEN_KANBAN_VIEW_EVENT } from "./components/KanbanView";
 import { useToast } from "./components/Toast";
 import { isHideWindowShortcut, isToggleKanbanShortcut } from "./shortcuts";
 import { APP_PLATFORM } from "./platform";
+import { ProjectAppearanceProvider } from "./hooks/useProjectAppearance";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
@@ -1510,7 +1511,8 @@ function App() {
     }
   }
 
-  return (
+  // 头像外观(缩写 / 颜色去重)按全量 projects 解析一次,供各处 ProjectAvatar 读取。
+  const appTree = (
     <div style={s.rootRelative}>
       <div style={s.appProjectLayer}>
         {mountedProjects.map((project) => {
@@ -1636,6 +1638,7 @@ function App() {
       )}
     </div>
   );
+  return <ProjectAppearanceProvider projects={projects}>{appTree}</ProjectAppearanceProvider>;
 }
 
 export default App;

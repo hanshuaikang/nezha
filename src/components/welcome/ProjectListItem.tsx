@@ -77,7 +77,7 @@ export function ProjectListItem({
       />
 
       <div className="welcome-project-avatar">
-        <ProjectAvatar name={project.name} size={34} />
+        <ProjectAvatar project={project} size={34} />
       </div>
 
       <div className="welcome-project-content">

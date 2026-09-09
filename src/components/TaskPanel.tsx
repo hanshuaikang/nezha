@@ -134,7 +134,7 @@ export function TaskPanel({
           {hasAttention && <span style={s.taskPanelAttentionDot} aria-hidden />}
         </button>
         <div style={s.taskPanelCollapsedBody}>
-          <ProjectAvatar name={project.name} size={24} />
+          <ProjectAvatar project={project} size={24} />
           <button
             type="button"
             style={
@@ -169,7 +169,7 @@ export function TaskPanel({
         <button style={s.backBtn} onClick={onBack} title={backTitle ?? t("task.switchProject")}>
           <ChevronLeft size={15} strokeWidth={2} />
         </button>
-        <ProjectAvatar name={project.name} size={22} />
+        <ProjectAvatar project={project} size={22} />
         <span style={s.panelProjectName}>{project.name}</span>
         <button
           type="button"

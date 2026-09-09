@@ -304,3 +304,189 @@
   flex-shrink: 0;
   color: var(--text-hint);
 }
+
+/* ── 项目头像色板 ─────────────────────────────────────────────────────────────
+ * 16 色覆盖全色环,亮度锁在同一区间,保证 --fg-on-accent(白字)在四套主题下
+ * 都有足够对比。key 顺序 / 自动分配逻辑见 src/projectAvatar.ts;需要按主题
+ * 微调时在 themes.css 对应主题块里覆盖这些变量即可。
+ */
+:root {
+  --avatar-red-from: #d64545;
+  --avatar-red-to: #ae3232;
+  --avatar-orange-from: #e0662b;
+  --avatar-orange-to: #b84f1f;
+  --avatar-amber-from: #b8800f;
+  --avatar-amber-to: #92650a;
+  --avatar-lime-from: #6f931c;
+  --avatar-lime-to: #567214;
+  --avatar-green-from: #219a5a;
+  --avatar-green-to: #197a47;
+  --avatar-teal-from: #0d9488;
+  --avatar-teal-to: #0f6b64;
+  --avatar-cyan-from: #0891b2;
+  --avatar-cyan-to: #0e6f86;
+  --avatar-sky-from: #0b80c6;
+  --avatar-sky-to: #075e91;
+  --avatar-blue-from: #2563d6;
+  --avatar-blue-to: #1e4fa8;
+  --avatar-violet-from: #6d55d2;
+  --avatar-violet-to: #5540a8;
+  --avatar-purple-from: #8b45c4;
+  --avatar-purple-to: #6d339b;
+  --avatar-fuchsia-from: #b33aae;
+  --avatar-fuchsia-to: #8d2b89;
+  --avatar-pink-from: #d2467f;
+  --avatar-pink-to: #a93362;
+  --avatar-wine-from: #963b5a;
+  --avatar-wine-to: #742c45;
+  --avatar-brown-from: #92684a;
+  --avatar-brown-to: #714f36;
+  --avatar-slate-from: #5e6c80;
+  --avatar-slate-to: #485468;
+}
+
+/* data-avatar-color 把色板 key 映射成 --avatar-from / --avatar-to,
+   头像与编辑器里的色块共用这一组规则。 */
+[data-avatar-color="red"] {
+  --avatar-from: var(--avatar-red-from);
+  --avatar-to: var(--avatar-red-to);
+}
+[data-avatar-color="orange"] {
+  --avatar-from: var(--avatar-orange-from);
+  --avatar-to: var(--avatar-orange-to);
+}
+[data-avatar-color="amber"] {
+  --avatar-from: var(--avatar-amber-from);
+  --avatar-to: var(--avatar-amber-to);
+}
+[data-avatar-color="lime"] {
+  --avatar-from: var(--avatar-lime-from);
+  --avatar-to: var(--avatar-lime-to);
+}
+[data-avatar-color="green"] {
+  --avatar-from: var(--avatar-green-from);
+  --avatar-to: var(--avatar-green-to);
+}
+[data-avatar-color="teal"] {
+  --avatar-from: var(--avatar-teal-from);
+  --avatar-to: var(--avatar-teal-to);
+}
+[data-avatar-color="cyan"] {
+  --avatar-from: var(--avatar-cyan-from);
+  --avatar-to: var(--avatar-cyan-to);
+}
+[data-avatar-color="sky"] {
+  --avatar-from: var(--avatar-sky-from);
+  --avatar-to: var(--avatar-sky-to);
+}
+[data-avatar-color="blue"] {
+  --avatar-from: var(--avatar-blue-from);
+  --avatar-to: var(--avatar-blue-to);
+}
+[data-avatar-color="violet"] {
+  --avatar-from: var(--avatar-violet-from);
+  --avatar-to: var(--avatar-violet-to);
+}
+[data-avatar-color="purple"] {
+  --avatar-from: var(--avatar-purple-from);
+  --avatar-to: var(--avatar-purple-to);
+}
+[data-avatar-color="fuchsia"] {
+  --avatar-from: var(--avatar-fuchsia-from);
+  --avatar-to: var(--avatar-fuchsia-to);
+}
+[data-avatar-color="pink"] {
+  --avatar-from: var(--avatar-pink-from);
+  --avatar-to: var(--avatar-pink-to);
+}
+[data-avatar-color="wine"] {
+  --avatar-from: var(--avatar-wine-from);
+  --avatar-to: var(--avatar-wine-to);
+}
+[data-avatar-color="brown"] {
+  --avatar-from: var(--avatar-brown-from);
+  --avatar-to: var(--avatar-brown-to);
+}
+[data-avatar-color="slate"] {
+  --avatar-from: var(--avatar-slate-from);
+  --avatar-to: var(--avatar-slate-to);
+}
+
+/* ── 项目头像 ─────────────────────────────────────────────────────────────── */
+
+.project-avatar {
+  --avatar-from: var(--avatar-blue-from);
+  --avatar-to: var(--avatar-blue-to);
+  width: var(--avatar-size, 28px);
+  height: var(--avatar-size, 28px);
+  border-radius: calc(var(--avatar-size, 28px) * 0.28);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--avatar-from), var(--avatar-to));
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--avatar-from) 33%, transparent);
+  color: var(--fg-on-accent);
+  font-size: calc(var(--avatar-size, 28px) * 0.38);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 三字缩写(同屏撞名时的去重结果)略缩字号才能塞进方块 */
+.project-avatar[data-avatar-len="3"] {
+  font-size: calc(var(--avatar-size, 28px) * 0.31);
+  letter-spacing: 0;
+}
+
+/* ── rail hover 即时提示:项目名 + 路径,替代原生 title 的 ~1s 延迟 ─────────── */
+
+.rail-tooltip {
+  position: fixed;
+  left: var(--rail-tip-x, 0px);
+  top: var(--rail-tip-y, 0px);
+  transform: translateY(-50%);
+  z-index: 2000;
+  pointer-events: none;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-popover);
+  animation: rail-tooltip-in 90ms ease-out;
+}
+
+.rail-tooltip-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail-tooltip-path {
+  margin-top: 2px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-hint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes rail-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, -50%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, -50%, 0);
+  }
+}

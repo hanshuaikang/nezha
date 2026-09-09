@@ -170,7 +170,7 @@ export function TimelineView({
               return (
                 <div key={projectGroup.projectId} style={s.timelineProjectBlock}>
                   <div style={s.timelineProjectHeader}>
-                    {project ? <ProjectAvatar name={project.name} size={18} /> : null}
+                    {project ? <ProjectAvatar project={project} size={18} /> : null}
                     <span style={s.timelineProjectName}>
                       {project?.name ?? projectGroup.projectId}
                     </span>

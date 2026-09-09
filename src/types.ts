@@ -8,6 +8,26 @@ export interface Project {
   hiddenFromRail?: boolean;
 }
 
+/** 项目头像预设色板 key。颜色值定义在 styles/project-rail.css（--avatar-<key>-from/to），
+ * 顺序 / 自动分配逻辑在 projectAvatar.ts；存 key 而不存 hex，便于按主题微调。 */
+export type ProjectAvatarColor =
+  | "red"
+  | "orange"
+  | "amber"
+  | "lime"
+  | "green"
+  | "teal"
+  | "cyan"
+  | "sky"
+  | "blue"
+  | "violet"
+  | "purple"
+  | "fuchsia"
+  | "pink"
+  | "wine"
+  | "brown"
+  | "slate";
+
 /** 单个 git 工作目录。
  * - 单仓库项目：根目录自身即 git，roots = [{ path: project.path, name: ".", isRoot: true }]
  * - 多仓库工作区（如根目录非 git，但下面有多个子 git 目录）：roots = 每个子目录一项

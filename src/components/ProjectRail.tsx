@@ -354,7 +354,7 @@ export function ProjectRail({
       {draggedProject && previewVars && (
         <div className="rail-drag-preview" style={previewVars}>
           <div className="rail-drag-preview-avatar">
-            <ProjectAvatar name={draggedProject.name} size={28} />
+            <ProjectAvatar project={draggedProject} size={28} />
             <AttentionIndicator
               status={draggedProjectActivity.status}
               count={draggedProjectActivity.attentionCount}

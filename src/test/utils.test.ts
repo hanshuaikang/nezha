@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  AVATAR_COLORS,
-  getAvatarGradient,
   shortenPath,
   load,
   save,
@@ -10,33 +8,6 @@ import {
   getFileColor,
   CODE_EXTS,
 } from "../utils";
-
-// ── getAvatarGradient ────────────────────────────────────────────────────────
-
-describe("getAvatarGradient", () => {
-  it("始终返回 AVATAR_COLORS 中的颜色对", () => {
-    const result = getAvatarGradient("my-project");
-    expect(AVATAR_COLORS).toContainEqual(result);
-  });
-
-  it("相同名称始终返回相同颜色（幂等性）", () => {
-    expect(getAvatarGradient("nezha")).toEqual(getAvatarGradient("nezha"));
-  });
-
-  it("不同名称通常返回不同颜色", () => {
-    // 散列不均匀时可能碰撞，但常见名称不应相同
-    const a = getAvatarGradient("project-alpha");
-    const b = getAvatarGradient("project-beta");
-    // 不强断言不相等（避免散列碰撞导致误报），仅断言返回值合法
-    expect(AVATAR_COLORS).toContainEqual(a);
-    expect(AVATAR_COLORS).toContainEqual(b);
-  });
-
-  it("空字符串不抛出异常并返回合法颜色", () => {
-    expect(() => getAvatarGradient("")).not.toThrow();
-    expect(AVATAR_COLORS).toContainEqual(getAvatarGradient(""));
-  });
-});
 
 // ── shortenPath ──────────────────────────────────────────────────────────────
 
