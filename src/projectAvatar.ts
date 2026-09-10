@@ -50,8 +50,17 @@ const PALETTE_SIZE = PROJECT_AVATAR_COLORS.length;
 // 彼此差异最大(线性 +1 探测会落到色环上最相近的邻色,等于没去重)。
 const PROBE_STRIDE = 7;
 
-/** 自定义缩写的最大字符数（grapheme 计） */
-export const PROJECT_AVATAR_LABEL_MAX = 3;
+/**
+ * 缩写的最大显示宽度:拉丁字母 / 数字算 1,汉字、日文、韩文等全宽字符算 1.5。
+ * 上限 3 意味着「3 个字母」或「2 个汉字」或「1 个汉字 + 1 个字母」——
+ * 3 个汉字在 28px 的头像里已经小到看不清,所以不按 grapheme 数一刀切。
+ */
+export const PROJECT_AVATAR_LABEL_MAX_WIDTH = 3;
+const WIDE_GRAPHEME_WIDTH = 1.5;
+
+// 东亚全宽字符范围(CJK 统一表意文字及扩展、假名、谚文、全角形式、兼容表意文字)。
+const WIDE_GRAPHEME_RE =
+  /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
 
 /** 编辑器里的常用 emoji 候选;用户也可通过系统 emoji 键盘输入任意字符。 */
 export const PROJECT_AVATAR_EMOJI_PRESETS: readonly string[] = [
@@ -145,6 +154,29 @@ export function takeGraphemes(input: string, max: number): string {
   return graphemes(trimmed).slice(0, max).join("");
 }
 
+function graphemeWidth(grapheme: string): number {
+  return WIDE_GRAPHEME_RE.test(grapheme) ? WIDE_GRAPHEME_WIDTH : 1;
+}
+
+/** 缩写的显示宽度(见 PROJECT_AVATAR_LABEL_MAX_WIDTH)。 */
+export function labelWidth(label: string): number {
+  return graphemes(label).reduce((sum, grapheme) => sum + graphemeWidth(grapheme), 0);
+}
+
+/** 按显示宽度截取缩写:去掉首尾空白,逐个 grapheme 累加宽度,超过上限即停。 */
+export function takeLabel(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  let width = 0;
+  const out: string[] = [];
+  for (const grapheme of graphemes(trimmed)) {
+    width += graphemeWidth(grapheme);
+    if (width > PROJECT_AVATAR_LABEL_MAX_WIDTH) break;
+    out.push(grapheme);
+  }
+  return out.join("");
+}
+
 /**
  * 归一化用户输入的外观:非法色板 key 丢弃、emoji 只保留一个 grapheme、
  * 缩写截到上限;三项都为空时返回 undefined,方便调用方直接删掉 avatar 字段。
@@ -157,7 +189,7 @@ export function normalizeProjectAvatar(
   if (isProjectAvatarColor(avatar.color)) out.color = avatar.color;
   const emoji = avatar.emoji ? firstGrapheme(avatar.emoji) : "";
   if (emoji) out.emoji = emoji;
-  const label = avatar.label ? takeGraphemes(avatar.label, PROJECT_AVATAR_LABEL_MAX) : "";
+  const label = avatar.label ? takeLabel(avatar.label) : "";
   if (label) out.label = label;
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -183,9 +215,12 @@ function tokenizeName(name: string): string[][] {
 export function initialsCandidates(name: string): string[] {
   const tokens = tokenizeName(name);
   const out: string[] = [];
+  // 候选同样受显示宽度限制:CJK 单词名只给「前两字」,不给挤不下的「前三字」。
   const push = (chars: string[]) => {
     const value = chars.join("").toUpperCase();
-    if (value && !out.includes(value)) out.push(value);
+    if (!value || out.includes(value)) return;
+    if (labelWidth(value) > PROJECT_AVATAR_LABEL_MAX_WIDTH) return;
+    out.push(value);
   };
   if (tokens.length === 0) {
     const raw = Array.from(name.trim());

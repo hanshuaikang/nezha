@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type { Project, ProjectAvatarColor, ProjectAvatarStyle } from "../../types";
 import { ProjectAvatar } from "../ProjectAvatar";
@@ -6,10 +6,9 @@ import { useProjectAppearance } from "../../hooks/useProjectAppearance";
 import {
   PROJECT_AVATAR_COLORS,
   PROJECT_AVATAR_EMOJI_PRESETS,
-  PROJECT_AVATAR_LABEL_MAX,
   firstGrapheme,
   normalizeProjectAvatar,
-  takeGraphemes,
+  takeLabel,
 } from "../../projectAvatar";
 import { shortenPath } from "../../utils";
 import { useI18n } from "../../i18n";
@@ -54,16 +53,38 @@ export function ProjectAppearanceEditor({
     onChange(normalizeProjectAvatar({ ...avatar, ...patch }));
   };
 
+  // 中文 / 日文等输入法在组合期间会持续触发 onChange(内容是拼音、假名),此时若截断并
+  // 回写受控值,组合就被打断,汉字根本打不出来。组合期间只回显原文、不提交,
+  // compositionend 后再归一化 + 提交。input 与 compositionend 的先后顺序各引擎不同,
+  // 两个回调都按 composingRef 判断,哪个后到就由哪个完成提交。
+  const composingRef = useRef(false);
+
   const handleLabelInput = (value: string) => {
-    const next = takeGraphemes(value, PROJECT_AVATAR_LABEL_MAX);
+    const next = takeLabel(value);
     setLabelDraft(next);
     commit({ label: next || undefined });
+  };
+
+  const handleLabelChange = (value: string) => {
+    if (composingRef.current) {
+      setLabelDraft(value);
+      return;
+    }
+    handleLabelInput(value);
   };
 
   const handleEmojiPick = (value: string) => {
     const next = firstGrapheme(value);
     setEmojiDraft(next);
     commit({ emoji: next || undefined });
+  };
+
+  const handleEmojiChange = (value: string) => {
+    if (composingRef.current) {
+      setEmojiDraft(value);
+      return;
+    }
+    handleEmojiPick(value);
   };
 
   // 两种图标互斥显示:切回「缩写」即放弃 emoji,否则头像仍显示 emoji、缩写输入看不到效果。
@@ -132,7 +153,14 @@ export function ProjectAppearanceEditor({
               aria-label={t("project.appearance.modeInitials")}
               spellCheck={false}
               autoComplete="off"
-              onChange={(event) => handleLabelInput(event.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={(event) => {
+                composingRef.current = false;
+                handleLabelInput(event.currentTarget.value);
+              }}
+              onChange={(event) => handleLabelChange(event.target.value)}
             />
             <div className="avatar-editor-hint">{t("project.appearance.labelHint")}</div>
           </>
@@ -146,7 +174,14 @@ export function ProjectAppearanceEditor({
                 aria-label={t("project.appearance.modeEmoji")}
                 spellCheck={false}
                 autoComplete="off"
-                onChange={(event) => handleEmojiPick(event.target.value)}
+                onCompositionStart={() => {
+                  composingRef.current = true;
+                }}
+                onCompositionEnd={(event) => {
+                  composingRef.current = false;
+                  handleEmojiPick(event.currentTarget.value);
+                }}
+                onChange={(event) => handleEmojiChange(event.target.value)}
               />
               {emojiDraft && (
                 <button

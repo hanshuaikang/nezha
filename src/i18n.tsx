@@ -313,7 +313,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "project.appearance.modeEmoji": "Emoji",
     "project.appearance.labelPlaceholder": "Auto: {label}",
     "project.appearance.labelHint":
-      "Up to 3 characters. Leave empty to use the automatic initials.",
+      "Up to 3 letters or 2 CJK characters. Leave empty to use the automatic initials.",
     "project.appearance.emojiPlaceholder": "Type or paste an emoji",
     "project.appearance.emojiHint": "Press {shortcut} to open the system emoji picker.",
     "project.appearance.clearEmoji": "Clear emoji",
@@ -946,7 +946,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     "project.appearance.modeInitials": "缩写",
     "project.appearance.modeEmoji": "Emoji",
     "project.appearance.labelPlaceholder": "自动：{label}",
-    "project.appearance.labelHint": "最多 3 个字符，留空则使用自动缩写。",
+    "project.appearance.labelHint": "最多 3 个字母或 2 个汉字，留空则使用自动缩写。",
     "project.appearance.emojiPlaceholder": "输入或粘贴一个 emoji",
     "project.appearance.emojiHint": "按 {shortcut} 可打开系统 emoji 键盘。",
     "project.appearance.clearEmoji": "清除 emoji",

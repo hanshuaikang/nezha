@@ -3,7 +3,9 @@ import {
   PROJECT_AVATAR_COLORS,
   hashString,
   initialsCandidates,
+  labelWidth,
   normalizeProjectAvatar,
+  takeLabel,
   resolveProjectAppearances,
   resolveSingleProjectAppearance,
 } from "../projectAvatar";
@@ -26,8 +28,9 @@ describe("initialsCandidates", () => {
     expect(initialsCandidates("MyApp")[0]).toBe("MA");
   });
 
-  it("CJK 名称不会被切坏", () => {
-    expect(initialsCandidates("中文项目")).toEqual(["中文", "中文项"]);
+  it("CJK 名称不会被切坏，且不给挤不下的三字候选", () => {
+    expect(initialsCandidates("中文项目")).toEqual(["中文"]);
+    expect(initialsCandidates("哪吒 任务")).toEqual(["哪任"]);
   });
 
   it("空名称给出占位符而不抛错", () => {
@@ -138,8 +141,26 @@ describe("自定义外观", () => {
   });
 });
 
+describe("takeLabel / labelWidth", () => {
+  it("拉丁字母最多 3 个，汉字最多 2 个，可混排", () => {
+    expect(takeLabel("abcd")).toBe("abc");
+    expect(takeLabel("哪吒三太子")).toBe("哪吒");
+    expect(takeLabel("A中B")).toBe("A中");
+    expect(takeLabel("中AB")).toBe("中A");
+    expect(takeLabel("  nz  ")).toBe("nz");
+  });
+
+  it("宽度计算：字母 1、全宽字符 1.5", () => {
+    expect(labelWidth("abc")).toBe(3);
+    expect(labelWidth("哪吒")).toBe(3);
+    expect(labelWidth("ｎｚ")).toBe(3);
+    expect(labelWidth("あい")).toBe(3);
+    expect(labelWidth("한글")).toBe(3);
+  });
+});
+
 describe("normalizeProjectAvatar", () => {
-  it("非法颜色丢弃、emoji 只留一个 grapheme、缩写截断到 3 个字符", () => {
+  it("非法颜色丢弃、emoji 只留一个 grapheme、缩写按宽度截断", () => {
     expect(
       normalizeProjectAvatar({
         color: "not-a-color" as never,
@@ -147,6 +168,7 @@ describe("normalizeProjectAvatar", () => {
         label: "  nezha ",
       }),
     ).toEqual({ emoji: "👨‍👩‍👧", label: "nez" });
+    expect(normalizeProjectAvatar({ label: "哪吒三太子" })).toEqual({ label: "哪吒" });
   });
 
   it("全部为空时返回 undefined", () => {
