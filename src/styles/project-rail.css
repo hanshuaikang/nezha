@@ -414,9 +414,10 @@
 
 /* ── 项目头像 ─────────────────────────────────────────────────────────────── */
 
+/* 注意:不要在这里给 --avatar-from / --avatar-to 写默认值——它和上面的
+   [data-avatar-color] 映射特异性相同且排在后面,会把映射整段盖掉(所有头像变成同一色)。
+   兜底放在 var() 的第二个参数里。 */
 .project-avatar {
-  --avatar-from: var(--avatar-blue-from);
-  --avatar-to: var(--avatar-blue-to);
   width: var(--avatar-size, 28px);
   height: var(--avatar-size, 28px);
   border-radius: calc(var(--avatar-size, 28px) * 0.28);
@@ -424,8 +425,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--avatar-from), var(--avatar-to));
-  box-shadow: 0 2px 5px color-mix(in srgb, var(--avatar-from) 33%, transparent);
+  background: linear-gradient(
+    135deg,
+    var(--avatar-from, var(--avatar-blue-from)),
+    var(--avatar-to, var(--avatar-blue-to))
+  );
+  box-shadow: 0 2px 5px
+    color-mix(in srgb, var(--avatar-from, var(--avatar-blue-from)) 33%, transparent);
   color: var(--fg-on-accent);
   font-size: calc(var(--avatar-size, 28px) * 0.38);
   font-weight: 700;
@@ -759,15 +765,17 @@
 }
 
 .avatar-editor-swatch {
-  --avatar-from: var(--avatar-blue-from);
-  --avatar-to: var(--avatar-blue-to);
   position: relative;
   width: 100%;
   aspect-ratio: 1;
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--avatar-from), var(--avatar-to));
+  background: linear-gradient(
+    135deg,
+    var(--avatar-from, var(--avatar-blue-from)),
+    var(--avatar-to, var(--avatar-blue-to))
+  );
   color: var(--fg-on-accent);
   cursor: pointer;
   display: flex;
