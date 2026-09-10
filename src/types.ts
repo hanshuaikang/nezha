@@ -6,7 +6,40 @@ export interface Project {
   lastOpenedAt: number;
   /** 为 true 时不在左侧常驻竖条显示，仅可从首页或「展开全部」抽屉访问。缺省=常驻。 */
   hiddenFromRail?: boolean;
+  /** 用户自定义的头像外观；缺省 / 各字段缺省时走自动缩写 + 自动配色。
+   * 与 storage.rs 的 ProjectAvatar 同步，新增字段两边都要改。 */
+  avatar?: ProjectAvatarStyle;
 }
+
+/** 项目头像的自定义项，三项全部可选、可组合。 */
+export interface ProjectAvatarStyle {
+  /** 预设色板 key；缺省自动分配 */
+  color?: ProjectAvatarColor;
+  /** 单个 emoji / 符号（一个 grapheme），有则替代缩写显示 */
+  emoji?: string;
+  /** 1–3 个字符的自定义缩写；缺省自动生成 */
+  label?: string;
+}
+
+/** 项目头像预设色板 key。颜色值定义在 styles/project-rail.css（--avatar-<key>-from/to），
+ * 顺序 / 自动分配逻辑在 projectAvatar.ts；存 key 而不存 hex，便于按主题微调。 */
+export type ProjectAvatarColor =
+  | "red"
+  | "orange"
+  | "amber"
+  | "lime"
+  | "green"
+  | "teal"
+  | "cyan"
+  | "sky"
+  | "blue"
+  | "violet"
+  | "purple"
+  | "fuchsia"
+  | "pink"
+  | "wine"
+  | "brown"
+  | "slate";
 
 /** 单个 git 工作目录。
  * - 单仓库项目：根目录自身即 git，roots = [{ path: project.path, name: ".", isRoot: true }]

@@ -1,40 +1,33 @@
 import type React from "react";
-import { getAvatarGradient } from "../utils";
+import { useProjectAppearance } from "../hooks/useProjectAppearance";
+import type { ProjectAppearanceSource } from "../projectAvatar";
 
+/**
+ * 项目头像:预设色板渐变底 + 缩写(或用户自定义的 emoji)。颜色 / 缩写由
+ * useProjectAppearance 统一解析(同屏去重、自定义优先),样式见 styles/project-rail.css
+ * 的 .project-avatar;尺寸通过 --avatar-size 注入。
+ */
 export function ProjectAvatar({
-  name,
+  project,
   size = 28,
-  style: extraStyle,
+  className,
 }: {
-  name: string;
+  project: ProjectAppearanceSource;
   size?: number;
-  style?: React.CSSProperties;
+  className?: string;
 }) {
-  const [from, to] = getAvatarGradient(name);
-  const initials =
-    name.length >= 2
-      ? (name[0] + (name.match(/[-_\s]([a-zA-Z])/)?.[1] ?? name[1])).toUpperCase()
-      : name.slice(0, 2).toUpperCase();
+  const appearance = useProjectAppearance(project);
+  const sizeVar = { "--avatar-size": `${size}px` } as React.CSSProperties;
+  const showEmoji = Boolean(appearance.emoji);
   return (
     <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: Math.round(size * 0.28),
-        flexShrink: 0,
-        background: `linear-gradient(135deg, ${from}, ${to})`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size * 0.38,
-        fontWeight: 700,
-        color: "var(--fg-on-accent)",
-        letterSpacing: 0.3,
-        boxShadow: `0 2px 5px ${from}55`,
-        ...extraStyle,
-      }}
+      className={className ? `project-avatar ${className}` : "project-avatar"}
+      data-avatar-color={appearance.color}
+      data-avatar-kind={showEmoji ? "emoji" : "label"}
+      data-avatar-len={showEmoji ? undefined : appearance.label.length}
+      style={sizeVar}
     >
-      {initials}
+      {showEmoji ? appearance.emoji : appearance.label}
     </div>
   );
 }

@@ -33,7 +33,8 @@ Rust 后端位于 `src-tauri/`，修改后需重启 `tauri dev`。
 | `types.ts` | TypeScript 接口的权威定义——修改数据结构时优先编辑此文件 |
 | `styles/index.ts` + `styles/*` | 模块化 CSS-in-JS 样式入口；按 layout / panels / task / terminal / dialogs / common 拆分 |
 | `App.css` | 仅用于暗色/亮色主题的 CSS 自定义属性 |
-| `utils.ts` | UI 工具函数：头像颜色生成、路径缩短、localStorage 辅助方法 |
+| `utils.ts` | UI 工具函数：路径缩短、localStorage 辅助方法 |
+| `projectAvatar.ts` | 项目头像外观解析：16 色预设色板 key、自动缩写 / 配色的同屏去重、用户自定义（颜色 / emoji / 缩写）归一化；`hooks/useProjectAppearance.tsx` 在 App 根部按全量 projects 解析一次供各处 `ProjectAvatar` 读取 |
 
 **组件树（简化版）：**
 ```

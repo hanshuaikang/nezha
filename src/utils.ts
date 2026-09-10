@@ -1,22 +1,3 @@
-export const AVATAR_COLORS: [string, string][] = [
-  ["#2563D6", "#1E4FA8"],
-  ["#4F63D7", "#3F46A6"],
-  ["#6D55D2", "#5540A8"],
-  ["#7B4CC7", "#61369C"],
-  ["#0891B2", "#0E6F86"],
-  ["#0D9488", "#0F6B64"],
-  ["#0B80C6", "#075E91"],
-  ["#0A9A73", "#087354"],
-  ["#5B6FD6", "#4250A8"],
-  ["#12A4C7", "#0B7892"],
-];
-
-export function getAvatarGradient(name: string): [string, string] {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
 export function shortenPath(p: string) {
   return p.replace(/^\/Users\/[^/]+/, "~");
 }
@@ -88,8 +69,7 @@ export function getFileColor(name: string, ext?: string): string {
   const e = ext ?? (name.includes(".") ? name.split(".").pop()!.toLowerCase() : "");
 
   if (n === "dockerfile" || n.startsWith("dockerfile.")) return "var(--icon-file-docker)";
-  if (n === "makefile" || n === "gnumakefile" || n === "justfile")
-    return "var(--icon-file-build)";
+  if (n === "makefile" || n === "gnumakefile" || n === "justfile") return "var(--icon-file-build)";
   if (n === "gemfile" || n === "rakefile") return "var(--icon-file-ruby)";
   if (n.startsWith(".git") || n.startsWith(".docker") || n === ".editorconfig" || n === ".npmrc")
     return "var(--icon-file-config)";

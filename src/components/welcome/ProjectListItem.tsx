@@ -1,10 +1,12 @@
 import { useId, useState } from "react";
-import { Check, Edit3, GitBranch, Pin, PinOff, Trash2, X } from "lucide-react";
-import type { Project } from "../../types";
+import * as Popover from "@radix-ui/react-popover";
+import { Check, Edit3, GitBranch, Palette, Pin, PinOff, Trash2, X } from "lucide-react";
+import type { Project, ProjectAvatarStyle } from "../../types";
 import { type ProjectRenameError, type ProjectRenameResult } from "../../projectName";
 import { shortenPath } from "../../utils";
 import { useI18n } from "../../i18n";
 import { ProjectAvatar } from "../ProjectAvatar";
+import { ProjectAppearanceEditor } from "../project-rail/ProjectAppearanceEditor";
 
 function projectNameErrorMessage(error: ProjectRenameError, t: (key: string) => string): string {
   switch (error) {
@@ -25,12 +27,14 @@ export function ProjectListItem({
   onDelete,
   onToggleHidden,
   onRename,
+  onUpdateAvatar,
 }: {
   project: Project;
   onOpen: () => void;
   onDelete: () => void;
   onToggleHidden: () => void;
   onRename: (name: string) => ProjectRenameResult | Promise<ProjectRenameResult>;
+  onUpdateAvatar: (avatar: ProjectAvatarStyle | undefined) => void;
 }) {
   const { t } = useI18n();
   const errorId = useId();
@@ -38,6 +42,7 @@ export function ProjectListItem({
   const [draftName, setDraftName] = useState(project.name);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
 
   function startEditing() {
     setDraftName(project.name);
@@ -67,7 +72,11 @@ export function ProjectListItem({
   const pinLabel = project.hiddenFromRail ? t("welcome.pinToRail") : t("welcome.unpinFromRail");
 
   return (
-    <div className="welcome-project-item" data-editing={editing}>
+    <div
+      className="welcome-project-item"
+      data-editing={editing}
+      data-appearance-open={appearanceOpen}
+    >
       <button
         type="button"
         className="welcome-project-open"
@@ -77,7 +86,7 @@ export function ProjectListItem({
       />
 
       <div className="welcome-project-avatar">
-        <ProjectAvatar name={project.name} size={34} />
+        <ProjectAvatar project={project} size={34} />
       </div>
 
       <div className="welcome-project-content">
@@ -166,6 +175,33 @@ export function ProjectListItem({
         )}
         {project.hiddenFromRail ? t("welcome.notPinnedToRail") : t("welcome.pinnedToRail")}
       </button>
+
+      {/* 外观编辑器弹层打开期间条目保持 hover 态(data-appearance-open),否则弹层一出现
+          指针离开条目,按钮就随 hover-action 一起隐藏,锚点跟着消失。 */}
+      <Popover.Root open={appearanceOpen} onOpenChange={setAppearanceOpen}>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="welcome-project-icon-button welcome-project-hover-action"
+            disabled={editing}
+            aria-label={t("project.appearance")}
+            title={t("project.appearance")}
+          >
+            <Palette size={14} strokeWidth={1.8} />
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side="bottom"
+            align="end"
+            sideOffset={6}
+            collisionPadding={8}
+            className="rail-popover avatar-editor-popover"
+          >
+            <ProjectAppearanceEditor project={project} onChange={onUpdateAvatar} />
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
 
       <button
         type="button"

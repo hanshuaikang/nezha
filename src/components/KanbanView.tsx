@@ -118,7 +118,7 @@ function ProjectHeader({
       onMouseLeave={() => setHov(false)}
       title={project?.path}
     >
-      {project ? <ProjectAvatar name={project.name} size={18} /> : null}
+      {project ? <ProjectAvatar project={project} size={18} /> : null}
       <span style={s.kanbanProjectName}>{project?.name ?? fallbackId}</span>
       {project ? (
         <span style={s.kanbanProjectPath}>{shortenPath(project.path)}</span>

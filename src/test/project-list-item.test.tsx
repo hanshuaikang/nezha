@@ -20,6 +20,7 @@ function renderItem(
   const onOpen = vi.fn();
   const onDelete = vi.fn();
   const onToggleHidden = vi.fn();
+  const onUpdateAvatar = vi.fn();
   render(
     <I18nProvider>
       <ProjectListItem
@@ -28,10 +29,11 @@ function renderItem(
         onDelete={onDelete}
         onToggleHidden={onToggleHidden}
         onRename={onRename}
+        onUpdateAvatar={onUpdateAvatar}
       />
     </I18nProvider>,
   );
-  return { onOpen, onDelete, onToggleHidden, onRename };
+  return { onOpen, onDelete, onToggleHidden, onRename, onUpdateAvatar };
 }
 
 describe("ProjectListItem", () => {

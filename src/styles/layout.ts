@@ -167,10 +167,6 @@ export const layout = {
   projectSectionTitle: { fontSize: 14, fontWeight: 700, color: "var(--text-primary)" },
   projectSectionCaption: { marginTop: 4, fontSize: 12, color: "var(--text-muted)" },
   projectList: { flex: 1, overflowY: "auto", padding: "4px 22px 18px" },
-  railHiddenIcon: {
-    marginLeft: "auto",
-    flexShrink: 0,
-  },
   emptyState: {
     display: "flex",
     flexDirection: "column",

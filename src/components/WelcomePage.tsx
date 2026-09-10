@@ -10,6 +10,7 @@ import type {
   TaskDisplayWindow,
   FontFamily,
   SkillHubConfig,
+  ProjectAvatarStyle,
 } from "../types";
 import type { ProjectRenameResult } from "../projectName";
 import { SidebarFooterActions } from "./SidebarFooterActions";
@@ -79,6 +80,7 @@ export function WelcomePage({
   onDeleteProject,
   onToggleProjectHidden,
   onRenameProject,
+  onUpdateProjectAvatar,
   themeVariant,
   themeMode,
   systemPrefersDark,
@@ -107,6 +109,7 @@ export function WelcomePage({
   onDeleteProject: (projectId: string) => void;
   onToggleProjectHidden: (projectId: string) => void;
   onRenameProject: (projectId: string, name: string) => Promise<ProjectRenameResult>;
+  onUpdateProjectAvatar: (projectId: string, avatar: ProjectAvatarStyle | undefined) => void;
   themeVariant: ThemeVariant;
   themeMode: ThemeMode;
   systemPrefersDark: boolean;
@@ -286,6 +289,7 @@ export function WelcomePage({
                     onDelete={() => onDeleteProject(project.id)}
                     onToggleHidden={() => onToggleProjectHidden(project.id)}
                     onRename={(name) => onRenameProject(project.id, name)}
+                    onUpdateAvatar={(avatar) => onUpdateProjectAvatar(project.id, avatar)}
                   />
                 ))
               )}

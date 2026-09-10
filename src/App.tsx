@@ -26,7 +26,7 @@ import {
   normalizeTaskDisplayWindow,
 } from "./types";
 import { DEFAULT_UI_FONT, getDefaultMonoFont, isAutoDefaultMonoFont } from "./types";
-import type { FontFamily } from "./types";
+import type { FontFamily, ProjectAvatarStyle } from "./types";
 import { quoteFontName } from "./utils/fonts";
 import { WelcomePage } from "./components/WelcomePage";
 import { ProjectPage } from "./components/ProjectPage";
@@ -35,6 +35,8 @@ import { KanbanView, OPEN_KANBAN_VIEW_EVENT } from "./components/KanbanView";
 import { useToast } from "./components/Toast";
 import { isHideWindowShortcut, isToggleKanbanShortcut } from "./shortcuts";
 import { APP_PLATFORM } from "./platform";
+import { ProjectAppearanceProvider } from "./hooks/useProjectAppearance";
+import { normalizeProjectAvatar } from "./projectAvatar";
 import { useTerminalManager } from "./hooks/useTerminalManager";
 import { useWorktreeDiffStats } from "./hooks/useWorktreeDiffStats";
 import { useI18n } from "./i18n";
@@ -1319,6 +1321,20 @@ function App() {
     });
   }
 
+  // 头像外观(颜色 / emoji / 缩写)整体替换;归一化后为空则删掉字段,保持 projects.json 简洁。
+  function handleUpdateProjectAvatar(projectId: string, avatar: ProjectAvatarStyle | undefined) {
+    const normalized = normalizeProjectAvatar(avatar);
+    setProjects((prev) => {
+      const next = prev.map((p) => {
+        if (p.id !== projectId) return p;
+        const { avatar: _previous, ...rest } = p;
+        return normalized ? { ...rest, avatar: normalized } : rest;
+      });
+      persistProjects(next, showToast, formatSaveProjectsError);
+      return next;
+    });
+  }
+
   function handleToggleProjectHidden(projectId: string) {
     setProjects((prev) => {
       const next = prev.map((p) =>
@@ -1510,7 +1526,8 @@ function App() {
     }
   }
 
-  return (
+  // 头像外观(缩写 / 颜色去重)按全量 projects 解析一次,供各处 ProjectAvatar 读取。
+  const appTree = (
     <div style={s.rootRelative}>
       <div style={s.appProjectLayer}>
         {mountedProjects.map((project) => {
@@ -1566,6 +1583,8 @@ function App() {
               onSwitchProject={handleProjectClick}
               onCommitProjectOrder={handleCommitProjectOrder}
               onOpen={handleOpen}
+              onToggleProjectHidden={handleToggleProjectHidden}
+              onUpdateProjectAvatar={handleUpdateProjectAvatar}
               themeVariant={themeVariant}
               themeMode={themeMode}
               systemPrefersDark={systemPrefersDark}
@@ -1612,6 +1631,7 @@ function App() {
             onDeleteProject={handleDeleteProject}
             onToggleProjectHidden={handleToggleProjectHidden}
             onRenameProject={handleRenameProject}
+            onUpdateProjectAvatar={handleUpdateProjectAvatar}
             skillHubConfig={skillHubConfig}
             onEnterSkillHub={handleEnterSkillHub}
             themeVariant={themeVariant}
@@ -1636,6 +1656,7 @@ function App() {
       )}
     </div>
   );
+  return <ProjectAppearanceProvider projects={projects}>{appTree}</ProjectAppearanceProvider>;
 }
 
 export default App;

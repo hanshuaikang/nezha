@@ -1,40 +1,51 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
-import type { Project } from "../../types";
+import { createPortal } from "react-dom";
+import * as Popover from "@radix-ui/react-popover";
+import { Palette, Pin, PinOff } from "lucide-react";
+import type { Project, ProjectAvatarStyle } from "../../types";
 import { ProjectAvatar } from "../ProjectAvatar";
-import s from "../../styles";
-import { RAIL_ITEM_SIZE } from "../../styles/rail-drag";
+import { ProjectAppearanceEditor } from "./ProjectAppearanceEditor";
+import { shortenPath } from "../../utils";
+import { useI18n } from "../../i18n";
 import claudeWaveGif from "../../assets/gif/claude-wave.gif";
 import type { ProjectStatus } from "./activity";
 
+// hover 到显示提示的延迟:略高于 0 是为了让指针沿 rail 快速划过时不逐项闪一遍。
+const TOOLTIP_DELAY_MS = 70;
+const TOOLTIP_GAP_PX = 10;
+
+/** rail 项上挂着的弹层:右键菜单,或从菜单进入的外观编辑器。同一时刻只有一个项打开。 */
+export type RailItemPanel = "menu" | "appearance";
+
 // 项目状态指示:启用角标且存在待确认任务时显示数量角标,否则回退为小圆点。
-// borderColor 用于与所在容器背景描边融合(rail 与 drawer 背景不同)。
 export function AttentionIndicator({
   status,
   count,
   showBadge,
-  borderColor,
 }: {
   status: ProjectStatus;
   count: number;
   showBadge: boolean;
-  borderColor: string;
 }) {
   if (!status) return null;
   const isAttention = status === "attention";
   if (showBadge && isAttention && count > 0) {
-    return (
-      <span style={{ ...s.railAttentionBadge, borderColor }}>{count > 99 ? "99+" : count}</span>
-    );
+    return <span className="rail-attention-badge">{count > 99 ? "99+" : count}</span>;
   }
-  return (
-    <span
-      style={{
-        ...s.railStatusDot,
-        background: isAttention ? "var(--color-warning)" : "var(--color-success)",
-        borderColor,
-      }}
-    />
+  return <span className="rail-status-dot" data-status={isAttention ? "attention" : "running"} />;
+}
+
+// 即时 tooltip:项目名 + 路径。rail 上除缩写外没有任何文字,原生 title 又有 ~1s 延迟,
+// 项目多了只能靠背缩写,这里改成 hover 即出。portal 到 body 避免被右侧面板盖住。
+function RailTooltip({ project, x, y }: { project: Project; x: number; y: number }) {
+  const vars = { "--rail-tip-x": `${x}px`, "--rail-tip-y": `${y}px` } as React.CSSProperties;
+  return createPortal(
+    <div className="rail-tooltip" role="tooltip" style={vars}>
+      <div className="rail-tooltip-name">{project.name}</div>
+      <div className="rail-tooltip-path">{shortenPath(project.path)}</div>
+    </div>,
+    document.body,
   );
 }
 
@@ -47,8 +58,13 @@ export const RailItem = memo(function RailItem({
   waveNonce,
   isDragging,
   translateY,
+  panel,
+  menuEnabled,
   onPointerDown,
   onClick,
+  onPanelChange,
+  onToggleHidden,
+  onUpdateAvatar,
 }: {
   project: Project;
   isActive: boolean;
@@ -58,11 +74,18 @@ export const RailItem = memo(function RailItem({
   waveNonce: number;
   isDragging: boolean;
   translateY: number;
+  panel: RailItemPanel | null;
+  menuEnabled: boolean;
   onPointerDown: (project: Project, event: React.PointerEvent<HTMLButtonElement>) => void;
   onClick: (project: Project) => void;
+  onPanelChange: (projectId: string, panel: RailItemPanel | null) => void;
+  onToggleHidden: (projectId: string) => void;
+  onUpdateAvatar: (projectId: string, avatar: ProjectAvatarStyle | undefined) => void;
 }) {
-  const [hov, setHov] = useState(false);
+  const { t } = useI18n();
   const [waving, setWaving] = useState(false);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
+  const tooltipTimerRef = useRef<number | null>(null);
 
   // waveNonce 每次递增(出现新的待确认任务)就触发一次性招手,3.6s 后卸载。
   // 卸载+重新挂载可让 gif 从首帧重播,同时重启 CSS 探头/缩回动画。
@@ -73,61 +96,126 @@ export const RailItem = memo(function RailItem({
     return () => clearTimeout(id);
   }, [waveNonce]);
 
-  // outline 颜色保持瞬变(与旧版本一致 — 加 transition 后切 active 会看到 ~120ms 的
-  // 颜色过渡,视觉上"框慢半拍稳定"。transform / opacity 仍需平滑过渡。
-  const transition = "transform 160ms cubic-bezier(0.22, 1, 0.36, 1), opacity 100ms";
+  const hideTooltip = useCallback(() => {
+    if (tooltipTimerRef.current !== null) {
+      window.clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
+    }
+    setTooltip(null);
+  }, []);
+
+  const scheduleTooltip = useCallback((node: HTMLElement) => {
+    if (tooltipTimerRef.current !== null) window.clearTimeout(tooltipTimerRef.current);
+    tooltipTimerRef.current = window.setTimeout(() => {
+      tooltipTimerRef.current = null;
+      const rect = node.getBoundingClientRect();
+      setTooltip({ x: rect.right + TOOLTIP_GAP_PX, y: rect.top + rect.height / 2 });
+    }, TOOLTIP_DELAY_MS);
+  }, []);
+
+  useEffect(() => hideTooltip, [hideTooltip]);
+  // 拖起来之后 / 弹层打开时不再显示提示(位置不可靠,或会压在弹层上)。
+  useEffect(() => {
+    if (isDragging || translateY !== 0 || panel) hideTooltip();
+  }, [isDragging, translateY, panel, hideTooltip]);
+
+  // 让位位移是拖拽期间的高频动态值,通过 CSS 变量注入,其余样式见 project-rail.css。
+  const dynamicVars = { "--rail-item-dy": `${translateY}px` } as React.CSSProperties;
+
+  const hiddenLabel = project.hiddenFromRail ? t("welcome.pinToRail") : t("welcome.unpinFromRail");
 
   return (
-    <button
-      data-rail-id={project.id}
-      title={project.name}
-      onClick={() => onClick(project)}
-      onPointerDown={(event) => onPointerDown(project, event)}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      className={isActive ? "rail-active" : undefined}
-      style={{
-        position: "relative",
-        width: RAIL_ITEM_SIZE,
-        height: RAIL_ITEM_SIZE,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "none",
-        border: "none",
-        borderRadius: 10,
-        cursor: isDragging ? "grabbing" : isActive ? "grab" : "pointer",
-        padding: 0,
-        outline: isActive
-          ? "2px solid var(--accent)"
-          : hov
-            ? "2px solid var(--border-medium)"
-            : "2px solid transparent",
-        outlineOffset: 1,
-        transition,
-        transform: `translate3d(0, ${translateY}px, 0)`,
-        opacity: isDragging ? 0.18 : 1,
-        touchAction: "none",
-        userSelect: "none",
-        willChange: translateY !== 0 || isDragging ? "transform" : undefined,
+    <Popover.Root
+      open={panel !== null}
+      onOpenChange={(open) => {
+        if (!open) onPanelChange(project.id, null);
       }}
     >
-      {waving && (
-        <img
-          key={waveNonce}
-          src={claudeWaveGif}
-          alt=""
-          className="rail-mascot-wave"
-          style={s.railMascot}
-        />
+      <Popover.Anchor asChild>
+        <button
+          data-rail-id={project.id}
+          aria-label={project.name}
+          className="rail-item rail-indicator-host"
+          data-surface="sidebar"
+          data-active={isActive}
+          data-dragging={isDragging}
+          data-moving={translateY !== 0}
+          data-panel-open={panel !== null}
+          style={dynamicVars}
+          onClick={() => onClick(project)}
+          onPointerDown={(event) => {
+            hideTooltip();
+            onPointerDown(project, event);
+          }}
+          onContextMenu={(event) => {
+            if (!menuEnabled) return;
+            event.preventDefault();
+            hideTooltip();
+            onPanelChange(project.id, "menu");
+          }}
+          onMouseEnter={(event) => {
+            if (!panel) scheduleTooltip(event.currentTarget);
+          }}
+          onMouseLeave={hideTooltip}
+        >
+          {waving && (
+            <img key={waveNonce} src={claudeWaveGif} alt="" className="rail-item-mascot" />
+          )}
+          <ProjectAvatar project={project} size={28} className="rail-item-avatar" />
+          <AttentionIndicator status={status} count={attentionCount} showBadge={showBadge} />
+          {tooltip && <RailTooltip project={project} x={tooltip.x} y={tooltip.y} />}
+        </button>
+      </Popover.Anchor>
+
+      {panel && (
+        <Popover.Portal>
+          <Popover.Content
+            side="right"
+            align="start"
+            sideOffset={10}
+            collisionPadding={8}
+            className={
+              panel === "menu" ? "rail-popover rail-menu" : "rail-popover avatar-editor-popover"
+            }
+            role={panel === "menu" ? "menu" : undefined}
+          >
+            {panel === "menu" ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="rail-menu-item"
+                  onClick={() => onPanelChange(project.id, "appearance")}
+                >
+                  <Palette size={13} strokeWidth={2} />
+                  <span>{t("project.appearance")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="rail-menu-item"
+                  onClick={() => {
+                    onPanelChange(project.id, null);
+                    onToggleHidden(project.id);
+                  }}
+                >
+                  {project.hiddenFromRail ? (
+                    <Pin size={13} strokeWidth={2} />
+                  ) : (
+                    <PinOff size={13} strokeWidth={2} />
+                  )}
+                  <span>{hiddenLabel}</span>
+                </button>
+              </>
+            ) : (
+              <ProjectAppearanceEditor
+                project={project}
+                onChange={(avatar) => onUpdateAvatar(project.id, avatar)}
+              />
+            )}
+          </Popover.Content>
+        </Popover.Portal>
       )}
-      <ProjectAvatar name={project.name} size={28} style={s.railAvatarStacked} />
-      <AttentionIndicator
-        status={status}
-        count={attentionCount}
-        showBadge={showBadge}
-        borderColor="var(--bg-sidebar)"
-      />
-    </button>
+    </Popover.Root>
   );
 });
