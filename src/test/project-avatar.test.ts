@@ -139,6 +139,17 @@ describe("自定义外观", () => {
     const result = resolveProjectAppearances([pinned, auto]);
     expect(result.get("2")?.label).toBe("NEZ");
   });
+
+  it("emoji 项目保留的自定义缩写不会占用自动缩写", () => {
+    const withEmoji = {
+      ...project("1", "zeta", "/z"),
+      avatar: { label: "NE", emoji: "🚀" },
+    };
+    const auto = project("2", "nezha", "/n");
+    const result = resolveProjectAppearances([withEmoji, auto]);
+    expect(result.get("1")?.emoji).toBe("🚀");
+    expect(result.get("2")?.label).toBe("NE");
+  });
 });
 
 describe("takeLabel / labelWidth", () => {

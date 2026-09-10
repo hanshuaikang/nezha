@@ -271,12 +271,12 @@ function resolveAutoLabels(ordered: readonly ProjectAppearanceSource[]): Map<str
   for (const project of ordered) {
     const candidates = initialsCandidates(project.name);
     candidatesById.set(project.id, candidates);
+    if (customEmoji(project)) continue;
     const custom = customLabel(project);
     if (custom) {
       claimed.add(custom.toUpperCase());
       continue;
     }
-    if (customEmoji(project)) continue;
     const natural = candidates[0];
     const group = groups.get(natural);
     if (group) group.push(project);
