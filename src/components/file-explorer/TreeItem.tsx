@@ -1,7 +1,7 @@
 import type React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import s from "../../styles";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "../FileIcon";
 import { FILE_TREE_HOVER_BG, GITIGNORED_COLOR, type TreeNode } from "./types";
 
 export function TreeItem({

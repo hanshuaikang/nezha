@@ -1,5 +1,5 @@
 import s from "../../styles";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "../FileIcon";
 import { type CreateKind } from "./types";
 
 export function CreateInputRow({
