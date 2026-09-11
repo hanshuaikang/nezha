@@ -18,7 +18,7 @@ import { load, save } from "../utils";
 import { writeClipboardText } from "./file-explorer/clipboard";
 import { FileExplorerContextMenu } from "./file-explorer/ContextMenu";
 import { CreateInputRow } from "./file-explorer/CreateInputRow";
-import { FileIcon } from "./file-explorer/FileIcon";
+import { FileIcon } from "./FileIcon";
 import { TreeItem } from "./file-explorer/TreeItem";
 import { dispatchFileTreePointerDrag } from "./pathDrop";
 import {

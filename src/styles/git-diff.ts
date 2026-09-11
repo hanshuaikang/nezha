@@ -553,15 +553,6 @@ export const gitDiff = {
     color: "var(--text-hint)",
     flexShrink: 0,
   },
-  gitFileFolderIcon: {
-    display: "flex",
-    alignItems: "center",
-    color: "var(--text-muted)",
-    flexShrink: 0,
-  },
-  gitFileIcon: {
-    flexShrink: 0,
-  },
   gitFileName: {
     fontSize: 12.5,
     fontWeight: 500,

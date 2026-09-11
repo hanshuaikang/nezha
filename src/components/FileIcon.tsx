@@ -1,10 +1,11 @@
-import { useIsLightTheme } from "../../hooks/useIsLightTheme";
-import { getFileIconUrl, getFolderIconUrl } from "./materialIcons";
+import { useIsLightTheme } from "../hooks/useIsLightTheme";
+import { getFileIconUrl, getFolderIconUrl } from "./file-explorer/materialIcons";
 
 /**
- * File / folder icon for explorer rows, search results, drag previews and the
- * create-input row. Renders a Material Icon Theme SVG as a plain <img>;
- * gitignored entries are greyed out purely in CSS (`data-ignored`).
+ * File / folder icon shared by the explorer rows, search results, drag previews,
+ * the create-input row and the git change / history browser. Renders a Material
+ * Icon Theme SVG as a plain <img>; gitignored entries are greyed out purely in
+ * CSS (`data-ignored`).
  */
 export function FileIcon({
   name,

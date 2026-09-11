@@ -4,7 +4,7 @@ import { Check, ChevronDown, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import s from "../../styles";
 import { useI18n } from "../../i18n";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "../FileIcon";
 import type { ProjectFileSearchResult } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 200;
